@@ -21,6 +21,7 @@ import { coverThumb } from './cover.js';
 import { openBookForm } from './bookForm.js';
 import { loadSampleLibrary } from '../data/seed.js';
 import { attachHoverCard, hide as hideHoverCard } from './hoverCard.js';
+import { libraryTotals, formatDuration } from '../logic/sessions.js';
 import { openDayPopup } from './dayPopup.js';
 
 /**
@@ -88,13 +89,15 @@ export function renderCalendar(mount) {
   const buckets = groupByDay(books, cells.map((cell) => cell.key), todayKey);
 
   const scheduled = books.filter((b) => b.schedule.start).length;
+  const totals = libraryTotals(books, todayKey);
 
   fill(mount, [
-    el('div.view-head', {}, [
+    el('div.view-head.view-head--calendar', {}, [
       el('div', {}, [
         el('h2.view-title', {}, `${monthName(cursor.month)} ${cursor.year}`),
         el('p.view-sub', {}, `${scheduled} book${scheduled === 1 ? '' : 's'} on the schedule`),
       ]),
+      totals.streak.current > 0 || totals.minutesThisWeek > 0 ? streakStrip(totals) : null,
       el('div.cal-nav', {}, [
         navButton('\u2039', 'Previous month', () => step(-1, mount)),
         el('button.btn.btn--ghost', { type: 'button', onClick: () => goToday(mount) }, 'Today'),
@@ -129,6 +132,26 @@ export function renderCalendar(mount) {
       el('span.cal__legend-hint', {}, 'Drag a cover to reschedule \u00b7 Shift + arrows to nudge'),
     ]),
   ]);
+}
+
+/**
+ * The streak is deliberately forgiving: today counts as unbroken until the day
+ * is actually over, so the number doesn't reset every morning and read as a
+ * telling-off before you've had a chance to read anything.
+ */
+function streakStrip(totals) {
+  const { streak } = totals;
+  return el('div.streak', { class: streak.atRisk ? 'streak--at-risk' : '' }, [
+    streak.current > 0
+      ? el('span', {}, [
+          el('b', {}, String(streak.current)),
+          ` day${streak.current === 1 ? '' : 's'} running`,
+        ])
+      : null,
+    totals.minutesThisWeek > 0
+      ? el('span', {}, [el('b', {}, formatDuration(totals.minutesThisWeek)), ' this week'])
+      : null,
+  ].filter(Boolean));
 }
 
 const rerender = (mount) => renderCalendar(mount);

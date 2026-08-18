@@ -28,6 +28,7 @@ css/covers.css        cover picker
 css/library.css       record lists
 css/calendar.css      month grid, day cells, cover tiles
 css/dayview.css       hover card and day popup
+css/sessions.css      reading log
 js/app.js             bootstrap + hash router
 js/lib/dom.js         element helper, focus trap, toasts
 js/lib/dates.js       day-key arithmetic and the month grid
@@ -37,5 +38,6 @@ js/data/covers.js     Open Library + Google Books lookup, upload downscaling
 js/data/seed.js       sample library for demos
 js/logic/schedule.js  which books land on which day, in which state
 js/logic/pacing.js    daily targets, ahead/behind, projected finish
+js/logic/sessions.js  session totals, reading streak, observed pace
 js/views/             one module per view
 tests/                data-layer tests

@@ -290,3 +290,20 @@ body.is-rescheduling .cal__day {
     font-size: 0.5625rem;
   }
 }
+
+.view-head--calendar {
+  align-items: center;
+  gap: var(--s5);
+}
+
+.view-head--calendar .streak {
+  margin-left: auto;
+}
+
+@media (max-width: 720px) {
+  .view-head--calendar .streak {
+    margin-left: 0;
+    order: 3;
+    width: 100%;
+  }
+}

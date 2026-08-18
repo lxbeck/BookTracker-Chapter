@@ -9,6 +9,7 @@
 import { el, $, toast } from '../lib/dom.js';
 import { showModal } from './modal.js';
 import { coverPicker } from './coverPicker.js';
+import { sessionLog } from './sessionLog.js';
 import { STATUSES, STATUS_ORDER, FORMATS, blankBook } from '../data/schema.js';
 import { addBook, updateBook, removeBook, restoreBook } from '../data/store.js';
 
@@ -79,6 +80,17 @@ export function openBookForm({ book = null, defaultStart = null, onSaved } = {})
   const startInput = input('schedule.start', { type: 'date', value: draft.schedule.start ?? '' });
   const endInput = input('schedule.end', { type: 'date', value: draft.schedule.end ?? '' });
 
+  // The record, as distinct from the plan. Finishing a book fills these in on
+  // its own; they're editable for the times it didn't happen that way.
+  const startedInput = input('actual.startedAt', {
+    type: 'date',
+    value: draft.actual.startedAt ?? '',
+  });
+  const finishedInput = input('actual.finishedAt', {
+    type: 'date',
+    value: draft.actual.finishedAt ?? '',
+  });
+
   const paceNote = el('p.field__hint', { id: 'pace-note' });
 
   /** Live feedback: what this plan actually asks of you per day. */
@@ -148,7 +160,21 @@ export function openBookForm({ book = null, defaultStart = null, onSaved } = {})
       ]),
       paceNote,
     ]),
-  ];
+    el('fieldset.plan-block', {}, [
+      el('legend.field__label', { text: 'What actually happened' }),
+      el('div.field-row', {}, [
+        field('actual.startedAt', 'Started on', startedInput),
+        field('actual.finishedAt', 'Finished on', finishedInput),
+      ]),
+      el('p.field__hint', {}, 'Marking a book finished fills the finish date in for you.'),
+    ]),
+    isEdit
+      ? el('fieldset.plan-block.plan-block--log', {}, [
+          el('legend.field__label', { text: 'Reading log' }),
+          sessionLog({ bookId: draft.id }),
+        ])
+      : null,
+  ].filter(Boolean);
 
   function showErrors(errors) {
     for (const [name, entry] of Object.entries(fields)) {
@@ -176,6 +202,10 @@ export function openBookForm({ book = null, defaultStart = null, onSaved } = {})
       status: statusSelect.value,
       cover: draft.cover,
       schedule: { start: startInput.value || null, end: endInput.value || null },
+      actual: {
+        startedAt: startedInput.value || null,
+        finishedAt: finishedInput.value || null,
+      },
     };
   }
 
@@ -227,6 +257,9 @@ export function openBookForm({ book = null, defaultStart = null, onSaved } = {})
 
   // Enter submits from any single-line input, as people expect from a form.
   modal.panel.addEventListener('keydown', (event) => {
+    // The session log handles its own Enter key; don't save the whole book
+    // because someone finished typing a page number.
+    if (event.target.closest('.session-log')) return;
     if (event.key === 'Enter' && event.target.tagName === 'INPUT') {
       event.preventDefault();
       save();

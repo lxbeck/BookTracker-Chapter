@@ -19,7 +19,9 @@ import { paceFor, paceStanding, projectedFinish } from '../logic/pacing.js';
 import { DAY_STATE_LABEL } from '../logic/schedule.js';
 import { formatLong, formatShort, relativeDay, today } from '../lib/dates.js';
 import { FORMATS, STATUSES } from '../data/schema.js';
-import { allBooks, updateBook, setStatus } from '../data/store.js';
+import { allBooks, setStatus } from '../data/store.js';
+import { sessionLog } from './sessionLog.js';
+import { observedPace, formatDuration, bookTotals } from '../logic/sessions.js';
 
 /**
  * @param {string} dayKey
@@ -102,6 +104,7 @@ function dayRow({ book, state }, dayKey, todayKey, redraw, modal) {
             fact('Day', `${Math.min(Math.max(pace.dayIndex, 1), pace.days)} of ${pace.days}`),
             fact('Target by tonight', `${unit === 'minutes' ? '' : 'page '}${pace.cumulative} of ${pace.total}`.trim()),
             book.progress.page ? fact('Currently at', `${unit === 'minutes' ? '' : 'page '}${book.progress.page}`.trim()) : null,
+            observedRow(book, todayKey, unit),
             projectedFinish(book, todayKey)
               ? fact('On current pace', `finishes ${formatShort(projectedFinish(book, todayKey))}`)
               : null,
@@ -110,8 +113,12 @@ function dayRow({ book, state }, dayKey, todayKey, redraw, modal) {
 
       standingLine(book, todayKey),
 
+      el('details.day-row__log', { open: state === 'reading' }, [
+        el('summary', {}, logSummary(book, dayKey, unit)),
+        sessionLog({ bookId: book.id, fixedDate: dayKey, compact: true, onChange: redraw }),
+      ]),
+
       el('div.day-row__actions', {}, [
-        progressControl(book, unit, redraw),
         book.status !== 'finished' &&
           el('button.btn.btn--quiet.btn--sm', {
             type: 'button',
@@ -133,6 +140,22 @@ function dayRow({ book, state }, dayKey, todayKey, redraw, modal) {
   ]);
 }
 
+/** The pace being read at, once there's a log to read it from. */
+function observedRow(book, todayKey, unit) {
+  const pace = observedPace(book, todayKey);
+  if (!pace.ok) return null;
+  const totals = bookTotals(book);
+  const noun = unit === 'minutes' ? 'minutes' : 'pages';
+
+  if (pace.source === 'sessions' && totals.minutes) {
+    return fact(
+      'Reading at',
+      `${Math.round(pace.pagesPerDay)} ${noun}/day \u00b7 ${formatDuration(pace.minutesPerDay)}/day`
+    );
+  }
+  return fact('Reading at', `${Math.round(pace.pagesPerDay)} ${noun} a day`);
+}
+
 const fact = (label, value) => el('div.day-row__fact', {}, [el('dt', {}, label), el('dd', {}, value)]);
 
 function standingLine(book, todayKey) {
@@ -141,45 +164,19 @@ function standingLine(book, todayKey) {
   return el('p.day-row__standing', { class: `is-${state.tone}` }, state.text);
 }
 
-/**
- * Logging where you got to is the single most common thing you do on a day, so
- * it lives inline rather than behind the record. Step 5 grows this into full
- * session logging; the field it writes to is already the right one.
- */
-function progressControl(book, unit, redraw) {
-  if (!book.pageCount || book.status === 'finished') return null;
+/** What the log fold says before you open it. */
+function logSummary(book, dayKey, unit) {
+  const onThisDay = (book.sessions ?? []).filter((session) => session.date === dayKey);
+  if (!onThisDay.length) return 'Log a sitting for this day';
 
-  const input = el('input.input.day-row__progress', {
-    type: 'number',
-    min: '0',
-    max: String(book.pageCount),
-    value: book.progress.page || '',
-    placeholder: unit === 'minutes' ? 'minutes in' : 'page',
-    'aria-label': `Current ${unit === 'minutes' ? 'minute' : 'page'} in ${book.title}`,
-  });
-
-  const save = () => {
-    const value = Number.parseInt(input.value, 10);
-    if (!Number.isFinite(value) || value < 0) return;
-    updateBook(book.id, {
-      progress: { page: Math.min(value, book.pageCount), percent: 0 },
-      status: book.status === 'planned' ? 'reading' : book.status,
-    });
-    redraw();
-  };
-
-  input.addEventListener('change', save);
-  input.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter') {
-      event.preventDefault();
-      save();
-    }
-  });
-
-  return el('label.day-row__progress-wrap', {}, [
-    el('span.day-row__progress-label', {}, unit === 'minutes' ? 'At minute' : 'At page'),
-    input,
-  ]);
+  const minutes = onThisDay.reduce((sum, session) => sum + (session.minutes ?? 0), 0);
+  const furthest = onThisDay.reduce((max, session) => Math.max(max, session.pageTo ?? 0), 0);
+  const parts = [
+    `${onThisDay.length} sitting${onThisDay.length === 1 ? '' : 's'}`,
+    minutes ? formatDuration(minutes) : null,
+    furthest ? `to ${unit === 'minutes' ? '' : 'page '}${furthest}`.trim() : null,
+  ].filter(Boolean);
+  return parts.join(' \u00b7 ');
 }
 
 function emptyDay(dayKey, modal) {

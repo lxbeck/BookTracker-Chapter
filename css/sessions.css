@@ -1,0 +1,219 @@
+/* ===========================================================================
+   Chapter — reading log
+   =========================================================================== */
+
+.session-log {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+}
+
+.session-totals {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(84px, 1fr));
+  gap: var(--s2);
+  margin: 0;
+  padding-bottom: var(--s3);
+  border-bottom: var(--rule);
+}
+
+.session-totals__item dt {
+  font-family: var(--face-slip);
+  font-size: 0.625rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.session-totals__item dd {
+  margin: 0;
+  font-family: var(--face-display);
+  font-variation-settings: var(--wonk-on);
+  font-size: var(--size-md);
+  color: var(--ink);
+}
+
+/* --- Entry form ----------------------------------------------------------- */
+
+.session-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+}
+
+.session-form__row {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr 1fr 1fr;
+  gap: var(--s2);
+}
+
+.session-form__field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.session-form__field span {
+  font-family: var(--face-slip);
+  font-size: 0.5625rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.session-form__field .input {
+  padding: var(--s1) var(--s2);
+  font-size: var(--size-sm);
+}
+
+.session-form__field .input:disabled {
+  background: var(--slip-shade);
+  color: var(--ink-soft);
+}
+
+.session-form__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--s3);
+}
+
+.session-form__actions .field__error {
+  margin-right: auto;
+}
+
+/* --- History -------------------------------------------------------------- */
+
+.session-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  max-height: 230px;
+  overflow-y: auto;
+}
+
+.session-row {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  padding: var(--s2) 0;
+  border-bottom: 1px dotted var(--slip-edge);
+  font-size: var(--size-sm);
+}
+
+.session-row:last-child {
+  border-bottom: 0;
+}
+
+.session-row__date {
+  font-family: var(--face-slip);
+  font-size: var(--size-xs);
+  color: var(--ink-soft);
+  min-width: 84px;
+}
+
+.session-row__detail {
+  flex: 1;
+  color: var(--ink);
+}
+
+.session-row__remove {
+  font-size: 1rem;
+  opacity: 0;
+  transition: opacity var(--fast) var(--ease);
+}
+
+.session-row:hover .session-row__remove,
+.session-row__remove:focus-visible {
+  opacity: 1;
+}
+
+.session-list__more,
+.session-empty {
+  font-size: var(--size-xs);
+  color: var(--ink-faint);
+  padding-top: var(--s2);
+}
+
+.plan-block--log {
+  background: var(--slip);
+}
+
+/* --- Day popup fold ------------------------------------------------------- */
+
+.day-row__log {
+  margin-bottom: var(--s3);
+  border: var(--rule);
+  border-radius: var(--r-card);
+  background: var(--slip-shade);
+}
+
+.day-row__log > summary {
+  cursor: pointer;
+  padding: var(--s2) var(--s3);
+  font-family: var(--face-slip);
+  font-size: var(--size-xs);
+  letter-spacing: 0.08em;
+  color: var(--ink-soft);
+  list-style: none;
+}
+
+.day-row__log > summary::-webkit-details-marker {
+  display: none;
+}
+
+.day-row__log > summary::before {
+  content: "+";
+  display: inline-block;
+  width: 1em;
+  color: var(--stamp);
+  font-weight: 700;
+}
+
+.day-row__log[open] > summary::before {
+  content: "\2212";
+}
+
+.day-row__log > summary:hover {
+  color: var(--ink);
+}
+
+.day-row__log .session-log {
+  padding: 0 var(--s3) var(--s3);
+}
+
+/* --- Streak strip --------------------------------------------------------- */
+
+.streak {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s2);
+  font-family: var(--face-slip);
+  font-size: var(--size-xs);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-inverse-soft);
+}
+
+.streak b {
+  font-family: var(--face-display);
+  font-variation-settings: var(--wonk-on);
+  font-size: var(--size-lg);
+  font-weight: 500;
+  color: var(--ink-inverse);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.streak--at-risk b {
+  color: #e0b455;
+}
+
+@media (max-width: 640px) {
+  .session-form__row {
+    grid-template-columns: 1fr 1fr;
+  }
+}

@@ -14,7 +14,7 @@
 
 import { isValidKey, today } from '../lib/dates.js';
 
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 /** @type {Record<string, {id: string, label: string, hint: string}>} */
 export const STATUSES = {
@@ -76,6 +76,73 @@ export function blankBook(overrides = {}) {
   };
 }
 
+/* --- Reading sessions ------------------------------------------------------
+ *
+ * A session is one sitting: a date, how long, and optionally where you got to.
+ * Minutes and pages are both optional individually but a session with neither
+ * records nothing, so validation requires at least one.
+ * -------------------------------------------------------------------------- */
+
+export function blankSession(overrides = {}) {
+  return {
+    id: newId('se'),
+    date: null,
+    minutes: null,
+    pageFrom: null,
+    pageTo: null,
+    note: '',
+    createdAt: new Date().toISOString(),
+    ...overrides,
+  };
+}
+
+export function normalizeSession(input = {}) {
+  const base = blankSession();
+  const minutes = toInt(input.minutes);
+  let pageFrom = toInt(input.pageFrom);
+  let pageTo = toInt(input.pageTo);
+
+  // Pages entered backwards are a slip, not an intent to read in reverse.
+  if (pageFrom != null && pageTo != null && pageTo < pageFrom) {
+    [pageFrom, pageTo] = [pageTo, pageFrom];
+  }
+
+  return {
+    ...base,
+    ...input,
+    id: input.id || base.id,
+    date: cleanKey(input.date),
+    minutes: minutes != null && minutes > 0 ? minutes : null,
+    pageFrom: pageFrom != null && pageFrom >= 0 ? pageFrom : null,
+    pageTo: pageTo != null && pageTo >= 0 ? pageTo : null,
+    note: String(input.note ?? '').trim(),
+    createdAt: input.createdAt || base.createdAt,
+  };
+}
+
+/** @returns {Record<string, string>} field -> message; empty means valid */
+export function validateSession(session, book = null) {
+  const errors = {};
+  if (!session.date) errors.date = 'Pick the day you read.';
+  if (session.minutes == null && session.pageTo == null) {
+    errors.minutes = 'Record minutes, a page you reached, or both.';
+  }
+  if (session.minutes != null && session.minutes > 1440) {
+    errors.minutes = 'That is more than a day of reading.';
+  }
+  if (book?.pageCount && session.pageTo != null && session.pageTo > book.pageCount) {
+    errors.pageTo = `This book only has ${book.pageCount} ${FORMATS[book.format].unit}.`;
+  }
+  return errors;
+}
+
+/** Pages covered by a session, when it recorded enough to say. */
+export function sessionPages(session) {
+  if (session.pageTo == null) return 0;
+  if (session.pageFrom == null) return 0;
+  return Math.max(0, session.pageTo - session.pageFrom);
+}
+
 const toInt = (value) => {
   const n = Number.parseInt(value, 10);
   return Number.isFinite(n) ? n : null;
@@ -133,7 +200,10 @@ export function normalizeBook(input = {}, todayKey = today()) {
       page: Math.max(0, toInt(input.progress?.page) ?? 0),
       percent: Math.min(100, Math.max(0, Number(input.progress?.percent) || 0)),
     },
-    sessions: Array.isArray(input.sessions) ? input.sessions : [],
+    sessions: (Array.isArray(input.sessions) ? input.sessions : [])
+      .map(normalizeSession)
+      .filter((session) => session.date)
+      .sort((a, b) => a.date.localeCompare(b.date) || a.createdAt.localeCompare(b.createdAt)),
     shelves: Array.isArray(input.shelves) ? input.shelves : [],
     notes: String(input.notes ?? ''),
     rating: toInt(input.rating),

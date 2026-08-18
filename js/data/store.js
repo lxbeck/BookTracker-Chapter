@@ -8,7 +8,14 @@
  * grows a backend — a change to one function rather than a rewrite.
  */
 
-import { SCHEMA_VERSION, normalizeBook, applyStatusRules, validateBook } from './schema.js';
+import {
+  SCHEMA_VERSION,
+  normalizeBook,
+  applyStatusRules,
+  validateBook,
+  normalizeSession,
+  validateSession,
+} from './schema.js';
 import { addDays, daysBetween } from '../lib/dates.js';
 
 const STORAGE_KEY = 'chapter.library.v1';
@@ -52,7 +59,9 @@ function load() {
 function migrate(saved) {
   const version = Number(saved?.version) || 0;
   const books = Array.isArray(saved?.books) ? saved.books : [];
-  // v0 -> v1 is a straight normalise; later versions slot in here as cases.
+  // v0 -> v1: straight normalise.
+  // v1 -> v2: sessions array gained real structure; normalizeBook handles it,
+  //           and a v1 record's empty sessions array survives untouched.
   if (version < SCHEMA_VERSION) {
     return {
       version: SCHEMA_VERSION,
@@ -209,6 +218,81 @@ export function rescheduleBook(id, newStart, { keepSpan = true } = {}) {
     end = addDays(newStart, daysBetween(book.schedule.start, book.schedule.end));
   }
   return updateBook(id, { schedule: { start: newStart, end } });
+}
+
+/* --- Reading sessions ----------------------------------------------------- */
+
+/**
+ * Log a sitting.
+ *
+ * Logging is also the most reliable signal that a book is being read, so it
+ * moves a planned book to reading and stamps a real start date if there isn't
+ * one. Progress follows the furthest page ever logged — sessions can be
+ * entered out of order, and a backdated session shouldn't drag progress
+ * backwards.
+ *
+ * @returns {{ok: true, session: object, book: object} | {ok: false, errors: object}}
+ */
+export function addSession(bookId, input) {
+  const book = getBook(bookId);
+  if (!book) return { ok: false, errors: { _: 'That book is no longer in the library.' } };
+
+  const session = normalizeSession(input);
+  const errors = validateSession(session, book);
+  if (Object.keys(errors).length) return { ok: false, errors };
+
+  const sessions = [...book.sessions, session];
+  const result = applySessions(book, sessions);
+  return result.ok ? { ...result, session } : result;
+}
+
+export function updateSession(bookId, sessionId, patch) {
+  const book = getBook(bookId);
+  if (!book) return { ok: false, errors: { _: 'That book is no longer in the library.' } };
+
+  const existing = book.sessions.find((entry) => entry.id === sessionId);
+  if (!existing) return { ok: false, errors: { _: 'That session is gone.' } };
+
+  const session = normalizeSession({ ...existing, ...patch, id: sessionId });
+  const errors = validateSession(session, book);
+  if (Object.keys(errors).length) return { ok: false, errors };
+
+  return applySessions(
+    book,
+    book.sessions.map((entry) => (entry.id === sessionId ? session : entry))
+  );
+}
+
+export function removeSession(bookId, sessionId) {
+  const book = getBook(bookId);
+  if (!book) return { ok: false };
+  return applySessions(
+    book,
+    book.sessions.filter((entry) => entry.id !== sessionId)
+  );
+}
+
+/** Write a new session list and re-derive everything that follows from it. */
+function applySessions(book, sessions) {
+  const dates = sessions.map((session) => session.date).sort();
+  const furthest = sessions.reduce((max, session) => Math.max(max, session.pageTo ?? 0), 0);
+
+  const patch = { sessions };
+
+  if (dates.length) {
+    // The earliest logged day is the truest start date we have.
+    patch.actual = { startedAt: dates[0] };
+    if (book.status === 'planned' || book.status === 'on-hold') patch.status = 'reading';
+  }
+
+  if (furthest > 0) {
+    patch.progress = { page: Math.max(furthest, book.progress.page), percent: 0 };
+  } else if (!sessions.length) {
+    // Deleting the last session shouldn't silently keep a page count it set.
+    patch.progress = { page: book.progress.page, percent: 0 };
+  }
+
+  return updateBook(book.id, patch);
 }
 
 export function updateSettings(patch) {

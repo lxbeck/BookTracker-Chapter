@@ -20,19 +20,25 @@ import { groupByDay, DAY_STATE_LABEL } from '../logic/schedule.js';
 import { coverThumb } from './cover.js';
 import { openBookForm } from './bookForm.js';
 import { loadSampleLibrary } from '../data/seed.js';
+import { attachHoverCard, hide as hideHoverCard } from './hoverCard.js';
+import { openDayPopup } from './dayPopup.js';
 
 const MAX_TILES = 4;
 
 /** Which month is on screen. Module state — not worth persisting. */
 let cursor = null;
 
-/** Hooks the later steps fill in; step 4 ships with sensible fallbacks. */
+/**
+ * Wired in step 4.5. Kept as hooks rather than direct imports so the grid
+ * stays usable — and testable — without the popup and hover layers.
+ */
 export const calendarHooks = {
-  onDayOpen: null, // set by step 4.5 (day popup)
-  attachHover: null, // set by step 4.5 (hover card)
+  onDayOpen: (dayKey, entries) => openDayPopup(dayKey, entries),
+  attachHover: attachHoverCard,
 };
 
 export function renderCalendar(mount) {
+  hideHoverCard();
   const books = allBooks();
   const todayKey = today();
   const { weekStartsOn } = getSettings();

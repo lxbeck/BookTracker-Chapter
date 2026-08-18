@@ -1,0 +1,249 @@
+/* ===========================================================================
+   Chapter — hover card and day popup
+   =========================================================================== */
+
+/* --- Hover card ----------------------------------------------------------- */
+
+.hovercard {
+  position: absolute;
+  z-index: 90;
+  width: 264px;
+  background: var(--slip);
+  color: var(--ink);
+  border-radius: var(--r-card);
+  box-shadow: var(--lift-3);
+  padding: var(--s3) var(--s4) var(--s4);
+  pointer-events: none;
+  animation: rise 140ms var(--ease);
+  border-top: 3px solid var(--stamp);
+}
+
+.hovercard[hidden] {
+  display: none;
+}
+
+.hovercard--above {
+  border-top: 0;
+  border-bottom: 3px solid var(--stamp);
+}
+
+.hovercard__eyebrow {
+  font-family: var(--face-slip);
+  font-size: 0.625rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.hovercard__title {
+  font-family: var(--face-display);
+  font-variation-settings: var(--wonk-on);
+  font-weight: 500;
+  font-size: var(--size-md);
+  line-height: 1.15;
+  margin: 2px 0 0;
+}
+
+.hovercard__author {
+  font-size: var(--size-sm);
+  color: var(--ink-soft);
+}
+
+.hovercard__lead {
+  font-family: var(--face-slip);
+  font-size: var(--size-sm);
+  font-weight: 700;
+  margin: var(--s3) 0;
+  padding: var(--s2) var(--s3);
+  border-radius: var(--r-control);
+  background: var(--stamp-wash);
+  color: var(--stamp-deep);
+}
+
+.hovercard__lead.is-reading {
+  background: #f6ecd9;
+  color: #7a4e0d;
+}
+
+.hovercard__lead.is-finished {
+  background: var(--shelved-wash);
+  color: var(--shelved);
+}
+
+.hovercard__facts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px var(--s3);
+  margin: 0;
+  font-size: var(--size-xs);
+}
+
+.hovercard__facts dt {
+  font-family: var(--face-slip);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.hovercard__facts dd {
+  margin: 0;
+  color: var(--ink-soft);
+  text-align: right;
+}
+
+.hovercard__standing {
+  margin-top: var(--s3);
+  padding-top: var(--s2);
+  border-top: var(--rule);
+  font-size: var(--size-xs);
+  color: var(--ink-soft);
+}
+
+.hovercard__standing.is-behind,
+.hovercard__standing.is-overdue,
+.day-row__standing.is-behind,
+.day-row__standing.is-overdue {
+  color: var(--overdue);
+}
+
+.hovercard__standing.is-ahead,
+.day-row__standing.is-ahead {
+  color: var(--shelved);
+}
+
+/* --- Day popup ------------------------------------------------------------ */
+
+.day-popup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s4);
+}
+
+.day-row {
+  display: flex;
+  gap: var(--s4);
+  padding-bottom: var(--s4);
+  border-bottom: var(--rule);
+}
+
+.day-popup .day-row:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.day-row__body {
+  flex: 1;
+  min-width: 0;
+}
+
+.day-row__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--s3);
+}
+
+.day-row__title {
+  font-size: var(--size-md);
+  line-height: 1.2;
+}
+
+.day-row__author {
+  font-size: var(--size-sm);
+  color: var(--ink-soft);
+}
+
+.day-row__lead {
+  font-family: var(--face-slip);
+  font-size: var(--size-sm);
+  font-weight: 700;
+  margin: var(--s3) 0;
+  padding: var(--s2) var(--s3);
+  border-radius: var(--r-control);
+  background: var(--stamp-wash);
+  color: var(--stamp-deep);
+  display: inline-block;
+}
+
+.day-row__lead.is-reading {
+  background: #f6ecd9;
+  color: #7a4e0d;
+}
+
+.day-row__lead.is-finished {
+  background: var(--shelved-wash);
+  color: var(--shelved);
+}
+
+.day-row__facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--s2) var(--s4);
+  margin: 0 0 var(--s3);
+}
+
+.day-row__fact dt {
+  font-family: var(--face-slip);
+  font-size: 0.625rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.day-row__fact dd {
+  margin: 0;
+  font-size: var(--size-sm);
+  color: var(--ink);
+}
+
+.day-row__standing {
+  font-size: var(--size-sm);
+  color: var(--ink-soft);
+  margin-bottom: var(--s3);
+}
+
+.day-row__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  flex-wrap: wrap;
+}
+
+.day-row__progress-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+}
+
+.day-row__progress-label {
+  font-family: var(--face-slip);
+  font-size: 0.625rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.day-row__progress {
+  width: 86px;
+  padding: var(--s1) var(--s2);
+  font-size: var(--size-sm);
+}
+
+.day-empty {
+  text-align: center;
+  padding: var(--s5) 0;
+  color: var(--ink-soft);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--s3);
+}
+
+@media (max-width: 560px) {
+  .day-row {
+    flex-direction: column;
+  }
+  .hovercard {
+    width: min(264px, calc(100vw - 24px));
+  }
+}

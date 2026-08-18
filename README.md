@@ -27,6 +27,7 @@ css/components.css    buttons, fields, slips, modal, chips, covers
 css/covers.css        cover picker
 css/library.css       record lists
 css/calendar.css      month grid, day cells, cover tiles
+css/dayview.css       hover card and day popup
 js/app.js             bootstrap + hash router
 js/lib/dom.js         element helper, focus trap, toasts
 js/lib/dates.js       day-key arithmetic and the month grid

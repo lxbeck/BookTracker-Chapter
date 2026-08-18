@@ -18,7 +18,9 @@ import { goalProgress } from '../logic/stats.js';
 import { sampleBooks } from '../data/seed.js';
 import { parseGoodreadsCsv } from '../data/goodreads.js';
 import { parseCalibreCsv } from '../data/calibre.js';
-import { storeLocalCoverOnServer, storeCoverOnServer, hasServer } from '../data/coverCache.js';
+import {
+  storeLocalCoverOnServer, storeCoverOnServer, hasServer, LOCAL_COVER,
+} from '../data/coverCache.js';
 import { coverUrlForIsbn } from '../data/covers.js';
 import { syncStatus } from '../data/sync.js';
 import { addBook } from '../data/store.js';
@@ -455,11 +457,18 @@ function confirmCalibre(parsed, summary, redraw) {
           // disk or a rate-limited lookup never blocks the import itself.
           let stored = 0;
           for (const entry of queued) {
-            const ok = entry.path
+            const fromDisk = entry.path
               ? await storeLocalCoverOnServer(entry.id, entry.path)
               : false;
-            const fallback = ok ? false : await storeCoverOnServer(entry.id, entry.url);
-            if (ok || fallback) stored += 1;
+
+            if (fromDisk) {
+              // Record that the art exists, or a book with no ISBN would have
+              // a cover on the server and a blank field saying it has none.
+              updateBook(entry.id, { cover: { url: LOCAL_COVER, source: 'upload' } });
+              stored += 1;
+              continue;
+            }
+            if (await storeCoverOnServer(entry.id, entry.url)) stored += 1;
           }
 
           summary.textContent = `Imported ${added} books${stored ? `, ${stored} covers stored` : ''}.`;

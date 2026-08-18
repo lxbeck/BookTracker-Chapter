@@ -14,8 +14,9 @@ import { progressReport, catchUpPreview, catchUpPatch } from '../logic/pacing.js
 import { allBooks } from '../data/store.js';
 import { STATUSES, STATUS_ORDER, FORMATS, blankBook } from '../data/schema.js';
 import { formatShort } from '../lib/dates.js';
-import { addBook, updateBook, removeBook, restoreBook } from '../data/store.js';
+import { addBook, updateBook, removeBook, restoreBook, getBook } from '../data/store.js';
 import { addDays } from '../lib/dates.js';
+import { fetchMissingDetails, missingFields } from '../data/enrich.js';
 
 /**
  * @param {Object} [options]
@@ -206,12 +207,57 @@ export function openBookForm({ book = null, defaultStart = null, onSaved } = {})
     },
   });
 
+  /**
+   * Fill the empty fields from a lookup. Reads the form rather than the saved
+   * record, so it respects anything typed but not yet saved, and writes back
+   * into the inputs rather than the store — nothing is committed until Save.
+   */
+  const detailsNote = el('p.field__hint', { 'aria-live': 'polite' });
+
+  const detailsButton = el('button.btn.btn--quiet.btn--sm', {
+    type: 'button',
+    onClick: async () => {
+      const current = collect();
+      const gaps = missingFields(current);
+      if (!gaps.length) {
+        detailsNote.textContent = 'Nothing is missing on this record.';
+        return;
+      }
+
+      detailsButton.disabled = true;
+      detailsNote.textContent = `Looking up ${gaps.join(', ')}\u2026`;
+      const result = await fetchMissingDetails(current);
+      detailsButton.disabled = false;
+
+      if (!result.ok) {
+        detailsNote.textContent = result.reason;
+        return;
+      }
+
+      // Written into the fields, never over them.
+      if (result.patch.pageCount && !pagesInput.value) {
+        pagesInput.value = result.patch.pageCount;
+        refreshPaceNote();
+      }
+      if (result.patch.description && !descriptionInput.value.trim()) {
+        descriptionInput.value = result.patch.description;
+      }
+      if (result.patch.author && !authorInput.value.trim()) authorInput.value = result.patch.author;
+      if (result.patch.genre && !genreInput.value.trim()) genreInput.value = result.patch.genre;
+      if (result.patch.isbn && !isbnInput.value.trim()) isbnInput.value = result.patch.isbn;
+      if (result.patch.cover?.url && !draft.cover.url) draft.cover = result.patch.cover;
+
+      detailsNote.textContent = `Filled in ${result.filled.join(', ')}. Save to keep it.`;
+    },
+  }, 'Get details');
+
   const body = [
     isEdit ? progressStrip(draft) : null,
     el('div.field', {}, [
       el('span.field__label', { text: 'Cover' }),
       picker,
     ]),
+    el('div.details-row', {}, [detailsButton, detailsNote]),
     field('title', 'Title', titleInput),
     el('div.field-row', {}, [
       field('author', 'Author', authorInput),
@@ -252,6 +298,33 @@ export function openBookForm({ book = null, defaultStart = null, onSaved } = {})
       field('progress.page', 'Currently on page', progressInput,
         'Set this directly when you just want to record where you are.'),
       el('p.field__hint', {}, 'Marking a book finished fills the finish date in for you.'),
+      isEdit
+        ? el('div.details-row', {}, [
+            el('button.btn.btn--danger.btn--sm', {
+              type: 'button',
+              onClick: () => {
+                startedInput.value = '';
+                finishedInput.value = '';
+                progressInput.value = '';
+                draft.rating = draft.rating;
+                toast('Cleared. Save to keep it.');
+              },
+            }, 'Clear what actually happened'),
+            draft.sessions.length
+              ? el('button.btn.btn--danger.btn--sm', {
+                  type: 'button',
+                  onClick: () => {
+                    if (!confirm(`Delete all ${draft.sessions.length} logged sittings for ${draft.title}?`)) return;
+                    updateBook(draft.id, { sessions: [] });
+                    draft.sessions = [];
+                    toast('Reading log cleared.');
+                    modal.close();
+                    openBookForm({ book: getBook(draft.id), onSaved });
+                  },
+                }, `Delete the reading log (${draft.sessions.length})`)
+              : null,
+          ].filter(Boolean))
+        : null,
     ]),
     el('fieldset.plan-block', {}, [
       el('legend.field__label', { text: 'Shelves and notes' }),
@@ -415,7 +488,19 @@ function progressStrip(book) {
       el('span.progress__fill', { style: { width: `${report.percent}%` } })
     ),
     el('dl.progress-strip__facts', {}, [
-      report.rateLabel ? miniFact('Reading at', report.rateLabel) : null,
+      report.rateLabel
+        ? miniFact('Average so far', report.rateLabel, '', report.rateBasis)
+        : null,
+      report.needed
+        ? miniFact(
+            'Needed from here',
+            report.needed.overdue
+              ? `${report.needed.perDay} ${unitWord} — the date has passed`
+              : `${report.needed.perDay} ${unitWord} a day`,
+            report.needed.overdue ? 'is-late' : '',
+            report.needed.overdue ? null : `over ${report.needed.days} days left`
+          )
+        : null,
       report.timeLeft ? miniFact('Time left', report.timeLeft) : null,
       report.projected ? miniFact('Finishing', formatShort(report.projected)) : null,
       report.verdict
@@ -446,11 +531,12 @@ function catchUpRow(book) {
   ]);
 }
 
-const miniFact = (label, value, tone = '') =>
+const miniFact = (label, value, tone = '', note = null) =>
   el('div.progress-strip__fact', {}, [
     el('dt', {}, label),
     el('dd', { class: tone }, value),
-  ]);
+    note ? el('dd.progress-strip__basis', {}, note) : null,
+  ].filter(Boolean));
 
 /* --- Rating ---------------------------------------------------------------
  * Radio buttons rather than clickable glyphs: a star widget that isn't a real

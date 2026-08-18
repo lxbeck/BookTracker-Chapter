@@ -339,6 +339,11 @@ test('catching up spreads what is left over the days that are left', async () =>
   assert.ok(!preview.needsExtension);
 
   const caught = normalizeBook({ ...book, ...catchUpPatch(book, '2026-08-11') }, '2026-08-11');
+
+  assert.equal(caught.schedule.start, '2026-08-11', 'the plan should now start today');
+  assert.equal(caught.schedule.end, '2026-08-15', 'the finish date is unchanged');
+  assert.equal(caught.schedule.rebase.originalStart, '2026-08-09', 'the original start is remembered');
+
   const pace = paceFor(caught, '2026-08-11', '2026-08-11');
   assert.equal(pace.days, 5);
   assert.equal(pace.todayTarget, 72, 'first rebased day');

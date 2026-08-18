@@ -213,8 +213,26 @@ schedule that behaves like a debt. "Catch me up" rebases instead: from today,
 what's left is spread across the days that are left, and the finish date is
 extended if it has already gone.
 
+Catching up **moves the plan's start date to today** — 9 August becomes 11
+August — and remembers the original. An earlier version tracked the change
+invisibly, which meant the form still said 9 August while the targets came
+from the 11th. A plan you can't read off the record is not a plan.
+
 A rebased plan still totals exactly the page count; `tests/calendar.test.js`
 sums the daily targets and asserts it.
+
+## Two pace numbers, which mean different things
+
+The record shows both, because one on its own is misleading:
+
+- **Average so far** — everything read divided by days *elapsed since you
+  started*, including days you didn't open the book. Sitting on page 79 of a
+  440-page book three days in reads as 26 pages a day even if you read all 79
+  in one sitting. It's a description of the past, not a prediction.
+- **Needed from here** — what's left divided by the days left in the plan.
+  This is the number to act on.
+
+Each carries a line saying what it's measured over.
 
 ## Why a finish estimate sometimes isn't shown
 
@@ -265,11 +283,30 @@ disables it entirely.
 
 ## Bulk actions
 
-Hover a book in the library and a checkbox appears. Once anything is ticked, a
-toolbar offers: set status, add to or remove from a shelf, schedule a run of
-books (staggered one after another, or all on the same dates), and remove.
-Bulk removal is undoable from the toast, because deleting forty books by
-mistake should be recoverable for longer than a toast normally lives.
+Hover a book in the library and a checkbox appears. Click one, then
+**shift-click another to select everything between them**, the way a file
+manager behaves — ticking forty boxes individually is not a workflow.
+
+Once anything is ticked the toolbar offers: set status, set format, shelve or
+unshelve, fill in missing details, schedule, and remove. Bulk removal is
+undoable from the toast, because deleting forty books by mistake should be
+recoverable for longer than a toast normally lives.
+
+Bulk scheduling lists the books **in the order you selected them**, with the
+dates each will get, and arrows to reorder before committing. The order was
+always the selection order; it just wasn't visible, which made it a guess.
+
+## Filling in missing details
+
+"Get details" — on a single record, or across a selection — looks a book up by
+ISBN, or by title when there is no ISBN, and fills in **only the fields that
+are currently empty**. Anything you typed always wins. That rule is absolute
+and tested: a page count you corrected by hand must never be replaced by a
+different edition's, because every pacing figure in the app derives from it.
+
+Bulk lookups run one at a time with a pause between. Open Library is free and
+donation-funded; several hundred parallel requests is both rude and the
+quickest way to have all of them refused.
 
 ## If browser storage fills up
 

@@ -33,8 +33,22 @@ export const FORMATS = {
   audio: { id: 'audio', label: 'Audiobook', unit: 'minutes' },
 };
 
-/** Spine colours for the coverless fallback — deterministic per title. */
-const SPINE_COLORS = ['#2c3a34', '#3d2f4a', '#4a3428', '#243a4a', '#4a2f38', '#33422a'];
+/**
+ * Spine colours for the coverless fallback — deterministic per title, so a
+ * book keeps the same spine every time you see it.
+ *
+ * Drawn from the blue-slate chrome rather than against it: these sit next to
+ * real cover art on the calendar, so they should read as "a book we have no
+ * picture of" rather than as an error state.
+ */
+const SPINE_COLORS = [
+  '#2b4257', // slate blue
+  '#334a63', // lighter slate
+  '#3a3f63', // indigo
+  '#2f4a5c', // teal-slate
+  '#443a5e', // muted violet
+  '#25384a', // deep navy
+];
 
 export function spineColor(seed = '') {
   let hash = 0;
@@ -160,7 +174,9 @@ function cleanRebase(rebase) {
   const at = cleanKey(rebase?.at);
   const page = Number.parseInt(rebase?.page, 10);
   if (!at || !Number.isFinite(page) || page < 0) return null;
-  return { at, page };
+  // originalStart is kept so the record can still say when you first meant to
+  // begin, even though the plan itself now starts later.
+  return { at, page, originalStart: cleanKey(rebase?.originalStart) };
 }
 
 /**

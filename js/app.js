@@ -123,7 +123,13 @@ async function start() {
   warmCoverCache(store.allBooks().map((book) => book.id)).then(render);
 
   await initSync();
-  setServerCovers(syncStatus().mode !== 'local');
+
+  // Order matters: coverThumb reads this flag as it builds each image, so
+  // setting it after the first paint leaves every cover pointing at the
+  // network copy — or at nothing, for books whose art only exists on the
+  // server. Set it, then repaint.
+  const hadServer = setServerCovers(syncStatus().mode !== 'local');
+  if (hadServer) render();
 }
 
 document.addEventListener('DOMContentLoaded', start);

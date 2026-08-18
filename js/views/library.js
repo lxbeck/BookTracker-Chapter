@@ -14,6 +14,7 @@ import { STATUSES, STATUS_ORDER, FORMATS } from '../data/schema.js';
 import { coverThumb } from './cover.js';
 import { openBookForm } from './bookForm.js';
 import { formatShort, relativeDay } from '../lib/dates.js';
+import { enrichAll, needsDetails } from '../data/enrich.js';
 import { loadSampleLibrary } from '../data/seed.js';
 import { addDays } from '../lib/dates.js';
 import { progressReport } from '../logic/pacing.js';
@@ -35,6 +36,14 @@ const SORTS = {
   title: { label: 'Title', compare: (a, b) => a.title.localeCompare(b.title) },
   author: { label: 'Author', compare: (a, b) => (a.author || '~').localeCompare(b.author || '~') },
   length: { label: 'Length', compare: (a, b) => (b.pageCount ?? 0) - (a.pageCount ?? 0) },
+  finished: {
+    label: 'Date finished',
+    // Unfinished books sort last rather than first: a list ordered by finish
+    // date is being read for the finished ones.
+    compare: (a, b) =>
+      (b.actual.finishedAt ?? '').localeCompare(a.actual.finishedAt ?? '') ||
+      a.title.localeCompare(b.title),
+  },
   format: {
     label: 'Format',
     // Group by format, then read alphabetically within each group — a format
@@ -47,8 +56,14 @@ const SORTS = {
 
 const FORMAT_ORDER = ['physical', 'ebook', 'audio'];
 
-/** Books currently ticked. Ids, not records, so a re-render can't stale them. */
+/**
+ * Books currently ticked. A Set of ids, so a re-render can't stale them — and
+ * insertion order is meaningful: it's the order bulk scheduling reads.
+ */
 const selection = new Set();
+
+/** The last box clicked, so shift-click knows where a range starts. */
+let anchorId = null;
 
 const filters = { shelf: 'reading', sort: 'planned', query: '', tag: null, format: null };
 
@@ -77,6 +92,7 @@ export function renderLibrary(mount) {
   // Anything ticked but no longer on screen would be edited invisibly.
   const visibleIds = new Set(visible.map((book) => book.id));
   for (const id of [...selection]) if (!visibleIds.has(id)) selection.delete(id);
+  lastVisibleOrder = visible.map((book) => book.id);
 
   fill(mount, [
     el('div.view-head', {}, [
@@ -190,6 +206,25 @@ function tagBar(tags) {
   ].filter(Boolean));
 }
 
+/**
+ * Tick everything between two books, in the order currently on screen.
+ * Range selection always adds; shift-clicking to *deselect* a range is a
+ * behaviour people rarely want and frequently trigger by accident.
+ */
+function selectRange(fromId, toId) {
+  const order = lastVisibleOrder;
+  const start = order.indexOf(fromId);
+  const end = order.indexOf(toId);
+  if (start === -1 || end === -1) return;
+
+  const [lo, hi] = start < end ? [start, end] : [end, start];
+  for (let i = lo; i <= hi; i += 1) selection.add(order[i]);
+  anchorId = toId;
+}
+
+/** Ids in the order they are displayed, for range selection. */
+let lastVisibleOrder = [];
+
 function formatBar(books) {
   const rerender = () => renderLibrary(document.querySelector('#view'));
   const present = FORMAT_ORDER.filter((id) => books.some((book) => book.format === id));
@@ -257,9 +292,27 @@ function bulkBar(visible) {
       ...STATUS_ORDER.map((id) => el('option', { value: id }, STATUSES[id].label)),
     ]),
 
+    el('select.select.bulk-bar__select', {
+      'aria-label': 'Set format for selected books',
+      onChange: (event) => {
+        const format = event.target.value;
+        if (!format) return;
+        for (const book of chosen()) updateBook(book.id, { format });
+        toast(`${count} books set to ${FORMATS[format].label.toLowerCase()}.`);
+        rerender();
+      },
+    }, [
+      el('option', { value: '' }, 'Set format\u2026'),
+      ...FORMAT_ORDER.map((id) => el('option', { value: id }, FORMATS[id].label)),
+    ]),
+
     el('button.btn.btn--quiet.btn--sm', {
       type: 'button', onClick: () => openShelfDialog(chosen(), rerender),
     }, 'Shelve'),
+
+    el('button.btn.btn--quiet.btn--sm', {
+      type: 'button', onClick: () => openDetailsDialog(chosen(), rerender),
+    }, 'Get details'),
 
     el('button.btn.btn--quiet.btn--sm', {
       type: 'button', onClick: () => openScheduleDialog(chosen(), rerender),
@@ -342,9 +395,47 @@ function openScheduleDialog(books, done) {
   const daysInput = el('input.input', { type: 'number', min: '1', value: '7', 'aria-label': 'Days per book' });
   const stagger = el('input', { type: 'checkbox', checked: true, id: 'bulk-stagger' });
 
+  // The order is the order you ticked them in, which is invisible unless it's
+  // shown — and the dates it produces are the whole point of the dialog.
+  let order = [...books];
+  const preview = el('ol.schedule-preview');
+
+  const paint = () => {
+    const span = Math.max(1, Number.parseInt(daysInput.value, 10) || 7);
+    let cursor = startInput.value;
+
+    fill(preview, order.map((book, index) => {
+      const start = cursor;
+      const end = start ? addDays(start, span - 1) : null;
+      if (start && stagger.checked) cursor = addDays(end, 1);
+
+      return el('li.schedule-preview__row', {}, [
+        el('span.schedule-preview__n', {}, String(index + 1)),
+        el('span.schedule-preview__title', {}, book.title),
+        el('span.schedule-preview__dates', {},
+          start ? `${formatShort(start)} \u2013 ${formatShort(end)}` : 'pick a start date'),
+        el('span.schedule-preview__moves', {}, [
+          moveButton('\u2191', 'Move up', index > 0, () => {
+            [order[index - 1], order[index]] = [order[index], order[index - 1]];
+            paint();
+          }),
+          moveButton('\u2193', 'Move down', index < order.length - 1, () => {
+            [order[index + 1], order[index]] = [order[index], order[index + 1]];
+            paint();
+          }),
+        ]),
+      ]);
+    }));
+  };
+
+  [startInput, daysInput, stagger].forEach((node) => node.addEventListener('change', paint));
+  daysInput.addEventListener('input', paint);
+  paint();
+
   const modal = showModal({
-    eyebrow: `${books.length} books`,
+    eyebrow: `${books.length} books, in this order`,
     title: 'Schedule these',
+    wide: true,
     body: [
       el('div.field-row', {}, [
         el('label.field', {}, [el('span.field__label', {}, 'Start on'), startInput]),
@@ -354,6 +445,8 @@ function openScheduleDialog(books, done) {
         stagger,
         el('span', {}, 'Read them one after another rather than all at once'),
       ]),
+      el('p.field__hint', {}, 'Listed in the order you selected them. Reorder with the arrows.'),
+      preview,
     ],
     actions: [
       el('button.btn.btn--quiet', { type: 'button', onClick: () => modal.close() }, 'Cancel'),
@@ -365,16 +458,80 @@ function openScheduleDialog(books, done) {
           if (!start) return;
 
           let cursor = start;
-          for (const book of books) {
+          for (const book of order) {
             const end = addDays(cursor, span - 1);
             updateBook(book.id, { schedule: { start: cursor, end, rebase: null } });
             if (stagger.checked) cursor = addDays(end, 1);
           }
           modal.close();
-          toast(`${books.length} books scheduled.`);
+          toast(`${order.length} books scheduled.`);
           done();
         },
       }, 'Schedule'),
+    ],
+  });
+}
+
+const moveButton = (glyph, label, enabled, onClick) =>
+  el('button.icon-btn.schedule-preview__move', {
+    type: 'button', 'aria-label': label, disabled: !enabled, onClick,
+  }, glyph);
+
+/**
+ * Fill in what's missing across many books at once.
+ *
+ * Runs sequentially with a pause between lookups. Open Library is free and
+ * donation-funded; four hundred parallel requests is both rude and the fastest
+ * way to have all of them refused.
+ */
+function openDetailsDialog(books, done) {
+  const gappy = books.filter((book) => needsDetails(book));
+  const progress = el('p.settings__note', { 'aria-live': 'polite' },
+    gappy.length
+      ? `${gappy.length} of ${books.length} selected books are missing something.`
+      : 'Every selected book already has its details.');
+
+  let cancelled = false;
+
+  const run = async () => {
+    startButton.disabled = true;
+    let filled = 0;
+
+    await enrichAll(gappy, ({ book, patch, filled: fields, index }) => {
+      if (cancelled) return;
+      if (fields.length) {
+        updateBook(book.id, patch);
+        filled += 1;
+      }
+      progress.textContent = `Looked up ${index + 1} of ${gappy.length}\u2014 filled in ${filled}.`;
+    }, { delayMs: 300 });
+
+    startButton.disabled = false;
+    if (!cancelled) {
+      toast(`Filled in details for ${filled} books.`);
+      modal.close();
+      done();
+    }
+  };
+
+  const startButton = el('button.btn.btn--stamp', {
+    type: 'button', disabled: gappy.length === 0, onClick: run,
+  }, gappy.length ? `Look up ${gappy.length} books` : 'Nothing to fetch');
+
+  const modal = showModal({
+    eyebrow: `${books.length} selected`,
+    title: 'Fill in missing details',
+    body: [
+      el('p', {}, 'Looks each book up by ISBN, or by title when there is no ISBN, and fills in only the fields that are currently empty. Nothing you have already entered is changed.'),
+      el('p.settings__note', {}, 'Lookups run one at a time out of courtesy to Open Library, so a long list takes a minute.'),
+      progress,
+    ],
+    onClose: () => {
+      cancelled = true;
+    },
+    actions: [
+      el('button.btn.btn--quiet', { type: 'button', onClick: () => modal.close() }, 'Cancel'),
+      startButton,
     ],
   });
 }
@@ -389,10 +546,23 @@ function shelfCard(book) {
       el('input', {
         type: 'checkbox',
         checked: picked,
-        'aria-label': `Select ${book.title}`,
+        'aria-label': `Select ${book.title}. Shift-click to select a range.`,
+        onClick: (event) => {
+          // Shift-click selects everything between here and the last box you
+          // touched, the way every file manager and mail client behaves.
+          // Ticking forty boxes one at a time is not a workflow.
+          if (event.shiftKey && anchorId && anchorId !== book.id) {
+            event.preventDefault();
+            selectRange(anchorId, book.id);
+            renderLibrary(document.querySelector('#view'));
+            return;
+          }
+          anchorId = book.id;
+        },
         onChange: (event) => {
           if (event.target.checked) selection.add(book.id);
           else selection.delete(book.id);
+          anchorId = book.id;
           renderLibrary(document.querySelector('#view'));
         },
       }),

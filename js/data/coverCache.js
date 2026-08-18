@@ -74,6 +74,7 @@ const liveUrls = new Map();
 let serverAvailable = false;
 export const setServerCovers = (available) => {
   serverAvailable = available;
+  return available;
 };
 
 /** The server's copy of a cover, if there is a server to ask. */

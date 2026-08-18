@@ -96,6 +96,21 @@ export function paceFor(book, dayKey = today(), todayKey = today()) {
 
 const clamp = (n, min, max) => Math.min(max, Math.max(min, n));
 
+/** Remaining units divided by the days left in the plan, from today. */
+function neededPerDay(book, todayKey = today()) {
+  const { schedule, pageCount, progress } = book;
+  if (!schedule.start || !pageCount) return null;
+
+  const end = schedule.end ?? schedule.start;
+  const remaining = Math.max(0, pageCount - Math.min(progress.page || 0, pageCount));
+  if (!remaining) return null;
+
+  const daysLeft = daysBetween(todayKey, end) + 1;
+  if (daysLeft < 1) return { perDay: remaining, days: 0, overdue: true };
+
+  return { perDay: Math.ceil(remaining / daysLeft), days: daysLeft, overdue: false };
+}
+
 /**
  * One sentence describing what a day asks of you. This is the line the hover
  * card leads with, so it has to survive every degenerate case: no length, no
@@ -202,9 +217,21 @@ export function progressReport(book, todayKey = today()) {
     remaining,
     rate: observed.ok ? observed.pagesPerDay : 0,
     confidence: observed.confidence ?? 'none',
+    // Spelled out, because "26 pages a day" on its own invites the reading
+    // "you read 26 pages yesterday" when it actually means "79 pages spread
+    // across the three days since you started, including the two you didn't
+    // open the book".
+    rateBasis: observed.ok
+      ? observed.source === 'sessions'
+        ? `${observed.readingDays} day${observed.readingDays === 1 ? '' : 's'} logged over ${observed.elapsed}`
+        : `since you started, ${observed.elapsed} days ago`
+      : null,
     rateLabel: observed.ok
       ? `${Math.round(observed.pagesPerDay)} ${unit === 'minutes' ? 'min' : 'pages'} a day`
       : null,
+    // What the plan is actually asking for from here — the number to compare
+    // the average against, and the one missing from the record until now.
+    needed: neededPerDay(book, todayKey),
     sittings: totals.sessions,
     timeLeft,
     projected,
@@ -303,10 +330,18 @@ export function catchUpPatch(book, todayKey = today()) {
   if (!preview.ok) return null;
 
   return {
+    // The plan's start moves to the day you caught up. Leaving it on the
+    // original date and tracking the change invisibly was the wrong call: the
+    // form would still say 9 August while the targets came from the 11th, and
+    // a plan you can't read off the record is not a plan.
     schedule: {
-      start: book.schedule.start,
+      start: preview.from,
       end: preview.to,
-      rebase: { at: preview.from, page: Math.min(book.progress.page || 0, book.pageCount) },
+      rebase: {
+        at: preview.from,
+        page: Math.min(book.progress.page || 0, book.pageCount),
+        originalStart: book.schedule.rebase?.originalStart ?? book.schedule.start,
+      },
     },
   };
 }

@@ -43,15 +43,20 @@ export function coverThumb(book, { width = '100%', alt, fit = 'crop' } = {}) {
       book.author && el('i', { text: book.author }),
     ]);
 
-  if (book.cover?.url) {
+  // A book with no cover URL may still have art on the server — a Calibre
+  // import copies covers off disk without ever having a URL to record. Asking
+  // for it costs one request that 404s harmlessly when there's nothing there.
+  const serverSource = serverCoverUrl(book.id);
+
+  if (book.cover?.url || peekCachedCoverUrl(book.id) || serverSource) {
     // Sources in order of reliability: the browser's own stored copy, then the
     // server's, then the original host. Each failure falls through to the
     // next, and the typeset spine catches anything left.
     const sources = [
       peekCachedCoverUrl(book.id),
-      serverCoverUrl(book.id),
+      serverSource,
       // The sentinel is a marker, not a URL — never hand it to an <img>.
-      isLocalCover(book.cover.url) ? null : book.cover.url,
+      isLocalCover(book.cover?.url) ? null : book.cover?.url,
     ].filter(Boolean);
 
     if (!sources.length) {

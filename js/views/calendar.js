@@ -17,6 +17,7 @@ import { el, fill, toast } from '../lib/dom.js';
 import { allBooks, getSettings, rescheduleBook, getBook } from '../data/store.js';
 import { monthGrid, monthName, weekdayLabels, today, addDays, formatLong } from '../lib/dates.js';
 import { groupByDay, DAY_STATE_LABEL } from '../logic/schedule.js';
+import { KIND_GROUPS, KIND_GROUP_ORDER, matchesKinds, kindGroupOf } from '../data/schema.js';
 import { coverThumb } from './cover.js';
 import { openBookForm } from './bookForm.js';
 import { loadSampleLibrary } from '../data/seed.js';
@@ -91,6 +92,15 @@ function chunkByPlan(items) {
 let cursor = null;
 
 /**
+ * Which kinds are on show. Empty means everything.
+ *
+ * Filtering by kind is the real answer to a crowded day: hiding what you
+ * aren't looking for beats a "+4" chip, because the chip tells you something
+ * is missing without telling you what.
+ */
+const visibleKinds = new Set();
+
+/**
  * Wired in step 4.5. Kept as hooks rather than direct imports so the grid
  * stays usable — and testable — without the popup and hover layers.
  */
@@ -115,9 +125,25 @@ function bindResize(mount) {
   });
 }
 
+/**
+ * Show a specific month.
+ *
+ * The year view hands off to the month grid without needing to know how its
+ * cursor works. Repainting directly matters when the calendar is already the
+ * current route: the hash wouldn't change, so nothing would re-render.
+ */
+export function goToMonth(year, month) {
+  cursor = { year, month };
+  location.hash = '#/calendar';
+
+  const mount = document.querySelector('#view');
+  if (mount && document.body.dataset.route === 'calendar') renderCalendar(mount);
+}
+
 export function renderCalendar(mount) {
   hideHoverCard();
-  const books = allBooks();
+  const everything = allBooks();
+  const books = everything.filter((book) => matchesKinds(book, visibleKinds));
   const todayKey = today();
   const { weekStartsOn } = getSettings();
 
@@ -133,7 +159,7 @@ export function renderCalendar(mount) {
   const buckets = groupByDay(books, cells.map((cell) => cell.key), todayKey);
 
   const scheduled = books.filter((b) => b.schedule.start).length;
-  const totals = libraryTotals(books, todayKey);
+  const totals = libraryTotals(everything, todayKey);
 
   fill(mount, [
     el('div.view-head.view-head--calendar', {}, [
@@ -148,6 +174,8 @@ export function renderCalendar(mount) {
         navButton('\u203a', 'Next month', () => step(1, mount)),
       ]),
     ]),
+
+    kindToggles(everything, mount),
 
     scheduled === 0 ? emptyCalendar() : null,
 
@@ -194,6 +222,61 @@ function streakStrip(totals) {
       : null,
     totals.minutesThisWeek > 0
       ? el('span', {}, [el('b', {}, formatDuration(totals.minutesThisWeek)), ' this week'])
+      : null,
+  ].filter(Boolean));
+}
+
+/**
+ * One switch per kind, plus an explicit "Everything".
+ *
+ * Toggling is additive: comics and manga on together shows both and hides
+ * books. Turning everything off is treated as everything on rather than an
+ * empty calendar, since an empty grid with no visible way back is a trap.
+ */
+function kindToggles(books, mount) {
+  const counts = Object.fromEntries(
+    KIND_GROUP_ORDER.map((id) => [
+      id,
+      books.filter((book) => book.schedule.start && kindGroupOf(book.category) === id).length,
+    ])
+  );
+
+  // Nothing to choose between when only one kind is scheduled.
+  const present = KIND_GROUP_ORDER.filter((id) => counts[id] > 0);
+  if (present.length < 2) return null;
+
+  const showingAll = visibleKinds.size === 0 || visibleKinds.size === KIND_GROUP_ORDER.length;
+
+  return el('div.kind-toggles', { role: 'group', 'aria-label': 'Kinds shown' }, [
+    el('button.kind-toggle.kind-toggle--all', {
+      type: 'button',
+      class: showingAll ? 'is-on' : '',
+      'aria-pressed': String(showingAll),
+      onClick: () => {
+        visibleKinds.clear();
+        rerender(mount);
+      },
+    }, 'Everything'),
+
+    ...present.map((id) =>
+      el('button.kind-toggle', {
+        type: 'button',
+        class: !showingAll && visibleKinds.has(id) ? 'is-on' : '',
+        'aria-pressed': String(!showingAll && visibleKinds.has(id)),
+        onClick: () => {
+          if (visibleKinds.has(id)) visibleKinds.delete(id);
+          else visibleKinds.add(id);
+          rerender(mount);
+        },
+      }, [
+        KIND_GROUPS[id].label,
+        el('span.kind-toggle__count', {}, String(counts[id])),
+      ])
+    ),
+
+    !showingAll
+      ? el('span.kind-toggles__note', {},
+          `showing ${[...visibleKinds].map((id) => KIND_GROUPS[id].label.toLowerCase()).join(' and ')} only`)
       : null,
   ].filter(Boolean));
 }

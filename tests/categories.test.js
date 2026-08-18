@@ -109,3 +109,152 @@ test('every category has a plural, so sentences read properly', () => {
     assert.ok(category.plural, `${id} has no plural`);
   }
 });
+
+/* --- kind groups (calendar toggles) --------------------------------------- */
+
+test('the calendar groups six categories into three switches', async () => {
+  const { KIND_GROUPS, KIND_GROUP_ORDER, kindGroupOf, CATEGORY_ORDER } =
+    await import('../js/data/schema.js');
+
+  assert.deepEqual(KIND_GROUP_ORDER, ['books', 'comics', 'manga']);
+
+  // Every category must land in exactly one group, or a book would vanish from
+  // the calendar when a filter is on.
+  const assigned = KIND_GROUP_ORDER.flatMap((id) => KIND_GROUPS[id].categories);
+  assert.equal(new Set(assigned).size, assigned.length, 'a category is in two groups');
+  for (const category of CATEGORY_ORDER) {
+    assert.ok(assigned.includes(category), `${category} belongs to no group`);
+  }
+});
+
+test('non-fiction and anthologies read as books, graphic novels as comics', async () => {
+  const { kindGroupOf } = await import('../js/data/schema.js');
+  assert.equal(kindGroupOf('book'), 'books');
+  assert.equal(kindGroupOf('nonfiction'), 'books');
+  assert.equal(kindGroupOf('anthology'), 'books');
+  assert.equal(kindGroupOf('comic'), 'comics');
+  assert.equal(kindGroupOf('graphicNovel'), 'comics');
+  assert.equal(kindGroupOf('manga'), 'manga');
+});
+
+test('an unknown category falls back to books rather than disappearing', async () => {
+  const { kindGroupOf } = await import('../js/data/schema.js');
+  assert.equal(kindGroupOf('nonsense'), 'books');
+  assert.equal(kindGroupOf(undefined), 'books');
+});
+
+/* --- reading with gaps ---------------------------------------------------- */
+
+test('a broken-up read is described as days and gaps, not one long span', async () => {
+  const { readingHistory, historySummary } = await import('../js/logic/sessions.js');
+
+  // The reported case: read on 3 July, picked up again on the 18th.
+  const patchy = book({
+    title: 'Moby-Dick',
+    pageCount: 400,
+    status: 'reading',
+    sessions: [
+      { date: '2026-07-03', pageFrom: 0, pageTo: 60 },
+      { date: '2026-07-18', pageFrom: 60, pageTo: 120 },
+      { date: '2026-07-19', pageFrom: 120, pageTo: 180 },
+    ],
+  });
+
+  const history = readingHistory(patchy);
+  assert.equal(history.days.length, 3, 'three days were read');
+  assert.equal(history.span, 17, 'across seventeen calendar days');
+  assert.equal(history.gaps.length, 1);
+  assert.equal(history.longestGap, 14);
+
+  const summary = historySummary(patchy);
+  assert.match(summary, /3 days across 17/);
+  assert.match(summary, /longest 14 days/);
+});
+
+test('a continuous read says so plainly', async () => {
+  const { historySummary } = await import('../js/logic/sessions.js');
+  const steady = book({
+    pageCount: 300,
+    status: 'reading',
+    sessions: [
+      { date: '2026-07-03', pageFrom: 0, pageTo: 50 },
+      { date: '2026-07-04', pageFrom: 50, pageTo: 100 },
+    ],
+  });
+  assert.match(historySummary(steady), /2 consecutive days/);
+});
+
+test('a book with no log has no history to describe', async () => {
+  const { historySummary } = await import('../js/logic/sessions.js');
+  assert.equal(historySummary(book({ pageCount: 300 })), null);
+});
+
+test('an unlogged day inside a plan is not claimed as reading', async () => {
+  const { dayState } = await import('../js/logic/schedule.js');
+
+  const patchy = book({
+    pageCount: 400,
+    status: 'reading',
+    schedule: { start: '2026-07-01', end: '2026-07-20' },
+    actual: { startedAt: '2026-07-03' },
+    sessions: [
+      { date: '2026-07-03', pageFrom: 0, pageTo: 60 },
+      { date: '2026-07-18', pageFrom: 60, pageTo: 120 },
+    ],
+  });
+
+  assert.equal(dayState(patchy, '2026-07-03', '2026-07-19'), 'reading', 'a logged day is reading');
+  assert.equal(dayState(patchy, '2026-07-18', '2026-07-19'), 'reading');
+  // The fortnight in between was not reading; saying it was would invent a
+  // fortnight of history that never happened.
+  assert.equal(dayState(patchy, '2026-07-10', '2026-07-19'), 'planned');
+});
+
+/* --- starting mid-book ---------------------------------------------------- */
+
+test('a plan can be rebased onto where you already are', async () => {
+  const { startFromHerePreview, startFromHerePatch, paceFor } =
+    await import('../js/logic/pacing.js');
+
+  // The reported case: 40% through Moby-Dick before tracking began, so the
+  // plan says "page 55 by tonight" while you are on page 150.
+  const midway = book({
+    title: 'Moby-Dick',
+    pageCount: 400,
+    status: 'reading',
+    schedule: { start: '2026-08-09', end: '2026-08-18' },
+    progress: { page: 160 },
+  });
+
+  const before = paceFor(midway, '2026-08-11', '2026-08-11');
+  assert.ok(before.cumulative < 160, 'the old plan counts from page one');
+
+  const preview = startFromHerePreview(midway, '2026-08-11');
+  assert.ok(preview.ok, preview.reason);
+  assert.equal(preview.currentPage, 160);
+  assert.equal(preview.percent, 40);
+  assert.equal(preview.remaining, 240);
+  assert.equal(preview.days, 8, '11 to 18 August inclusive');
+  assert.equal(preview.perDay, 30);
+
+  const rebased = normalizeBook({ ...midway, ...startFromHerePatch(midway, '2026-08-11') }, '2026-08-11');
+  const after = paceFor(rebased, '2026-08-11', '2026-08-11');
+  assert.equal(after.cumulative, 190, 'targets now start from page 160');
+  assert.equal(after.days, 8);
+
+  // And the rebased targets must still land exactly on the last page.
+  let total = 160;
+  for (let day = 11; day <= 18; day += 1) {
+    total += paceFor(rebased, `2026-08-${day}`, '2026-08-11').todayTarget;
+  }
+  assert.equal(total, 400);
+});
+
+test('a session needs only a position, not a duration', async () => {
+  const { normalizeSession, validateSession } = await import('../js/data/schema.js');
+
+  // Often you know you got from 40% to 60% and have no idea how long it took.
+  const noMinutes = normalizeSession({ date: '2026-08-11', pageFrom: 160, pageTo: 240 });
+  assert.deepEqual(validateSession(noMinutes, book({ pageCount: 400 })), {});
+  assert.equal(noMinutes.minutes, null);
+});

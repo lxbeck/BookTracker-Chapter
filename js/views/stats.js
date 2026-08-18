@@ -70,25 +70,41 @@ export function renderStats(mount) {
         : null,
     ].filter(Boolean)),
 
-    panel('Books finished by month', barChart(finishedByMonth(books), { label: 'Books finished by month' })),
-
     panel(
-      'Time logged by month',
-      barChart(loggedByMonth(books), {
-        label: 'Minutes logged by month',
-        format: (v) => (v >= 60 ? `${Math.round(v / 60)}h` : `${v}m`),
+      'Books finished by month',
+      barChart(finishedByMonth(books), {
+        label: 'Books finished by month',
+        format: (value) => `${value} book${value === 1 ? '' : 's'}`,
       })
     ),
 
     panel(
+      'Time logged by month',
+      barChart(
+        loggedByMonth(books).map((row) => ({
+          ...row,
+          note: row.pages ? `${row.pages.toLocaleString()} pages read` : undefined,
+        })),
+        {
+          label: 'Minutes logged by month',
+          format: (v) => (v >= 60 ? `${Math.round(v / 60)}h` : `${v}m`),
+        }
+      )
+    ),
+
+    panel(
       'Pages read, last 90 days',
-      lineChart(cumulativePages(books), { label: 'Cumulative pages read' })
+      lineChart(cumulativePages(books), {
+        label: 'Cumulative pages read',
+        format: (value) => `${value.toLocaleString()} pages`,
+      }),
+      'Hover a point for the date and running total.'
     ),
 
     panel(
       'Reading days, last six months',
       el('div.heat-wrap', {}, heatGrid(dailyMinutes(books), { label: 'Daily reading' })),
-      'Each square is a day; darker means longer.'
+      'Each square is a day, darker meaning longer. Hover one for the date and minutes.'
     ),
 
     el('div.stat-split', {}, [

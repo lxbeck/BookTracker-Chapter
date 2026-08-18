@@ -37,15 +37,29 @@ export function dayState(book, dayKey, todayKey = today()) {
   // 1. The day it was finished — the strongest signal there is.
   if (actual.finishedAt === dayKey) return 'finished';
 
-  // 2. A finished book's actual reading run: history, shown as in-progress.
-  if (status === 'finished' && actual.startedAt && actual.finishedAt) {
-    if (withinRange(dayKey, actual.startedAt, actual.finishedAt)) return 'reading';
+  // 2. Where there is a log, the log is the truth about which days you read.
+  //    Nobody reads every day: a book started on 3 July and picked up again on
+  //    the 18th did not occupy the fifteen days between, and painting it across
+  //    them makes the calendar claim a fortnight of reading that never
+  //    happened.
+  const logged = book.sessions?.length ? new Set(book.sessions.map((s) => s.date)) : null;
+
+  if (logged?.has(dayKey)) return 'reading';
+
+  if (status === 'finished') {
+    if (logged) return null; // the log has already had its say
+    if (actual.startedAt && actual.finishedAt) {
+      // No log, so the recorded span is the best guess available.
+      if (withinRange(dayKey, actual.startedAt, actual.finishedAt)) return 'reading';
+    }
     return null; // a finished book's *plan* is spent; don't keep drawing it
   }
 
-  // 3. An open book, from the day it was actually started up to today. Days
-  //    beyond today are still only a plan, however confident you feel.
-  if (status === 'reading') {
+  // 3. An open book with no log: assume the span, since there is nothing
+  //    better. Days beyond today are still only a plan, however confident you
+  //    feel. With a log, only the logged days above count as reading, and the
+  //    plan below still shows the days ahead.
+  if (status === 'reading' && !logged) {
     const from = actual.startedAt ?? schedule.start;
     if (from && withinRange(dayKey, from, todayKey)) return 'reading';
   }

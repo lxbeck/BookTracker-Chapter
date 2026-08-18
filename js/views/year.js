@@ -19,6 +19,7 @@ import {
 import { groupByDay } from '../logic/schedule.js';
 import { openDayPopup } from './dayPopup.js';
 import { goToDay } from './day.js';
+import { goToMonth } from './calendar.js';
 import { libraryTotals, formatDuration } from '../logic/sessions.js';
 
 /** First month on screen. Module state, like the other views' cursors. */
@@ -117,7 +118,13 @@ function monthBlock(year, month, weekStartsOn, buckets, todayKey, busiest, mount
 
   return el('section.year-month', {}, [
     el('header.year-month__head', {}, [
-      el('h3.year-month__name', {}, monthName(month)),
+      // The month name is the way into the month grid: at this size the
+      // squares answer "how busy", and the calendar answers "with what".
+      el('button.year-month__name', {
+        type: 'button',
+        'aria-label': `Open ${monthName(month)} ${year} in the calendar`,
+        onClick: () => goToMonth(year, month),
+      }, monthName(month)),
       count ? el('span.year-month__count', {}, String(count)) : null,
     ].filter(Boolean)),
 

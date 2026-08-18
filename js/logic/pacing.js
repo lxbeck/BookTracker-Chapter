@@ -345,3 +345,78 @@ export function catchUpPatch(book, todayKey = today()) {
     },
   };
 }
+
+/**
+ * Plan the rest of a book from where you already are.
+ *
+ * Distinct from catching up, which assumes the plan was right and you fell
+ * behind. This is for a book you were already part-way through when you
+ * started tracking it: 40% into Moby-Dick, no history, and a plan that
+ * cheerfully reports you 95 pages ahead of a schedule you never followed.
+ *
+ * The fix is the same mechanism — rebase to today at your current page — but
+ * the framing matters, because "you are ahead" and "start from here" lead to
+ * completely different actions.
+ */
+export function startFromHere(book, todayKey = today()) {
+  const { schedule, pageCount, progress } = book;
+  const unit = FORMATS[book.format]?.unit ?? 'pages';
+
+  if (!pageCount) return { ok: false, reason: 'Add a length first.' };
+
+  const done = Math.min(progress.page || 0, pageCount);
+  if (done <= 0) return { ok: false, reason: 'Record where you are first.' };
+
+  const remaining = pageCount - done;
+  if (remaining <= 0) return { ok: false, reason: 'This book is already finished.' };
+
+  // Keep the finish date if it is still ahead; otherwise give the remainder the
+  // same number of days the original plan allowed.
+  const originalEnd = schedule.end ?? schedule.start;
+  const keepsEnd = originalEnd && originalEnd > todayKey;
+  const originalSpan = schedule.start && originalEnd ? spanLength(schedule.start, originalEnd) : 7;
+  const end = keepsEnd ? originalEnd : addDays(todayKey, originalSpan - 1);
+
+  const days = spanLength(todayKey, end);
+
+  return {
+    ok: true,
+    from: todayKey,
+    to: end,
+    days,
+    done,
+    remaining,
+    perDay: Math.ceil(remaining / days),
+    unit,
+    keepsEnd,
+    currentPage: done,
+    percent: Math.round((done / pageCount) * 100),
+    patch: {
+      schedule: {
+        start: todayKey,
+        end,
+        rebase: {
+          at: todayKey,
+          page: done,
+          originalStart: schedule.rebase?.originalStart ?? schedule.start,
+        },
+      },
+      status: 'reading',
+      actual: { startedAt: book.actual.startedAt ?? todayKey },
+    },
+  };
+}
+
+/**
+ * The two halves of `startFromHere`, named separately.
+ *
+ * Previewing and applying are different moments — one goes in a sentence you
+ * read, the other in a write you commit — and keeping the names apart stops a
+ * caller from accidentally shipping the whole result object into the store.
+ */
+export const startFromHerePreview = (book, todayKey = today()) => startFromHere(book, todayKey);
+
+export function startFromHerePatch(book, todayKey = today()) {
+  const result = startFromHere(book, todayKey);
+  return result.ok ? result.patch : null;
+}

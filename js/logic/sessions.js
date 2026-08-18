@@ -31,6 +31,15 @@ export function bookTotals(book) {
   };
 }
 
+/**
+ * The distinct days a book was actually read on.
+ *
+ * Useful wherever "since you started" would overstate things: a book read on
+ * two days across a fortnight has two reading days, not fifteen.
+ */
+export const readingDaysFor = (book) =>
+  [...new Set((book.sessions ?? []).map((session) => session.date))].sort();
+
 /** Every session across the library, flattened, with its book attached. */
 export function allSessions(books) {
   return books
@@ -166,3 +175,53 @@ export function formatDuration(minutes) {
 /** The day a streak breaks if nothing is logged. */
 export const streakDeadline = (streak, todayKey = today()) =>
   streak.current > 0 && !streak.readToday ? todayKey : addDays(todayKey, 1);
+
+/**
+ * The days a book was actually read, and the gaps between them.
+ *
+ * A start and an end date describe a span, not a habit. Someone who read on
+ * 3 July and picked the book up again on the 18th has two reading days and a
+ * fifteen-day gap, and saying so is more honest than either "read for sixteen
+ * days" or "read for two".
+ *
+ * @returns {{days: string[], gaps: {from: string, to: string, days: number}[],
+ *   longestGap: number, span: number}}
+ */
+export function readingHistory(book) {
+  const days = [...new Set((book.sessions ?? []).map((session) => session.date))].sort();
+  if (days.length < 2) {
+    return { days, gaps: [], longestGap: 0, span: days.length };
+  }
+
+  const gaps = [];
+  for (let i = 1; i < days.length; i += 1) {
+    const between = daysBetween(days[i - 1], days[i]) - 1;
+    if (between > 0) {
+      gaps.push({ from: addDays(days[i - 1], 1), to: addDays(days[i], -1), days: between });
+    }
+  }
+
+  return {
+    days,
+    gaps,
+    longestGap: gaps.reduce((max, gap) => Math.max(max, gap.days), 0),
+    span: daysBetween(days[0], days[days.length - 1]) + 1,
+  };
+}
+
+/** A sentence describing a broken-up read, or null when it was continuous. */
+export function historySummary(book) {
+  const history = readingHistory(book);
+  if (!history.days.length) return null;
+  if (!history.gaps.length) {
+    return history.days.length === 1
+      ? 'Read on one day so far'
+      : `Read on ${history.days.length} consecutive days`;
+  }
+
+  return (
+    `Read on ${history.days.length} days across ${history.span}` +
+    `, with ${history.gaps.length} break${history.gaps.length === 1 ? '' : 's'}` +
+    ` (longest ${history.longestGap} days)`
+  );
+}

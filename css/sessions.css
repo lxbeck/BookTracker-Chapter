@@ -355,3 +355,18 @@
   flex: 1;
   min-width: 180px;
 }
+
+.session-form__row--positions {
+  grid-template-columns: 1.3fr 1fr 0.8fr 0.8fr 0.8fr;
+}
+
+.session-form__hint {
+  font-size: var(--size-xs);
+  color: var(--ink-faint);
+}
+
+@media (max-width: 720px) {
+  .session-form__row--positions {
+    grid-template-columns: 1fr 1fr;
+  }
+}

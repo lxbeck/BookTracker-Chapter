@@ -205,6 +205,15 @@ Two separate mechanisms, because they solve different halves of the problem:
 Records themselves were always offline — they live in this browser's local
 storage. Clearing site data erases the library, so Settings has JSON export.
 
+## What dragging a cover does
+
+Dragging a cover to another day moves the **whole plan and keeps its length**: a
+seven-day plan dropped on the 14th becomes the 14th to the 20th. It does not
+move only the start, and it does not stretch the plan. If the book lands outside
+the month on screen, the calendar follows it there. Shift plus the arrow keys
+does the same thing from the keyboard — a day at a time, or a week with up and
+down.
+
 ## Catching up on a slipped plan
 
 Targets are cumulative from the plan's start, which means missing two days
@@ -232,6 +241,49 @@ Both halves are always stored consistently. One case is deliberately left
 alone: a percentage on a book with no page count records the percentage and no
 page, because a derived page number there would be fiction, and every pacing
 figure in the app is built on that number.
+
+## Reading the charts
+
+Every mark on every chart is hoverable, focusable and tappable, with a floating
+read-out naming the point and its value. Native SVG tooltips were the
+alternative: about a second to appear, unstyleable, and invisible on a touch
+screen.
+
+This matters most on the pages-read chart, where the axis has room for three
+labels and shows something like `07-04`. The read-out spells out "4 July 2026"
+and adds what was actually read that day. Monthly bars name the month *and*
+year. Bars get a full-height hit area, because a two-pixel bar for a quiet
+month is impossible to hover and is exactly the month worth inspecting.
+
+## Logging what you actually know
+
+A session needs **either** where you got to **or** how long you read — not
+both. Often you know you went from 40% to 60% and have no idea how long it
+took, so minutes are genuinely optional and the form says so.
+
+Positions can be given in pages or percent, with one unit switch for the whole
+entry rather than one per field: "started on page 79, ended at 40%" is a
+sentence nobody means, and offering it invites exactly that mistake. Switching
+converts whatever is already typed.
+
+## Joining a book part-way through
+
+If you were 40% into Moby-Dick before you started tracking it, the plan counts
+from page one and cheerfully reports you 95 pages ahead of a schedule you never
+followed — technically true, completely useless. The record offers **"Start
+plan from here"**: the plan restarts today at your current page, so every target
+counts what is ahead of you rather than what is already behind.
+
+Same mechanism as catching up, different framing, because "you are ahead" and
+"start from here" lead to completely different actions.
+
+## Reading that isn't daily
+
+Start and finish dates describe a span, not a habit. Once there is a session
+log, the calendar shows the days you actually read rather than filling
+everything between — so a book picked up on 3 July and again on the 18th shows
+two reading days, not sixteen. The record says so in words too: "Read on 2 days
+across 16, with 1 break (longest 14 days)."
 
 ## Two pace numbers, which mean different things
 
@@ -307,6 +359,22 @@ recoverable for longer than a toast normally lives.
 Bulk scheduling lists the books **in the order you selected them**, with the
 dates each will get, and arrows to reorder before committing. The order was
 always the selection order; it just wasn't visible, which made it a guess.
+
+## Filtering the calendar by kind
+
+Above the month grid: **Everything, Books, Comics, Manga**. Toggling is
+additive — comics and manga on together shows both and hides books. Turning
+everything off is treated as everything on, since an empty calendar with no
+obvious way back is a trap.
+
+Six categories is right for a record and far too many for a row of toggles, so
+they collapse: non-fiction and anthologies are books, graphic novels are
+comics, manga stands alone. Every category belongs to exactly one group — one
+belonging to none would make books silently vanish whenever a filter was on.
+
+The toggles appear only when more than one kind is actually scheduled, and they
+are the real answer to a crowded day: hiding what you are not looking for beats
+a `+4` chip, which tells you something is missing without telling you what.
 
 ## The four views
 

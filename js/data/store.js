@@ -223,14 +223,20 @@ export function updateBook(id, patch) {
   const existing = getBook(id);
   if (!existing) return { ok: false, errors: { _: 'That book is no longer in the library.' } };
 
+  // `undefined` in a patch means "not stated", so it must not blank a field.
+  // Spreading it directly would, since {...{a: undefined}} overwrites a.
+  const defined = Object.fromEntries(
+    Object.entries(patch).filter(([, value]) => value !== undefined)
+  );
+
   const merged = normalizeBook({
     ...existing,
-    ...patch,
-    series: { ...existing.series, ...patch.series },
-    cover: { ...existing.cover, ...patch.cover },
-    schedule: { ...existing.schedule, ...patch.schedule },
-    actual: { ...existing.actual, ...patch.actual },
-    progress: { ...existing.progress, ...patch.progress },
+    ...defined,
+    series: { ...existing.series, ...defined.series },
+    cover: { ...existing.cover, ...defined.cover },
+    schedule: { ...existing.schedule, ...defined.schedule },
+    actual: { ...existing.actual, ...defined.actual },
+    progress: { ...existing.progress, ...defined.progress },
     id: existing.id,
     createdAt: existing.createdAt,
   });

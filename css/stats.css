@@ -1002,3 +1002,122 @@
 .tag-bar--needs .tag--need[aria-pressed="true"] {
   border-style: solid;
 }
+
+/* --- Chart hover read-out ------------------------------------------------- */
+
+.chart-wrap {
+  position: relative;
+}
+
+.chart-tip {
+  position: absolute;
+  z-index: 5;
+  transform: translate(-50%, -100%);
+  background: var(--bookcloth);
+  color: var(--ink-inverse);
+  font-family: var(--face-slip);
+  font-size: var(--size-xs);
+  white-space: nowrap;
+  padding: var(--s1) var(--s2);
+  border-radius: var(--r-control);
+  box-shadow: var(--lift-2);
+  pointer-events: none;
+}
+
+.chart-tip[hidden] {
+  display: none;
+}
+
+/* An invisible hit area, so a two-pixel bar or an empty month is still
+   hoverable and a zero still reports as zero. */
+.chart__hit {
+  fill: transparent;
+  cursor: pointer;
+}
+
+.chart__hit:hover {
+  fill: rgba(58, 87, 189, 0.09);
+}
+
+.chart__hit:focus-visible {
+  fill: rgba(58, 87, 189, 0.16);
+  outline: 1px solid var(--stamp);
+}
+
+/* --- Chart hover read-out ------------------------------------------------- */
+
+.chart-readout {
+  position: absolute;
+  z-index: 95;
+  pointer-events: none;
+  background: var(--slip);
+  color: var(--ink);
+  border-radius: var(--r-control);
+  box-shadow: var(--lift-3);
+  border-top: 2px solid var(--stamp);
+  padding: var(--s2) var(--s3);
+  min-width: 96px;
+  max-width: 240px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.chart-readout[hidden] {
+  display: none;
+}
+
+.chart-readout strong {
+  font-family: var(--face-slip);
+  font-size: 0.625rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  font-weight: 400;
+}
+
+.chart-readout span {
+  font-family: var(--face-display);
+  font-variation-settings: var(--wonk-on);
+  font-size: var(--size-md);
+  line-height: 1.1;
+}
+
+.chart-readout em {
+  font-style: normal;
+  font-size: var(--size-xs);
+  color: var(--ink-soft);
+}
+
+/* Invisible but hoverable: a two-pixel bar is impossible to hit otherwise. */
+.chart__hit {
+  fill: transparent;
+  cursor: pointer;
+}
+
+.chart__hit:hover,
+.chart__hit:focus-visible {
+  fill: rgba(58, 87, 189, 0.1);
+  outline: none;
+}
+
+.chart__mark {
+  cursor: pointer;
+}
+
+.chart__heat.chart__mark:hover,
+.chart__bar.chart__mark:hover {
+  stroke: var(--stamp-deep);
+  stroke-width: 1.5;
+}
+
+.chart__dot {
+  fill: var(--stamp);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--fast) var(--ease);
+}
+
+.chart__dot.is-on {
+  opacity: 1;
+}

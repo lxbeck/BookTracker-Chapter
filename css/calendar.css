@@ -456,3 +456,233 @@ body.is-rescheduling .cal__day {
     font-size: 0;
   }
 }
+
+.year-month__name {
+  font-family: var(--face-display);
+  font-variation-settings: var(--wonk-on);
+  font-weight: 500;
+  font-size: var(--size-base);
+  color: var(--ink-inverse);
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+  border-bottom: 1px solid transparent;
+  transition: color var(--fast) var(--ease), border-color var(--fast) var(--ease);
+}
+
+.year-month__name:hover {
+  color: var(--stamp-bright);
+  border-bottom-color: var(--stamp-bright);
+}
+
+/* --- Kind toggles --------------------------------------------------------- */
+
+.cal-groups {
+  display: flex;
+  gap: var(--s2);
+  flex-wrap: wrap;
+  margin-bottom: var(--s3);
+  flex: none;
+}
+
+.cal-group {
+  font-family: var(--face-slip);
+  font-size: var(--size-xs);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-inverse-soft);
+  background: rgba(241, 244, 247, 0.05);
+  border: 1px solid rgba(241, 244, 247, 0.16);
+  border-radius: var(--r-control);
+  padding: var(--s2) var(--s3);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  transition: color var(--fast) var(--ease), background var(--fast) var(--ease),
+    border-color var(--fast) var(--ease);
+}
+
+.cal-group:hover {
+  color: var(--ink-inverse);
+  border-color: rgba(241, 244, 247, 0.4);
+}
+
+.cal-group[aria-pressed="true"] {
+  color: var(--ink-inverse);
+  background: rgba(58, 87, 189, 0.4);
+  border-color: rgba(157, 180, 247, 0.7);
+}
+
+.cal-group__count {
+  font-size: 0.5625rem;
+  color: var(--ink-inverse-soft);
+  background: rgba(241, 244, 247, 0.1);
+  border-radius: 999px;
+  padding: 0 5px;
+  min-width: 16px;
+  text-align: center;
+}
+
+.cal-group[aria-pressed="true"] .cal-group__count {
+  background: rgba(241, 244, 247, 0.2);
+  color: var(--ink-inverse);
+}
+
+/* --- Kind toggles --------------------------------------------------------- */
+
+.kind-toggles {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  flex-wrap: wrap;
+  margin-bottom: var(--s3);
+  flex: none;
+}
+
+.kind-toggle {
+  font-family: var(--face-slip);
+  font-size: var(--size-xs);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-inverse-soft);
+  background: rgba(241, 244, 247, 0.05);
+  border: 1px solid rgba(241, 244, 247, 0.16);
+  border-radius: var(--r-control);
+  padding: var(--s2) var(--s3);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  transition: color var(--fast) var(--ease), background var(--fast) var(--ease),
+    border-color var(--fast) var(--ease);
+}
+
+.kind-toggle:hover {
+  color: var(--ink-inverse);
+  border-color: rgba(241, 244, 247, 0.4);
+}
+
+.kind-toggle[aria-pressed="true"] {
+  color: var(--ink-inverse);
+  background: rgba(58, 87, 189, 0.42);
+  border-color: rgba(157, 180, 247, 0.7);
+}
+
+/* Each kind keeps the colour it has in the stats breakdown, so the two views
+   teach the same vocabulary. */
+.kind-toggle--books[aria-pressed="true"] {
+  background: rgba(58, 87, 189, 0.45);
+  border-color: #8fa6f2;
+}
+
+.kind-toggle--comics[aria-pressed="true"] {
+  background: rgba(176, 125, 28, 0.4);
+  border-color: #e0aa4c;
+}
+
+.kind-toggle--manga[aria-pressed="true"] {
+  background: rgba(168, 50, 74, 0.4);
+  border-color: #e8899d;
+}
+
+.kind-toggle__count {
+  font-size: 0.5625rem;
+  color: var(--ink-inverse-soft);
+  background: rgba(241, 244, 247, 0.1);
+  border-radius: 999px;
+  padding: 0 5px;
+  min-width: 16px;
+  text-align: center;
+}
+
+.kind-toggles__note {
+  font-family: var(--face-slip);
+  font-size: var(--size-xs);
+  color: var(--ink-faint);
+  margin-left: var(--s2);
+}
+
+/* --- Kind switches -------------------------------------------------------- */
+
+.kind-toggles {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  flex-wrap: wrap;
+  margin-bottom: var(--s3);
+  flex: none;
+}
+
+.kind-toggle {
+  font-family: var(--face-slip);
+  font-size: var(--size-xs);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-inverse-soft);
+  background: rgba(241, 244, 247, 0.05);
+  border: 1px solid rgba(241, 244, 247, 0.16);
+  border-radius: 999px;
+  padding: var(--s1) var(--s3);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  transition: color var(--fast) var(--ease), background var(--fast) var(--ease),
+    border-color var(--fast) var(--ease);
+}
+
+.kind-toggle:hover {
+  color: var(--ink-inverse);
+  border-color: rgba(241, 244, 247, 0.4);
+}
+
+.kind-toggle.is-on {
+  background: rgba(58, 87, 189, 0.42);
+  border-color: rgba(157, 180, 247, 0.7);
+  color: var(--ink-inverse);
+}
+
+.kind-toggle__count {
+  font-size: 0.5625rem;
+  background: rgba(241, 244, 247, 0.12);
+  border-radius: 999px;
+  padding: 0 5px;
+  min-width: 16px;
+  text-align: center;
+}
+
+.kind-toggles__note {
+  font-family: var(--face-slip);
+  font-size: var(--size-xs);
+  color: var(--ink-faint);
+}
+
+.year-month__name {
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  font-family: var(--face-display);
+  font-variation-settings: var(--wonk-on);
+  font-weight: 500;
+  font-size: var(--size-base);
+  color: var(--ink-inverse);
+  text-align: left;
+  border-bottom: 1px solid transparent;
+}
+
+.year-month__name:hover {
+  color: var(--stamp-bright);
+  border-bottom-color: var(--stamp-bright);
+}
+
+.history-line {
+  color: var(--ink-soft);
+}
+
+.kind-toggle--all {
+  font-weight: 700;
+}

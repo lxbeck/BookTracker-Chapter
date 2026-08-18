@@ -6,7 +6,9 @@
  * — the classic failure of a stats table that maintains its own counters.
  */
 
-import { today, fromKey, toKey, addDays, daysBetween, monthName } from '../lib/dates.js';
+import {
+  today, fromKey, toKey, addDays, daysBetween, monthName, formatShort, formatLong,
+} from '../lib/dates.js';
 import { allSessions, readingStreak, formatDuration } from './sessions.js';
 import { sessionPages } from '../data/schema.js';
 
@@ -21,6 +23,10 @@ export function finishedByMonth(books, count = 12, todayKey = today()) {
     const date = new Date(cursor.getFullYear(), cursor.getMonth() - i, 1);
     buckets.set(toKey(date).slice(0, 7), {
       label: monthName(date.getMonth()).slice(0, 3),
+      fullLabel: `${monthName(date.getMonth())} ${date.getFullYear()}`,
+      // `full` is what the hover read-out shows. A three-letter axis label is
+      // ambiguous across a window that spans two years.
+      full: `${monthName(date.getMonth())} ${date.getFullYear()}`,
       value: 0,
       pages: 0,
     });
@@ -46,6 +52,8 @@ export function loggedByMonth(books, count = 12, todayKey = today()) {
     const date = new Date(cursor.getFullYear(), cursor.getMonth() - i, 1);
     buckets.set(toKey(date).slice(0, 7), {
       label: monthName(date.getMonth()).slice(0, 3),
+      fullLabel: `${monthName(date.getMonth())} ${date.getFullYear()}`,
+      full: `${monthName(date.getMonth())} ${date.getFullYear()}`,
       value: 0,
       pages: 0,
     });
@@ -75,7 +83,16 @@ export function cumulativePages(books, days = 90, todayKey = today()) {
   return Array.from({ length: days }, (_, i) => {
     const key = addDays(start, i);
     running += perDay.get(key) ?? 0;
-    return { label: key.slice(5), value: running, day: key };
+    return {
+      label: formatShort(key).slice(4),
+      fullLabel: formatLong(key),
+      value: running,
+      day: key,
+      onDay: perDay.get(key) ?? 0,
+      note: (perDay.get(key) ?? 0)
+        ? `${perDay.get(key)} pages that day`
+        : 'nothing logged that day',
+    };
   });
 }
 
@@ -91,7 +108,7 @@ export function dailyMinutes(books, days = 182, todayKey = today()) {
 
   return Array.from({ length: days }, (_, i) => {
     const key = addDays(start, i);
-    return { label: key, value: perDay.get(key) ?? 0 };
+    return { label: key, fullLabel: formatLong(key), value: perDay.get(key) ?? 0 };
   });
 }
 

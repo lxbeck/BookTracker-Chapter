@@ -10,7 +10,9 @@ import { el, fill, $, toast } from '../lib/dom.js';
 import { showModal } from './modal.js';
 import { coverPicker } from './coverPicker.js';
 import { sessionLog } from './sessionLog.js';
-import { progressReport, catchUpPreview, catchUpPatch } from '../logic/pacing.js';
+import {
+  progressReport, catchUpPreview, catchUpPatch, startFromHere, paceFor,
+} from '../logic/pacing.js';
 import { allBooks } from '../data/store.js';
 import {
   STATUSES, STATUS_ORDER, FORMATS, CATEGORIES, CATEGORY_ORDER, blankBook, resolveProgress,
@@ -19,6 +21,8 @@ import { formatShort } from '../lib/dates.js';
 import { addBook, updateBook, removeBook, restoreBook, getBook } from '../data/store.js';
 import { addDays } from '../lib/dates.js';
 import { fetchMissingDetails, missingFields } from '../data/enrich.js';
+import { historySummary } from '../logic/sessions.js';
+import { readingDaysFor } from '../logic/sessions.js';
 
 /**
  * @param {Object} [options]
@@ -270,6 +274,9 @@ export function openBookForm({ book = null, defaultStart = null, onSaved } = {})
    * record, so it respects anything typed but not yet saved, and writes back
    * into the inputs rather than the store — nothing is committed until Save.
    */
+  /** The reading log, when one is shown, so Save can flush a typed entry. */
+  let logPanel = null;
+
   const detailsNote = el('p.field__hint', { 'aria-live': 'polite' });
 
   const detailsButton = el('button.btn.btn--quiet.btn--sm', {
@@ -360,6 +367,7 @@ export function openBookForm({ book = null, defaultStart = null, onSaved } = {})
         progressNote,
       ]),
       el('p.field__hint', {}, 'Marking a book finished fills the finish date in for you.'),
+      historyLine(draft),
       isEdit
         ? el('div.details-row', {}, [
             el('button.btn.btn--danger.btn--sm', {
@@ -409,7 +417,10 @@ export function openBookForm({ book = null, defaultStart = null, onSaved } = {})
     isEdit
       ? el('fieldset.plan-block.plan-block--log', {}, [
           el('legend.field__label', { text: 'Reading log' }),
-          sessionLog({ bookId: draft.id }),
+          (logPanel = sessionLog({
+            bookId: draft.id,
+            onChange: () => syncFromStore(),
+          })),
         ])
       : null,
   ].filter(Boolean);
@@ -428,9 +439,17 @@ export function openBookForm({ book = null, defaultStart = null, onSaved } = {})
     fields[firstBad]?.control.focus();
   }
 
+  /**
+   * The fields this form owns.
+   *
+   * Deliberately does *not* spread the draft. The draft is a snapshot taken
+   * when the form opened, so spreading it wrote a stale `sessions` array back
+   * over anything logged in the meantime — you'd log a sitting, press Save,
+   * and watch it vanish. It also dropped `schedule.rebase`, silently undoing a
+   * catch-up. Anything the form doesn't edit is left for the store to merge.
+   */
   function collect() {
     return {
-      ...draft,
       title: titleInput.value,
       author: authorInput.value,
       isbn: isbnInput.value,
@@ -451,14 +470,20 @@ export function openBookForm({ book = null, defaultStart = null, onSaved } = {})
       review: reviewInput.value,
       rating: draft.rating,
       quotes: quotesBlock.read(),
+      // Only the two dates: `rebase` belongs to the store and survives because
+      // updateBook merges nested objects one level deep.
       schedule: { start: startInput.value || null, end: endInput.value || null },
       actual: {
         startedAt: startedInput.value || null,
         finishedAt: finishedInput.value || null,
       },
+      // A blank field means "not stated here", not "back to zero" — the log is
+      // the better authority, and normalizeBook already takes the furthest
+      // logged page. Clearing progress deliberately is what the reset button
+      // in the record is for.
       progress:
         progressInput.value === ''
-          ? { page: 0, percent: 0 }
+          ? undefined
           : resolveProgress(
               { pageCount: Number.parseInt(pagesInput.value, 10) || null },
               progressUnit.value === 'percent'
@@ -468,15 +493,64 @@ export function openBookForm({ book = null, defaultStart = null, onSaved } = {})
     };
   }
 
+  /**
+   * Re-read the stored record into the form.
+   *
+   * Logging a session writes progress, status and the start date straight to
+   * the store, but the form's fields still held whatever they had when it
+   * opened — so Save wrote the stale values back over the new ones. Closing
+   * without saving *appeared* to work only because nothing overwrote anything.
+   *
+   * Anything the person has typed is left alone; only the fields the log owns
+   * are refreshed.
+   */
+  function syncFromStore() {
+    const stored = getBook(draft.id);
+    if (!stored) return;
+
+    draft.sessions = stored.sessions;
+    draft.progress = stored.progress;
+    draft.actual = { ...stored.actual };
+    draft.status = stored.status;
+
+    if (stored.progress.page) {
+      progressInput.value =
+        progressUnit.value === 'percent'
+          ? Math.round(stored.progress.percent)
+          : stored.progress.page;
+    }
+    if (stored.actual.startedAt) startedInput.value = stored.actual.startedAt;
+    if (stored.actual.finishedAt) finishedInput.value = stored.actual.finishedAt;
+    statusSelect.value = stored.status;
+
+    refreshProgressNote();
+  }
+
   function save() {
+    // A session typed into the log but never confirmed with "Log it" used to be
+    // thrown away here. Filling the fields and pressing Save is the obvious
+    // thing to do, so Save commits it.
+    logPanel?.commitPending?.();
+
+    // Then pick up anything the log wrote while the form was open, so Save
+    // cannot write stale values back over it.
+    if (isEdit) syncFromStore();
     const payload = collect();
-    const result = isEdit ? updateBook(draft.id, payload) : addBook(payload);
+
+    // On add there is nothing to merge against, so the defaults come from a
+    // blank record rather than from a draft that may be half-stale.
+    const result = isEdit
+      ? updateBook(draft.id, payload)
+      : addBook({ ...blankBook(), ...payload, id: draft.id, cover: draft.cover });
 
     if (!result.ok) {
       showErrors(result.errors);
       toast('Check the highlighted fields.', { variant: 'error' });
       return;
     }
+    // Keep the draft aligned with what was actually stored, so a form left
+    // open after saving doesn't hold a stale copy.
+    Object.assign(draft, structuredClone(result.book));
     modal.close();
     toast(isEdit ? 'Changes saved.' : `${result.book.title} added to the library.`);
     onSaved?.(result.book);
@@ -562,6 +636,14 @@ function progressStrip(book) {
       report.rateLabel
         ? miniFact('Average so far', report.rateLabel, '', report.rateBasis)
         : null,
+      book.sessions.length
+        ? miniFact(
+            'Days read',
+            String(new Set(book.sessions.map((session) => session.date)).size),
+            '',
+            `${book.sessions.length} sitting${book.sessions.length === 1 ? '' : 's'}, not necessarily consecutive`
+          )
+        : null,
       report.needed
         ? miniFact(
             'Needed from here',
@@ -580,7 +662,41 @@ function progressStrip(book) {
     ].filter(Boolean)),
     report.projectionNote ? el('p.progress-strip__note', {}, report.projectionNote) : null,
     catchUpRow(book),
+    startHereRow(book, report),
   ].filter(Boolean));
+}
+
+/**
+ * Offered when progress runs ahead of the plan — which usually means the plan
+ * never described reality, not that you are doing brilliantly.
+ */
+function startHereRow(book, report) {
+  // Already rebased: the plan and reality agree.
+  if (book.schedule.rebase || book.status === 'finished') return null;
+  if (report.percent >= 100 || report.percent < 10) return null;
+
+  const preview = startFromHere(book);
+  if (!preview.ok) return null;
+
+  const plan = paceFor(book);
+  const ahead = plan.ok && plan.delta >= 25;
+
+  // Being "ahead" is the loudest symptom, but not the only one: what matters
+  // is that the plan counts from page one while you started somewhere else.
+  return el('div.progress-strip__catchup', {}, [
+    el('p', {},
+      (ahead
+        ? `You are ${plan.delta} ${preview.unit} ahead of this plan, which usually means the plan started before you did. `
+        : `You are ${report.percent}% in. `) +
+      `Replanning from today spreads the remaining ${preview.remaining} over ${preview.days} days \u2014 ${preview.perDay} a day.`),
+    el('button.btn.btn--stamp.btn--sm', {
+      type: 'button',
+      onClick: () => {
+        updateBook(book.id, preview.patch);
+        toast(`Replanned from today: ${preview.perDay} ${preview.unit} a day.`);
+      },
+    }, 'Start plan from here'),
+  ]);
 }
 
 /** Offered only when the plan has actually slipped. */
@@ -724,4 +840,16 @@ function quotesEditor(draft) {
     ]),
     read: () => quotes,
   };
+}
+
+/**
+ * How the reading actually went, when it wasn't continuous.
+ *
+ * The two dates say "started here, ended there", which describes a span rather
+ * than a habit. A book read on 3 July and again on the 18th deserves to say so.
+ */
+function historyLine(book) {
+  const summary = historySummary(book);
+  if (!summary) return null;
+  return el('p.field__hint.history-line', {}, summary);
 }

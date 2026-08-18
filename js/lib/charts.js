@@ -10,6 +10,79 @@
 
 const NS = 'http://www.w3.org/2000/svg';
 
+/* --- Shared hover read-out ------------------------------------------------- */
+
+let readout = null;
+
+function ensureReadout() {
+  if (readout && document.body.contains(readout)) return readout;
+  readout = document.createElement('div');
+  readout.className = 'chart-readout';
+  readout.hidden = true;
+  document.body.append(readout);
+  return readout;
+}
+
+/**
+ * Make one mark readable on hover, focus and tap.
+ *
+ * @param {SVGElement} mark
+ * @param {{label: string, value: string, note?: string}} content
+ */
+function attachReadout(mark, content) {
+  const show = () => {
+    const node = ensureReadout();
+    node.replaceChildren();
+
+    const label = document.createElement('strong');
+    label.textContent = content.label;
+    const value = document.createElement('span');
+    value.textContent = content.value;
+    node.append(label, value);
+
+    if (content.note) {
+      const note = document.createElement('em');
+      note.textContent = content.note;
+      node.append(note);
+    }
+
+    node.hidden = false;
+
+    // Positioned against the mark rather than the pointer, so it doesn't
+    // jitter and behaves identically from the keyboard.
+    const box = mark.getBoundingClientRect();
+    const own = node.getBoundingClientRect();
+    const left = Math.max(8, Math.min(
+      box.left + box.width / 2 - own.width / 2,
+      window.innerWidth - own.width - 8
+    ));
+    const above = box.top - own.height - 10;
+    node.style.left = `${Math.round(left + window.scrollX)}px`;
+    node.style.top = `${Math.round((above > 8 ? above : box.bottom + 10) + window.scrollY)}px`;
+  };
+
+  const hide = () => {
+    if (readout) readout.hidden = true;
+  };
+
+  mark.addEventListener('mouseenter', show);
+  mark.addEventListener('mouseleave', hide);
+  mark.addEventListener('focus', show);
+  mark.addEventListener('blur', hide);
+  mark.addEventListener('click', show);
+
+  mark.setAttribute('tabindex', '0');
+  mark.setAttribute('role', 'img');
+  mark.setAttribute('aria-label', `${content.label}: ${content.value}${content.note ? `, ${content.note}` : ''}`);
+  mark.classList.add('chart__mark');
+
+  return mark;
+}
+
+export const hideChartReadout = () => {
+  if (readout) readout.hidden = true;
+};
+
 function svgEl(tag, attrs = {}, children = []) {
   const node = document.createElementNS(NS, tag);
   for (const [key, value] of Object.entries(attrs)) {
@@ -80,6 +153,19 @@ export function barChart(data, { height = 190, label = 'Bar chart', format = (v)
       }, svgEl('title', {}, `${point.label}: ${format(point.value)}`)));
     }
 
+    // A full-height hit area. A two-pixel bar for a quiet month is effectively
+    // impossible to hover, and that is exactly the month worth inspecting.
+    const hit = svgEl('rect', {
+      x: padding.left + slot * index, y: padding.top,
+      width: slot, height: plotH, class: 'chart__hit',
+    });
+    attachReadout(hit, {
+      label: point.fullLabel ?? point.label,
+      value: format(point.value),
+      note: point.note,
+    });
+    svg.append(hit);
+
     svg.append(svgEl('text', {
       x: x + barW / 2, y: height - 10, class: 'chart__label', 'text-anchor': 'middle',
     }, point.label));
@@ -123,13 +209,37 @@ export function lineChart(data, { height = 190, label = 'Line chart', format = (
     svgEl('polyline', { class: 'chart__line', points: points.join(' ') })
   );
 
-  // Only first, middle and last get labels; every tick would be unreadable.
+  // Only first, middle and last get axis labels; every tick would be
+  // unreadable — which is exactly why every point is hoverable for its full
+  // date. "07-04" on an axis is not a date anyone can read at a glance.
   for (const index of [0, Math.floor((data.length - 1) / 2), data.length - 1]) {
     svg.append(svgEl('text', {
       x: x(index), y: height - 10, class: 'chart__label',
       'text-anchor': index === 0 ? 'start' : index === data.length - 1 ? 'end' : 'middle',
     }, data[index].label));
   }
+
+  const columnW = plotW / (data.length - 1);
+
+  data.forEach((point, index) => {
+    const dot = svgEl('circle', { cx: x(index), cy: y(point.value), r: 3, class: 'chart__dot' });
+
+    const hit = svgEl('rect', {
+      x: x(index) - columnW / 2, y: padding.top,
+      width: columnW, height: plotH, class: 'chart__hit',
+    });
+    attachReadout(hit, {
+      label: point.fullLabel ?? point.label,
+      value: format(point.value),
+      note: point.note,
+    });
+
+    for (const [event, method] of [['mouseenter', 'add'], ['mouseleave', 'remove'], ['focus', 'add'], ['blur', 'remove']]) {
+      hit.addEventListener(event, () => dot.classList[method]('is-on'));
+    }
+
+    svg.append(hit, dot);
+  });
 
   return svg;
 }
@@ -152,10 +262,15 @@ export function rankChart(data, { label = 'Breakdown', format = (v) => v, max: c
     const y = index * rowH + 4;
     const barW = ((width - labelW - 60) * row.value) / max;
 
+    const bar = svgEl('rect', {
+      x: labelW, y: y + 3, width: Math.max(barW, 2), height: 14, rx: 1, class: 'chart__bar',
+    });
+    attachReadout(bar, { label: row.label, value: format(row.value) });
+
     svg.append(
       svgEl('text', { x: 0, y: y + 14, class: 'chart__row-label' },
         row.label.length > 24 ? `${row.label.slice(0, 23)}\u2026` : row.label),
-      svgEl('rect', { x: labelW, y: y + 3, width: Math.max(barW, 2), height: 14, rx: 1, class: 'chart__bar' }),
+      bar,
       svgEl('text', { x: labelW + Math.max(barW, 2) + 8, y: y + 14, class: 'chart__axis' }, format(row.value))
     );
   });
@@ -184,13 +299,15 @@ export function heatGrid(days, { label = 'Reading days' } = {}) {
     // read back into a number at this size.
     const level = day.value === 0 ? 0 : Math.min(4, Math.ceil((day.value / max) * 4));
 
-    svg.append(
-      svgEl('rect', {
-        x: col * (cell + gap), y: row * (cell + gap),
-        width: cell, height: cell, rx: 2,
-        class: `chart__heat chart__heat--${level}`,
-      }, svgEl('title', {}, `${day.label}: ${day.value ? `${day.value} minutes` : 'nothing logged'}`))
-    );
+    const value = day.value ? `${day.value} minutes` : 'nothing logged';
+    const square = svgEl('rect', {
+      x: col * (cell + gap), y: row * (cell + gap),
+      width: cell, height: cell, rx: 2,
+      class: `chart__heat chart__heat--${level}`,
+    }, svgEl('title', {}, `${day.fullLabel ?? day.label}: ${value}`));
+
+    attachReadout(square, { label: day.fullLabel ?? day.label, value, note: day.note });
+    svg.append(square);
   });
 
   return svg;

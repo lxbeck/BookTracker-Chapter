@@ -50,6 +50,41 @@ export const CATEGORIES = {
 
 export const CATEGORY_ORDER = ['book', 'nonfiction', 'comic', 'graphicNovel', 'manga', 'anthology'];
 
+/**
+ * The three switches the calendar filters by.
+ *
+ * Six categories is the right granularity for a record and far too many for a
+ * row of toggles, so they collapse: non-fiction and anthologies are books,
+ * graphic novels are comics, manga stands alone. Every category belongs to
+ * exactly one group — a category in none would make books silently vanish
+ * whenever a filter was on.
+ */
+export const KIND_GROUPS = {
+  books: { id: 'books', label: 'Books', categories: ['book', 'nonfiction', 'anthology'] },
+  comics: { id: 'comics', label: 'Comics', categories: ['comic', 'graphicNovel'] },
+  manga: { id: 'manga', label: 'Manga', categories: ['manga'] },
+};
+
+export const KIND_GROUP_ORDER = ['books', 'comics', 'manga'];
+
+/** Which switch a category answers to. Unknown kinds read as books. */
+export function kindGroupOf(category) {
+  const match = KIND_GROUP_ORDER.find((id) => KIND_GROUPS[id].categories.includes(category));
+  return match ?? 'books';
+}
+
+/**
+ * Whether a book passes the current selection.
+ *
+ * An empty selection, or one with everything in it, means no filtering —
+ * "everything" is the absence of a choice rather than a fourth switch, so
+ * turning the last one off can never leave an empty calendar with no way back.
+ */
+export function matchesKinds(book, selected) {
+  if (!selected || selected.size === 0 || selected.size === KIND_GROUP_ORDER.length) return true;
+  return selected.has(kindGroupOf(book.category));
+}
+
 export const FORMATS = {
   physical: { id: 'physical', label: 'Physical', unit: 'pages' },
   ebook: { id: 'ebook', label: 'Ebook', unit: 'pages' },
@@ -215,7 +250,9 @@ export function validateSession(session, book = null) {
   const errors = {};
   if (!session.date) errors.date = 'Pick the day you read.';
   if (session.minutes == null && session.pageTo == null) {
-    errors.minutes = 'Record minutes, a page you reached, or both.';
+    // Minutes are optional on purpose: often you know you got from 40% to 60%
+    // and have no idea how long it took. One or the other is enough.
+    errors.minutes = 'Record where you got to, or how long you read \u2014 either will do.';
   }
   if (session.minutes != null && session.minutes > 1440) {
     errors.minutes = 'That is more than a day of reading.';

@@ -31,15 +31,29 @@ import { sessionPages } from '../data/schema.js';
 export function sessionLog({ bookId, fixedDate = null, compact = false, onChange }) {
   const root = el('div.session-log', { class: compact ? 'session-log--compact' : '' });
 
+  /**
+   * Commit anything typed but not yet logged.
+   *
+   * Filling the fields and then pressing the record's "Save changes" is the
+   * obvious thing to do, and it used to throw the entry away — the log saves
+   * through its own button, and Save knew nothing about a half-filled form.
+   * The record calls this before saving so the work isn't silently lost.
+   */
+  root.commitPending = () => false;
+
   const draw = () => {
     const book = getBook(bookId);
     if (!book) return;
+
+    const form = entryForm(book, fixedDate, () => {
+      draw();
+      onChange?.();
+    });
+    root.commitPending = form.commitPending;
+
     fill(root, [
       compact ? null : totalsLine(book),
-      entryForm(book, fixedDate, () => {
-        draw();
-        onChange?.();
-      }),
+      form,
       historyList(book, compact, () => {
         draw();
         onChange?.();
@@ -82,20 +96,24 @@ function entryForm(book, fixedDate, onSaved) {
     disabled: Boolean(fixedDate),
   });
 
+  // Optional, and labelled as such. Often you know you got to page 200 and
+  // have no idea whether that took forty minutes or ninety; refusing the entry
+  // over a number nobody recorded would just stop people logging.
   const minutesInput = el('input.input', {
     type: 'number',
     min: '1',
-    placeholder: '45',
-    'aria-label': 'Minutes read',
+    placeholder: 'optional',
+    'aria-label': 'Minutes read, optional',
   });
 
   const fromInput = el('input.input', {
     type: 'number',
     min: '0',
+    step: 'any',
     // Picking up where the last session left off is the common case.
     value: book.progress.page || '',
     placeholder: 'from',
-    'aria-label': isAudio ? 'Started at minute' : 'Started at page',
+    'aria-label': isAudio ? 'Started from minute' : 'Started from page',
   });
 
   const toInput = el('input.input.session-form__primary', {
@@ -104,17 +122,37 @@ function entryForm(book, fixedDate, onSaved) {
     step: 'any',
     max: book.pageCount ? String(book.pageCount) : null,
     placeholder: book.pageCount ? String(book.pageCount) : 'page',
-    'aria-label': isAudio ? 'Ended at minute' : 'Ended on page',
+    'aria-label': isAudio ? 'Ended on minute' : 'Ended on page',
   });
 
-  // Same choice as the record: say where you got to however you know it.
-  const toUnit = el('select.select.progress-unit', {
-    'aria-label': 'Ending position measured in',
+  /**
+   * One unit control for both ends of the session.
+   *
+   * Separate controls would let you say "from page 40 to 60%", which is
+   * technically expressible and almost never what anyone means — and it makes
+   * the read-out ambiguous. One switch flips both, and converts whatever is
+   * already typed rather than reinterpreting it.
+   */
+  const unitSelect = el('select.select.progress-unit', {
+    'aria-label': 'Positions measured in',
     disabled: !book.pageCount,
     title: book.pageCount ? '' : 'Add a page count to log by percentage',
     onChange: () => {
-      toInput.max = toUnit.value === 'percent' ? '100' : String(book.pageCount ?? '');
-      toInput.placeholder = toUnit.value === 'percent' ? '18' : String(book.pageCount ?? 'page');
+      const total = book.pageCount;
+      const toPercent = unitSelect.value === 'percent';
+
+      for (const field of [fromInput, toInput]) {
+        const value = Number.parseFloat(field.value);
+        if (Number.isFinite(value) && total > 0) {
+          field.value = toPercent
+            ? Math.round((value / total) * 100)
+            : Math.round((value / 100) * total);
+        }
+        field.max = toPercent ? '100' : String(total ?? '');
+      }
+
+      fromInput.placeholder = toPercent ? 'from %' : 'from';
+      toInput.placeholder = toPercent ? '40' : String(total ?? 'page');
       refreshPreview();
     },
   }, [
@@ -122,15 +160,18 @@ function entryForm(book, fixedDate, onSaved) {
     el('option', { value: 'percent' }, '%'),
   ]);
 
-  /** Whatever was typed, expressed as a page number. */
-  const endingPage = () => {
-    const value = Number.parseFloat(toInput.value);
+  /** A typed value in whichever unit is selected, expressed as a page number. */
+  const asPage = (field) => {
+    const value = Number.parseFloat(field.value);
     if (!Number.isFinite(value)) return null;
-    if (toUnit.value === 'percent' && book.pageCount) {
-      return Math.round((Math.min(value, 100) / 100) * book.pageCount);
+    if (unitSelect.value === 'percent' && book.pageCount) {
+      return Math.round((Math.min(Math.max(value, 0), 100) / 100) * book.pageCount);
     }
     return Math.round(value);
   };
+
+  const endingPage = () => asPage(toInput);
+  const startingPage = () => asPage(fromInput);
 
   // A running read-out of what this entry will mean, so nobody has to work out
   // 79 of 440 in their head to check they typed the right number.
@@ -143,7 +184,7 @@ function entryForm(book, fixedDate, onSaved) {
       return;
     }
     const percent = Math.round((Math.min(to, book.pageCount) / book.pageCount) * 100);
-    const from = Number.parseInt(fromInput.value, 10);
+    const from = startingPage();
     const covered = Number.isFinite(from) && to > from ? to - from : null;
     preview.textContent =
       `${percent}% \u00b7 ${to} of ${book.pageCount} ${unit}` +
@@ -159,14 +200,14 @@ function entryForm(book, fixedDate, onSaved) {
     const result = addSession(book.id, {
       date: dateInput.value,
       minutes: minutesInput.value,
-      pageFrom: fromInput.value,
+      pageFrom: startingPage(),
       pageTo: endingPage(),
     });
 
     if (!result.ok) {
       error.textContent = Object.values(result.errors)[0];
       error.hidden = false;
-      return;
+      return false;
     }
 
     error.hidden = true;
@@ -178,14 +219,15 @@ function entryForm(book, fixedDate, onSaved) {
     toInput.value = '';
     preview.textContent = '';
     onSaved();
+    return true;
   };
 
   const form = el('div.session-form', {}, [
     el('div.session-form__row', {}, [
       labelled('Date', dateInput),
-      labelled(isAudio ? 'Ended at' : 'Ended on', el('div.progress-entry', {}, [toInput, toUnit])),
-      labelled('Minutes read', minutesInput),
-      labelled(isAudio ? 'Started at' : 'Started on page', fromInput),
+      labelled(isAudio ? 'Ended at' : 'Ended on', el('div.progress-entry', {}, [toInput, unitSelect])),
+      labelled(isAudio ? 'Started at' : 'Started from', fromInput),
+      labelled('Minutes', minutesInput),
     ]),
     preview,
     el('div.session-form__actions', {}, [
@@ -200,6 +242,13 @@ function entryForm(book, fixedDate, onSaved) {
       save();
     }
   });
+
+  /** True when there is something worth committing. */
+  form.commitPending = () => {
+    const hasEntry = minutesInput.value !== '' || toInput.value !== '';
+    if (!hasEntry) return false;
+    return save() !== false;
+  };
 
   return form;
 }

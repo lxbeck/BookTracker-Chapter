@@ -10,7 +10,7 @@
 import { el, fill, toast } from '../lib/dom.js';
 import { coverThumb } from './cover.js';
 import { lookupByIsbn, searchByText, fileToCoverDataUrl } from '../data/covers.js';
-import { cacheCover } from '../data/coverCache.js';
+import { cacheCover, storeCoverOnServer } from '../data/coverCache.js';
 
 const SOURCE_LABEL = {
   openlibrary: 'Open Library',
@@ -54,7 +54,10 @@ export function coverPicker({ draft, readForm, onPick }) {
     onPick(cover, meta);
     // Store the bytes locally straight away, so the book is offline-ready the
     // moment it's saved rather than only after a manual sweep in Settings.
-    if (next.url && draft.id) cacheCover(draft.id, next.url).catch(() => null);
+    if (next.url && draft.id) {
+      cacheCover(draft.id, next.url).catch(() => null);
+      storeCoverOnServer(draft.id, next.url).catch(() => null);
+    }
   }
 
   function setBusy(busy, message = '') {

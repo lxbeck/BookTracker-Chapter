@@ -1,0 +1,6 @@
+# Runtime data written by server.mjs — your library, not the project's
+data/
+
+node_modules/
+.DS_Store
+*.log

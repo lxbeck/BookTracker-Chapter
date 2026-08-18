@@ -9,6 +9,8 @@
 
 import { $, el, fill, toast } from './lib/dom.js';
 import * as store from './data/store.js';
+import { initSync, onSyncChange, syncStatus } from './data/sync.js';
+import { warmCoverCache, setServerCovers } from './data/coverCache.js';
 import { renderLibrary } from './views/library.js';
 import { renderCalendar } from './views/calendar.js';
 import { renderDay } from './views/day.js';
@@ -58,28 +60,59 @@ function paintSaveStatus() {
   if (!slot) return;
 
   const status = store.storageStatus();
+  const sync = syncStatus();
   const time = status.lastSavedAt
     ? status.lastSavedAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
     : null;
 
-  slot.className = `save-status ${status.saving ? 'is-ok' : 'is-failing'}`;
-  slot.title = status.saving
-    ? `${status.books} books held in this browser${time ? `, last written at ${time}` : ''}`
-    : 'Changes are not being written to this browser.';
+  // Two different questions, one indicator: is it written down, and is it
+  // shared. Sync failing while the local write succeeds is a warning, not an
+  // error — nothing has been lost.
+  const failing = !status.saving;
+  const label = failing
+    ? 'Not saving'
+    : sync.mode === 'syncing'
+      ? 'Synced'
+      : sync.mode === 'offline'
+        ? 'Saved here, offline'
+        : time
+          ? `Saved ${time}`
+          : 'Saved locally';
+
+  slot.className = `save-status ${failing ? 'is-failing' : sync.mode === 'offline' ? 'is-waiting' : 'is-ok'}`;
+  slot.title = failing
+    ? 'Changes are not being written to this browser.'
+    : `${status.books} books in this browser${time ? `, last written at ${time}` : ''}` +
+      (sync.mode === 'syncing'
+        ? ' \u00b7 shared with your other devices'
+        : sync.mode === 'offline'
+          ? ' \u00b7 waiting to reach the sync server'
+          : ' \u00b7 this browser only');
 
   fill(slot, [
     el('span.save-status__dot', { 'aria-hidden': 'true' }),
-    el('span', {}, status.saving ? (time ? `Saved ${time}` : 'Saved locally') : 'Not saving'),
+    el('span', {}, label),
   ]);
 }
 
-function start() {
+async function start() {
   store.onPersistError((message) => toast(message, { variant: 'error' }));
   store.init();
   store.subscribe(render);
+  onSyncChange(paintSaveStatus);
   window.addEventListener('hashchange', render);
+
+  // Paint from the local copy immediately. Waiting on the network before the
+  // first render would make an offline-first app feel like an online one.
   render();
   registerServiceWorker();
+
+  // Covers come from storage before anything is requested over the network,
+  // which is what makes them appear when there is no network at all.
+  warmCoverCache(store.allBooks().map((book) => book.id)).then(render);
+
+  await initSync();
+  setServerCovers(syncStatus().mode !== 'local');
 }
 
 document.addEventListener('DOMContentLoaded', start);

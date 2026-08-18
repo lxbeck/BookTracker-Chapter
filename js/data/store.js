@@ -21,7 +21,15 @@ import { addDays, daysBetween } from '../lib/dates.js';
 const STORAGE_KEY = 'chapter.library.v1';
 
 /** @type {{version: number, books: Object[], settings: Object}} */
-let state = { version: SCHEMA_VERSION, books: [], settings: { weekStartsOn: 0 } };
+let state = {
+  version: SCHEMA_VERSION,
+  books: [],
+  settings: { weekStartsOn: 0 },
+  // Deletions are recorded, not just applied. Without a tombstone, a device
+  // that never saw the delete would push the book back on its next sync.
+  deleted: [],
+  settingsUpdatedAt: undefined,
+};
 
 /** @type {Set<(state: object) => void>} */
 const listeners = new Set();
@@ -63,18 +71,16 @@ function migrate(saved) {
   // v0 -> v1: straight normalise.
   // v1 -> v2: sessions array gained real structure; normalizeBook handles it,
   //           and a v1 record's empty sessions array survives untouched.
-  if (version < SCHEMA_VERSION) {
-    return {
-      version: SCHEMA_VERSION,
-      settings: { weekStartsOn: 0, ...saved?.settings },
-      books: books.map(normalizeBook),
-    };
-  }
-  return {
+  const shared = {
     version: SCHEMA_VERSION,
     settings: { weekStartsOn: 0, ...saved?.settings },
-    books,
+    deleted: Array.isArray(saved?.deleted) ? saved.deleted : [],
+    settingsUpdatedAt: saved?.settingsUpdatedAt,
   };
+
+  return version < SCHEMA_VERSION
+    ? { ...shared, books: books.map(normalizeBook) }
+    : { ...shared, books };
 }
 
 function persist() {
@@ -237,6 +243,10 @@ export function removeBook(id) {
   if (!book) return { ok: false };
   commit(() => {
     state.books = state.books.filter((entry) => entry.id !== id);
+    state.deleted = [
+      ...(state.deleted ?? []).filter((entry) => entry.id !== id),
+      { id, at: new Date().toISOString() },
+    ];
   });
   return { ok: true, book };
 }
@@ -244,7 +254,11 @@ export function removeBook(id) {
 /** Restore a removed book in place — powers undo on delete. */
 export function restoreBook(book) {
   commit(() => {
-    if (!getBook(book.id)) state.books.push(book);
+    if (!getBook(book.id)) {
+      // Bump updatedAt so the restore outranks its own tombstone everywhere.
+      state.books.push({ ...book, updatedAt: new Date().toISOString() });
+    }
+    state.deleted = (state.deleted ?? []).filter((entry) => entry.id !== book.id);
   });
 }
 
@@ -337,8 +351,26 @@ function applySessions(book, sessions) {
 export function updateSettings(patch) {
   commit(() => {
     state.settings = { ...state.settings, ...patch };
+    state.settingsUpdatedAt = new Date().toISOString();
   });
   return state.settings;
+}
+
+/**
+ * Adopt a merged state that came from the server.
+ *
+ * Separate from replaceAll because the records are already normalised and
+ * already carry their own timestamps — re-normalising would stamp every book
+ * with a fresh `updatedAt` and make this device look like it had just edited
+ * the entire library, which would then win every future merge.
+ */
+export function applyRemote(next) {
+  commit(() => {
+    state.books = next.books ?? [];
+    state.settings = { ...state.settings, ...next.settings };
+    state.settingsUpdatedAt = next.settingsUpdatedAt ?? state.settingsUpdatedAt;
+    state.deleted = next.deleted ?? [];
+  });
 }
 
 /** Replace the whole library — used by seeding and, later, import. */

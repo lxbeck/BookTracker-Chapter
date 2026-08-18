@@ -5,9 +5,19 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "dev": "python3 -m http.server 8080",
+    "start": "node server.mjs",
+    "dev": "node server.mjs",
+    "static": "python3 -m http.server 8080",
     "test": "node --test tests/*.test.js"
   },
-  "keywords": ["reading", "tracker", "calendar", "vanilla-js"],
-  "license": "MIT"
+  "keywords": [
+    "reading",
+    "tracker",
+    "calendar",
+    "vanilla-js"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  }
 }

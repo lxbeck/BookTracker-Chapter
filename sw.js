@@ -14,7 +14,7 @@
  * Bump CACHE_VERSION to ship an update; old caches are dropped on activate.
  */
 
-const CACHE_VERSION = 'chapter-v2';
+const CACHE_VERSION = 'chapter-v3';
 const SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const IMAGE_CACHE = `${CACHE_VERSION}-images`;
 
@@ -40,6 +40,10 @@ const SHELL = [
   './js/data/coverCache.js',
   './js/data/seed.js',
   './js/data/transfer.js',
+  './js/data/merge.js',
+  './js/data/sync.js',
+  './js/data/goodreads.js',
+  './js/lib/csv.js',
   './js/logic/schedule.js',
   './js/logic/pacing.js',
   './js/logic/sessions.js',
@@ -87,6 +91,14 @@ self.addEventListener('fetch', (event) => {
   if (request.method !== 'GET') return;
 
   const url = new URL(request.url);
+
+  // The sync API must never be served from cache: a stale library is worse
+  // than no library, and the event stream cannot be cached at all.
+  if (url.pathname.startsWith('/api/library') || url.pathname.startsWith('/api/events')
+      || url.pathname.startsWith('/api/status')) {
+    return;
+  }
+
   const isImage =
     request.destination === 'image' || /\.(png|jpe?g|webp|gif|svg)$/i.test(url.pathname);
 

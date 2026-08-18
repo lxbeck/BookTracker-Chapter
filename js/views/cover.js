@@ -9,7 +9,7 @@
 
 import { el } from '../lib/dom.js';
 import { spineColor } from '../data/schema.js';
-import { cachedCoverUrl, peekCachedCoverUrl } from '../data/coverCache.js';
+import { cachedCoverUrl, peekCachedCoverUrl, serverCoverUrl } from '../data/coverCache.js';
 
 /**
  * @param {object} book
@@ -42,28 +42,39 @@ export function coverThumb(book, { width = '100%', alt, fit = 'crop' } = {}) {
     ]);
 
   if (book.cover?.url) {
-    // A locally cached copy beats the network every time, and is the only
-    // thing that renders at all when there isn't one.
-    const cached = peekCachedCoverUrl(book.id);
+    // Sources in order of reliability: the browser's own stored copy, then the
+    // server's, then the original host. Each failure falls through to the
+    // next, and the typeset spine catches anything left.
+    const sources = [
+      peekCachedCoverUrl(book.id),
+      serverCoverUrl(book.id),
+      book.cover.url,
+    ].filter(Boolean);
 
+    let attempt = 0;
     const img = el('img', {
-      src: cached ?? book.cover.url,
+      src: sources[0],
       alt: alt ?? `Cover of ${book.title}`,
       loading: 'lazy',
       decoding: 'async',
     });
-    // A dead cover URL is common with third-party art; degrade rather than
-    // leave a broken-image glyph on the calendar. The ratio box has to come
-    // back with it, or the fallback collapses to nothing.
+
     img.addEventListener('error', () => {
+      attempt += 1;
+      if (attempt < sources.length) {
+        img.src = sources[attempt];
+        return;
+      }
+      // A dead cover URL is common with third-party art; degrade rather than
+      // leave a broken-image glyph on the calendar. The ratio box has to come
+      // back with it, or the fallback collapses to nothing.
       node.classList.remove('cover--whole');
       node.replaceChildren(fallback());
     });
     node.append(img);
 
-    // If the cache hadn't been warmed yet, swap in the local copy once it
-    // resolves. Silent on failure — the network URL is already loading.
-    if (!cached) {
+    // If the browser cache hadn't been warmed yet, prefer it once it resolves.
+    if (!peekCachedCoverUrl(book.id)) {
       cachedCoverUrl(book.id).then((url) => {
         if (url && node.isConnected) img.src = url;
       }).catch(() => null);

@@ -12,6 +12,11 @@
  * Everything here fails soft. A cover that won't cache is a cover that still
  * loads from the network, and a browser with IndexedDB blocked still runs the
  * whole app.
+ *
+ * When the sync server is present it does this job better — it can fetch hosts
+ * that send no CORS headers, and one download serves every device — so
+ * `serverCoverUrl` takes priority and this becomes the fallback for the static,
+ * serverless setup.
  */
 
 const DB_NAME = 'chapter-covers';
@@ -65,6 +70,35 @@ function tx(mode, run) {
 
 const liveUrls = new Map();
 
+/** Set once at boot, when a sync server answers. */
+let serverAvailable = false;
+export const setServerCovers = (available) => {
+  serverAvailable = available;
+};
+
+/** The server's copy of a cover, if there is a server to ask. */
+export const serverCoverUrl = (bookId) =>
+  serverAvailable ? `api/covers/${encodeURIComponent(bookId)}` : null;
+
+/**
+ * Ask the server to fetch and keep a cover.
+ * @returns {Promise<boolean>}
+ */
+export async function storeCoverOnServer(bookId, url) {
+  if (!serverAvailable || !url || url.startsWith('data:')) return false;
+  try {
+    const response = await fetch(`api/covers/${encodeURIComponent(bookId)}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ url }),
+    });
+    const body = await response.json();
+    return Boolean(body?.ok);
+  } catch {
+    return false;
+  }
+}
+
 /** A local blob URL for a cached cover, or null if it isn't cached. */
 export async function cachedCoverUrl(bookId) {
   if (liveUrls.has(bookId)) return liveUrls.get(bookId);
@@ -81,6 +115,24 @@ export async function cachedCoverUrl(bookId) {
 
 /** Synchronous peek, for render paths that can't await. */
 export const peekCachedCoverUrl = (bookId) => liveUrls.get(bookId) ?? null;
+
+/**
+ * Load every stored cover's blob URL before the first paint.
+ *
+ * Without this, `peekCachedCoverUrl` is empty on a fresh load, every cover
+ * starts as a network request, and the offline copy is only swapped in a beat
+ * later — or never, if the app is offline and the request fails first. Warming
+ * the map up front is the difference between covers that work offline and
+ * covers that merely exist offline.
+ */
+export async function warmCoverCache(bookIds) {
+  try {
+    await Promise.all(bookIds.map((id) => cachedCoverUrl(id)));
+  } catch {
+    /* a cold cache is not an error */
+  }
+  return liveUrls.size;
+}
 
 /**
  * Download and store one cover.
@@ -162,8 +214,11 @@ export async function cacheAll(books, onProgress) {
   // is how you get rate-limited into failing them all.
   for (const book of candidates) {
     if (!already.has(book.id)) {
-      const ok = await cacheCover(book.id, book.cover.url);
-      if (ok) cached += 1;
+      // Ask the server first: it can reach hosts the browser can't, and its
+      // copy is the one every other device will use.
+      const onServer = await storeCoverOnServer(book.id, book.cover.url);
+      const inBrowser = await cacheCover(book.id, book.cover.url);
+      if (onServer || inBrowser) cached += 1;
       else failed += 1;
     }
     done += 1;

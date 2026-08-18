@@ -6,6 +6,7 @@
  */
 
 import { el, fill, toast } from '../lib/dom.js';
+import { showModal } from './modal.js';
 import {
   allBooks, getSettings, updateSettings, replaceAll,
   storageStatus, requestPersistentStorage,
@@ -14,6 +15,9 @@ import { exportJson, exportCsv, exportSessionsCsv, importJson, download, backupF
 import { cacheAll, cachedIds, cacheSize } from '../data/coverCache.js';
 import { goalProgress } from '../logic/stats.js';
 import { sampleBooks } from '../data/seed.js';
+import { parseGoodreadsCsv } from '../data/goodreads.js';
+import { syncStatus } from '../data/sync.js';
+import { addBook } from '../data/store.js';
 
 export function renderSettings(mount) {
   const books = allBooks();
@@ -28,6 +32,7 @@ export function renderSettings(mount) {
       ]),
     ]),
 
+    syncSection(),
     storageSection(redraw),
     goalSection(books, settings, redraw),
     offlineSection(books),
@@ -162,6 +167,8 @@ function dataSection(books, redraw) {
     ]),
     el('p.settings__note', {}, 'Importing merges by title and author, so restoring a backup updates books rather than duplicating them.'),
 
+    goodreadsRow(redraw),
+
     !books.length
       ? el('div.settings__row', {}, [
           el('button.btn.btn--ghost.btn--sm', {
@@ -174,6 +181,47 @@ function dataSection(books, redraw) {
           }, 'Load a sample library'),
         ])
       : null,
+  ].filter(Boolean));
+}
+
+/* --- Sync ----------------------------------------------------------------- */
+
+function syncSection() {
+  const status = syncStatus();
+
+  const copy = {
+    local: {
+      verdict: 'This browser only',
+      detail:
+        'No sync server is running, so the library lives in this browser and nowhere else. Another device opening the same address gets its own separate library. Run "npm start" instead of a plain static server to share one library across devices.',
+      tone: 'is-local',
+    },
+    syncing: {
+      verdict: 'Shared with every device on your network',
+      detail:
+        'A sync server is running. Changes made here appear on your other devices within a second, and theirs appear here. Each device also keeps its own copy, so going offline changes nothing until you reconnect.',
+      tone: 'is-ok',
+    },
+    offline: {
+      verdict: 'Working offline',
+      detail:
+        'The sync server cannot be reached right now. Everything still works and is saved in this browser; it will merge back when the server returns.',
+      tone: 'is-failing',
+    },
+  }[status.mode];
+
+  const time = status.lastSyncedAt
+    ? status.lastSyncedAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+    : null;
+
+  return section('Other devices', [
+    el('p.storage-verdict', { class: copy.tone }, [
+      el('span.save-status__dot', { 'aria-hidden': 'true' }),
+      copy.verdict,
+    ]),
+    el('p.settings__hint', {}, copy.detail),
+    time ? el('p.settings__note', {}, `Last synced at ${time}.`) : null,
+    status.error ? el('p.settings__note', {}, status.error) : null,
   ].filter(Boolean));
 }
 
@@ -227,6 +275,106 @@ function storageSection(redraw) {
 
 const storageFact = (label, value) =>
   el('div.storage-facts__row', {}, [el('dt', {}, label), el('dd', {}, value)]);
+
+/* --- Goodreads ------------------------------------------------------------ */
+
+function goodreadsRow(redraw) {
+  const summary = el('p.settings__note', { 'aria-live': 'polite' });
+
+  const fileInput = el('input', {
+    type: 'file',
+    accept: '.csv,text/csv',
+    class: 'visually-hidden',
+    onChange: async (event) => {
+      const file = event.target.files?.[0];
+      event.target.value = '';
+      if (!file) return;
+
+      summary.textContent = 'Reading that export\u2026';
+      const parsed = parseGoodreadsCsv(await file.text());
+
+      if (!parsed.ok) {
+        summary.textContent = parsed.error;
+        toast(parsed.error, { variant: 'error' });
+        return;
+      }
+
+      // Never drop hundreds of books in unannounced; show what's there first.
+      confirmImport(parsed, summary, redraw);
+    },
+  });
+
+  return el('div', {}, [
+    el('h4.settings__subhead', {}, 'From Goodreads'),
+    el('p.settings__hint', {},
+      'On Goodreads: My Books, then Import and Export, then Export Library. Upload the CSV here. Shelves, ratings, reviews, read dates and page counts all come across; cover art is fetched separately.'),
+    el('div.settings__row', {}, [
+      el('button.btn.btn--quiet.btn--sm', { type: 'button', onClick: () => fileInput.click() },
+        'Import Goodreads CSV'),
+      fileInput,
+    ]),
+    summary,
+  ]);
+}
+
+function confirmImport(parsed, summary, redraw) {
+  const { books, counts, skipped, source } = parsed;
+  const breakdown = Object.entries(counts)
+    .map(([status, count]) => `${count} ${STATUS_WORD[status] ?? status}`)
+    .join(', ');
+
+  const existing = new Set(
+    allBooks().map((book) => `${book.title.toLowerCase()}|${book.author.toLowerCase()}`)
+  );
+  const duplicates = books.filter((book) =>
+    existing.has(`${book.title.toLowerCase()}|${book.author.toLowerCase()}`)
+  ).length;
+
+  const modal = showModal({
+    eyebrow: `${source} export`,
+    title: `${books.length} books found`,
+    body: [
+      el('p', {}, breakdown ? `That breaks down as ${breakdown}.` : 'No status information found.'),
+      duplicates
+        ? el('p', {}, `${duplicates} of them are already in your library and will be skipped, not duplicated.`)
+        : null,
+      skipped
+        ? el('p.settings__note', {}, `${skipped} rows had no title and will be ignored.`)
+        : null,
+      el('p.settings__note', {},
+        'Imported books arrive unscheduled, so nothing lands on your calendar until you plan it.'),
+    ].filter(Boolean),
+    actions: [
+      el('button.btn.btn--quiet', { type: 'button', onClick: () => modal.close() }, 'Cancel'),
+      el('button.btn.btn--stamp', {
+        type: 'button',
+        onClick: () => {
+          let added = 0;
+          for (const book of books) {
+            const key = `${book.title.toLowerCase()}|${book.author.toLowerCase()}`;
+            if (existing.has(key)) continue;
+            if (addBook(book).ok) {
+              existing.add(key);
+              added += 1;
+            }
+          }
+          modal.close();
+          summary.textContent = `Imported ${added} books${duplicates ? `, skipped ${duplicates} already present` : ''}.`;
+          toast(`${added} books imported.`);
+          redraw();
+        },
+      }, `Import ${books.length - duplicates} books`),
+    ],
+  });
+}
+
+const STATUS_WORD = {
+  finished: 'finished',
+  reading: 'currently reading',
+  planned: 'to read',
+  dnf: 'not finished',
+  'on-hold': 'on hold',
+};
 
 function aboutSection() {
   return section('A warning worth reading', [

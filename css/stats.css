@@ -668,3 +668,21 @@
   color: var(--ink);
   word-break: break-all;
 }
+
+.settings__subhead {
+  font-family: var(--face-slip);
+  font-size: var(--size-xs);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin: var(--s5) 0 var(--s2);
+}
+
+.storage-verdict.is-local {
+  color: var(--ink-soft);
+}
+
+.storage-verdict.is-local .save-status__dot {
+  background: var(--ink-faint);
+  box-shadow: 0 0 0 3px rgba(134, 141, 148, 0.18);
+}

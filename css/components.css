@@ -412,3 +412,24 @@
 .toast--error {
   border-left-color: var(--overdue);
 }
+
+.empty__aside {
+  font-size: var(--size-sm);
+  color: var(--ink-inverse-soft);
+  margin-top: var(--s4);
+}
+
+.link-btn {
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  color: #b9a6ee;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  font: inherit;
+}
+
+.link-btn:hover {
+  color: var(--ink-inverse);
+}

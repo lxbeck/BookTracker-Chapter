@@ -32,5 +32,6 @@ js/lib/dates.js       day-key arithmetic and the month grid
 js/data/schema.js     the Book record: defaults, normalise, validate
 js/data/store.js      persistence, migrations, CRUD, pub/sub
 js/data/covers.js     Open Library + Google Books lookup, upload downscaling
+js/data/seed.js       sample library for demos
 js/views/             one module per view
 tests/                data-layer tests

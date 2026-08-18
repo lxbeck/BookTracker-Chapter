@@ -1,44 +1,54 @@
 /* ===========================================================================
    Chapter — design tokens
-   Visual language: the library due-date slip. Bookcloth-green chrome, manila
-   cards, typewriter metadata, violet stamp ink reserved for time-sensitive
-   state (today, due, behind pace). Covers supply all the color.
+
+   Visual language: the library due-date slip. Soft blue-slate chrome, manila
+   cards, typewriter metadata, ink-blue stamps reserved for time-sensitive
+   state. Covers supply all the colour.
    =========================================================================== */
 
 :root {
   /* --- Surface ---------------------------------------------------------- */
-  --bookcloth: #16241f; /* deep bound-cloth green, app chrome */
-  --bookcloth-lift: #1d2f28; /* raised chrome: toolbars, headers */
-  --bookcloth-edge: #0e1814; /* recessed wells, gutters */
+  --bookcloth: #1b2c3b; /* soft blue-slate, app chrome */
+  --bookcloth-lift: #24394b; /* raised chrome: toolbars, headers */
+  --bookcloth-edge: #142230; /* recessed wells, gutters */
+  --bookcloth-hover: #22374a;
 
-  --slip: #f2efe6; /* manila card stock */
-  --slip-shade: #e6e1d3; /* card stock, one step down */
-  --slip-edge: #d3cbb6; /* hairline rule on card stock */
+  --slip: #f3f0e8; /* manila card stock */
+  --slip-shade: #e7e2d5; /* card stock, one step down */
+  --slip-edge: #d4ccb8; /* hairline rule on card stock */
 
   /* --- Ink -------------------------------------------------------------- */
-  --ink: #191b18; /* body text on slip */
-  --ink-soft: #55584f; /* secondary text on slip */
-  --ink-faint: #8a8b80; /* tertiary / disabled */
-  --ink-inverse: #f2efe6; /* text on bookcloth */
-  --ink-inverse-soft: #a8b5ad; /* secondary text on bookcloth */
+  --ink: #171c22;
+  --ink-soft: #515a63;
+  --ink-faint: #868d94;
+  --ink-inverse: #f1f4f7;
+  --ink-inverse-soft: #a5bacb;
 
   /* --- Stamp (time-sensitive state only) -------------------------------- */
-  --stamp: #5b3fa8; /* date-stamp violet: today, active, scheduled */
-  --stamp-wash: #ebe5f8; /* violet at card-stock strength */
-  --stamp-deep: #3f2a79;
-  --overdue: #a8324a; /* red pad: behind pace, overdue */
+  --stamp: #3a57bd; /* date-stamp ink blue, for light surfaces */
+  --stamp-deep: #29408f;
+  --stamp-bright: #9db4f7; /* the same ink, legible on the dark chrome */
+  --stamp-wash: #e6ecfb;
+  --overdue: #a8324a;
   --overdue-wash: #f7e4e8;
-  --shelved: #3c6b56; /* finished / checked in */
-  --shelved-wash: #e2ede7;
+  --shelved: #3c7a63; /* finished / checked in */
+  --shelved-wash: #e2efe9;
+  --inprogress: #b07d1c; /* reading now */
+  --inprogress-wash: #f7edd8;
+
+  /* Calendar state stripes, tuned for the dark grid */
+  --state-reading: #e0aa4c;
+  --state-planned: #8fa6f2;
+  --state-finished: #6fb495;
 
   /* --- Type ------------------------------------------------------------- */
   --face-display: "Fraunces", "Iowan Old Style", Georgia, serif;
   --face-body: "Inter Tight", "Inter", system-ui, -apple-system, sans-serif;
   --face-slip: "Courier Prime", "Courier New", ui-monospace, monospace;
 
-  --size-xs: 0.6875rem; /* 11px — slip captions, call numbers */
-  --size-sm: 0.8125rem; /* 13px — metadata */
-  --size-base: 0.9375rem; /* 15px — body */
+  --size-xs: 0.6875rem;
+  --size-sm: 0.8125rem;
+  --size-base: 0.9375rem;
   --size-md: 1.0625rem;
   --size-lg: 1.375rem;
   --size-xl: 2rem;
@@ -47,7 +57,6 @@
   --leading-tight: 1.15;
   --leading-body: 1.55;
 
-  /* Fraunces variable axes: SOFT wonk, low optical size = characterful */
   --wonk-on: "SOFT" 40, "WONK" 1;
   --wonk-off: "SOFT" 0, "WONK" 0;
 
@@ -61,16 +70,17 @@
   --s7: 3rem;
 
   /* --- Geometry --------------------------------------------------------- */
-  --r-card: 2px; /* card stock barely rounds */
+  --r-card: 2px;
   --r-control: 3px;
   --r-cover: 1px;
   --rule: 1px solid var(--slip-edge);
-  --rule-dark: 1px solid rgba(242, 239, 230, 0.14);
+  --rule-dark: 1px solid rgba(241, 244, 247, 0.14);
+  --cover-ratio: 2 / 3;
 
   /* --- Elevation -------------------------------------------------------- */
-  --lift-1: 0 1px 2px rgba(9, 16, 13, 0.18);
-  --lift-2: 0 4px 14px rgba(9, 16, 13, 0.28);
-  --lift-3: 0 18px 48px rgba(9, 16, 13, 0.42);
+  --lift-1: 0 1px 2px rgba(8, 14, 20, 0.2);
+  --lift-2: 0 4px 14px rgba(8, 14, 20, 0.3);
+  --lift-3: 0 18px 48px rgba(8, 14, 20, 0.45);
 
   /* --- Motion ----------------------------------------------------------- */
   --ease: cubic-bezier(0.2, 0.7, 0.3, 1);
@@ -79,7 +89,7 @@
 
   /* --- Layout ----------------------------------------------------------- */
   --shell-max: 1180px;
-  --cover-ratio: 2 / 3;
+  --shell-wide: 1800px; /* calendar and day views run near full width */
 }
 
 @media (prefers-reduced-motion: reduce) {

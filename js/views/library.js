@@ -35,7 +35,7 @@ const SORTS = {
   length: { label: 'Length', compare: (a, b) => (b.pageCount ?? 0) - (a.pageCount ?? 0) },
 };
 
-const filters = { shelf: 'reading', sort: 'planned', query: '' };
+const filters = { shelf: 'reading', sort: 'planned', query: '', tag: null };
 
 export function renderLibrary(mount) {
   const books = allBooks();
@@ -49,9 +49,13 @@ export function renderLibrary(mount) {
     filters.shelf = Object.keys(SHELVES).find((id) => counts[id]) ?? 'all';
   }
 
+  const tags = [...new Set(books.flatMap((book) => book.shelves))].sort();
+  if (filters.tag && !tags.includes(filters.tag)) filters.tag = null;
+
   const visible = books
     .filter(SHELVES[filters.shelf].match)
     .filter(matchesQuery(filters.query))
+    .filter((book) => !filters.tag || book.shelves.includes(filters.tag))
     .sort(SORTS[filters.sort].compare);
 
   fill(mount, [
@@ -64,6 +68,7 @@ export function renderLibrary(mount) {
     ]),
 
     books.length ? toolbar(counts) : null,
+    tags.length ? tagBar(tags) : null,
 
     books.length === 0
       ? emptyLibrary()
@@ -137,6 +142,32 @@ function toolbar(counts) {
   return el('div.shelf-bar', {}, [tabs, el('div.shelf-bar__tools', {}, [search, sort])]);
 }
 
+function tagBar(tags) {
+  const rerender = () => renderLibrary(document.querySelector('#view'));
+  return el('div.tag-bar', {}, [
+    el('span.tag-bar__label', {}, 'Shelves'),
+    ...tags.map((tag) =>
+      el('button.tag', {
+        type: 'button',
+        'aria-pressed': String(filters.tag === tag),
+        onClick: () => {
+          filters.tag = filters.tag === tag ? null : tag;
+          rerender();
+        },
+      }, tag)
+    ),
+    filters.tag
+      ? el('button.link-btn.tag-bar__clear', {
+          type: 'button',
+          onClick: () => {
+            filters.tag = null;
+            rerender();
+          },
+        }, 'Clear')
+      : null,
+  ].filter(Boolean));
+}
+
 function shelfCard(book) {
   const unit = FORMATS[book.format].unit;
 
@@ -153,8 +184,16 @@ function shelfCard(book) {
         el('div.shelf-card__body', {}, [
           el('h3.shelf-card__title', {}, book.title),
           el('p.shelf-card__author', {}, book.author || 'Unknown author'),
+          book.series.name
+            ? el('p.shelf-card__series', {},
+                `${book.series.name}${book.series.number ? ` #${book.series.number}` : ''}${book.series.total ? ` of ${book.series.total}` : ''}`)
+            : null,
           statusLine(book, unit),
-        ]),
+          book.rating ? el('p.shelf-card__rating', { 'aria-label': `${book.rating} out of 5` }, '\u2605'.repeat(book.rating)) : null,
+          book.description
+            ? el('p.shelf-card__blurb', {}, book.description)
+            : null,
+        ].filter(Boolean)),
       ]
     ),
     el('span', { class: `chip chip--${book.status} shelf-card__chip` }, STATUSES[book.status].label),

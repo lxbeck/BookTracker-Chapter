@@ -29,6 +29,7 @@ css/library.css       record lists
 css/calendar.css      month grid, day cells, cover tiles
 css/dayview.css       hover card and day popup
 css/sessions.css      reading log
+css/stats.css         stats, settings, day view, tags, ratings
 js/app.js             bootstrap + hash router
 js/lib/dom.js         element helper, focus trap, toasts
 js/lib/dates.js       day-key arithmetic and the month grid
@@ -39,5 +40,10 @@ js/data/seed.js       sample library for demos
 js/logic/schedule.js  which books land on which day, in which state
 js/logic/pacing.js    daily targets, ahead/behind, projected finish
 js/logic/sessions.js  session totals, reading streak, observed pace
+js/logic/stats.js     monthly rollups, breakdowns, goal progress
+js/lib/charts.js      hand-rolled SVG charts (no chart library)
+js/data/coverCache.js IndexedDB store for offline cover art
+js/data/transfer.js   JSON and CSV export, merge-aware import
+sw.js                 service worker: offline app shell
 js/views/             one module per view
 tests/                data-layer tests

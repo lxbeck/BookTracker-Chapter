@@ -6,11 +6,12 @@
  * without half-written records reaching the library.
  */
 
-import { el, $, toast } from '../lib/dom.js';
+import { el, fill, $, toast } from '../lib/dom.js';
 import { showModal } from './modal.js';
 import { coverPicker } from './coverPicker.js';
 import { sessionLog } from './sessionLog.js';
 import { progressReport } from '../logic/pacing.js';
+import { allBooks } from '../data/store.js';
 import { STATUSES, STATUS_ORDER, FORMATS, blankBook } from '../data/schema.js';
 import { formatShort } from '../lib/dates.js';
 import { addBook, updateBook, removeBook, restoreBook } from '../data/store.js';
@@ -62,6 +63,51 @@ export function openBookForm({ book = null, defaultStart = null, onSaved } = {})
     placeholder: '448',
   });
   const genreInput = input('genre', { value: draft.genre, placeholder: 'Adventure' });
+
+  const descriptionInput = el('textarea.textarea', {
+    id: 'f-description',
+    name: 'description',
+    rows: '4',
+    placeholder: 'Fetched automatically when you look a book up by ISBN.',
+  }, draft.description ?? '');
+
+  const seriesNameInput = input('series.name', {
+    value: draft.series.name,
+    placeholder: 'Barsoom',
+  });
+  const seriesNumberInput = input('series.number', {
+    type: 'number', min: '1', value: draft.series.number ?? '', placeholder: '2',
+  });
+  const seriesTotalInput = input('series.total', {
+    type: 'number', min: '1', value: draft.series.total ?? '', placeholder: '4',
+  });
+
+  const shelvesInput = input('shelves', {
+    value: draft.shelves.join(', '),
+    placeholder: '2026 goal, book club, rereads',
+    list: 'shelf-suggestions',
+  });
+
+  // Offer the shelves already in use, so they don't fragment into near-misses.
+  const knownShelves = [...new Set(allBooks().flatMap((book) => book.shelves))].sort();
+  const shelfList = el('datalist', { id: 'shelf-suggestions' },
+    knownShelves.map((shelf) => el('option', { value: shelf })));
+
+  const notesInput = el('textarea.textarea', {
+    id: 'f-notes', name: 'notes', rows: '3',
+    placeholder: 'Anything you want to remember about this book.',
+  }, draft.notes ?? '');
+
+  const reviewInput = el('textarea.textarea', {
+    id: 'f-review', name: 'review', rows: '3',
+    placeholder: 'A few lines on what you thought.',
+  }, draft.review ?? '');
+
+  const ratingControl = starRating(draft.rating, (value) => {
+    draft.rating = value;
+  });
+
+  const quotesBlock = quotesEditor(draft);
 
   const formatSelect = el(
     'select.select',
@@ -135,6 +181,10 @@ export function openBookForm({ book = null, defaultStart = null, onSaved } = {})
         pagesInput.value = meta.pageCount;
         refreshPaceNote();
       }
+      if (!descriptionInput.value.trim() && meta.description) {
+        descriptionInput.value = meta.description;
+      }
+      if (!genreInput.value.trim() && meta.genre) genreInput.value = meta.genre;
     },
   });
 
@@ -155,6 +205,18 @@ export function openBookForm({ book = null, defaultStart = null, onSaved } = {})
       field('genre', 'Genre', genreInput),
     ]),
     field('status', 'Status', statusSelect),
+    el('div.field', {}, [
+      el('label.field__label', { for: 'f-description', text: 'Description' }),
+      descriptionInput,
+    ]),
+    el('fieldset.plan-block', {}, [
+      el('legend.field__label', { text: 'Series' }),
+      el('div.field-row', {}, [
+        field('series.name', 'Series name', seriesNameInput),
+        field('series.number', 'Book number', seriesNumberInput),
+        field('series.total', 'Of how many', seriesTotalInput),
+      ]),
+    ]),
     el('fieldset.plan-block', {}, [
       el('legend.field__label', { text: 'Reading plan' }),
       el('div.field-row', {}, [
@@ -170,6 +232,24 @@ export function openBookForm({ book = null, defaultStart = null, onSaved } = {})
         field('actual.finishedAt', 'Finished on', finishedInput),
       ]),
       el('p.field__hint', {}, 'Marking a book finished fills the finish date in for you.'),
+    ]),
+    el('fieldset.plan-block', {}, [
+      el('legend.field__label', { text: 'Shelves and notes' }),
+      field('shelves', 'Shelves', shelvesInput, 'Comma separated'),
+      shelfList,
+      el('div.field', {}, [
+        el('label.field__label', { for: 'f-notes', text: 'Notes' }),
+        notesInput,
+      ]),
+      quotesBlock.node,
+    ]),
+    el('fieldset.plan-block', {}, [
+      el('legend.field__label', { text: 'Rating and review' }),
+      ratingControl,
+      el('div.field', {}, [
+        el('label.field__label', { for: 'f-review', text: 'Review' }),
+        reviewInput,
+      ]),
     ]),
     isEdit
       ? el('fieldset.plan-block.plan-block--log', {}, [
@@ -204,6 +284,17 @@ export function openBookForm({ book = null, defaultStart = null, onSaved } = {})
       format: formatSelect.value,
       status: statusSelect.value,
       cover: draft.cover,
+      description: descriptionInput.value,
+      series: {
+        name: seriesNameInput.value,
+        number: seriesNumberInput.value,
+        total: seriesTotalInput.value,
+      },
+      shelves: shelvesInput.value.split(',').map((shelf) => shelf.trim()).filter(Boolean),
+      notes: notesInput.value,
+      review: reviewInput.value,
+      rating: draft.rating,
+      quotes: quotesBlock.read(),
       schedule: { start: startInput.value || null, end: endInput.value || null },
       actual: {
         startedAt: startedInput.value || null,
@@ -315,3 +406,120 @@ const miniFact = (label, value, tone = '') =>
     el('dt', {}, label),
     el('dd', { class: tone }, value),
   ]);
+
+/* --- Rating ---------------------------------------------------------------
+ * Radio buttons rather than clickable glyphs: a star widget that isn't a real
+ * form control is unreachable by keyboard and invisible to a screen reader.
+ * -------------------------------------------------------------------------- */
+
+function starRating(current, onChange) {
+  const name = `rating-${Math.random().toString(36).slice(2, 7)}`;
+  let value = current ?? null;
+
+  const stars = [1, 2, 3, 4, 5].map((score) =>
+    el('label.star', { class: value >= score ? 'is-on' : '' }, [
+      el('input', {
+        type: 'radio', name, value: String(score),
+        checked: value === score,
+        class: 'visually-hidden',
+        'aria-label': `${score} star${score === 1 ? '' : 's'}`,
+        onChange: () => {
+          value = score;
+          onChange(score);
+          paint();
+        },
+      }),
+      el('span', { 'aria-hidden': 'true' }, '\u2605'),
+    ])
+  );
+
+  const clear = el('button.btn.btn--danger.btn--sm', {
+    type: 'button',
+    onClick: () => {
+      value = null;
+      onChange(null);
+      for (const star of stars) star.querySelector('input').checked = false;
+      paint();
+    },
+  }, 'Clear');
+
+  function paint() {
+    stars.forEach((star, index) => star.classList.toggle('is-on', value != null && value >= index + 1));
+    clear.hidden = value == null;
+  }
+
+  paint();
+
+  return el('div.field', {}, [
+    el('span.field__label', {}, 'Rating'),
+    el('div.star-rating', { role: 'radiogroup', 'aria-label': 'Rating' }, [...stars, clear]),
+  ]);
+}
+
+/* --- Quotes ---------------------------------------------------------------- */
+
+function quotesEditor(draft) {
+  let quotes = [...(draft.quotes ?? [])];
+  const list = el('ul.quote-list');
+
+  const textInput = el('textarea.textarea', {
+    rows: '2', placeholder: 'Type or paste a passage worth keeping.',
+    'aria-label': 'Quote',
+  });
+  const pageInput = el('input.input.quote-page', {
+    type: 'number', min: '0', placeholder: 'page', 'aria-label': 'Page number',
+  });
+
+  const paint = () => {
+    fill(list, quotes.length
+      ? quotes.map((quote) =>
+          el('li.quote', {}, [
+            el('blockquote', {}, quote.text),
+            el('div.quote__foot', {}, [
+              quote.page != null ? el('cite', {}, `page ${quote.page}`) : null,
+              el('button.icon-btn', {
+                type: 'button', 'aria-label': 'Delete this quote',
+                onClick: () => {
+                  quotes = quotes.filter((entry) => entry.id !== quote.id);
+                  paint();
+                },
+                text: '\u00d7',
+              }),
+            ].filter(Boolean)),
+          ])
+        )
+      : [el('li.quote-empty', {}, 'No quotes saved yet.')]);
+  };
+
+  const add = () => {
+    const text = textInput.value.trim();
+    if (!text) return;
+    const page = Number.parseInt(pageInput.value, 10);
+    quotes.push({
+      id: `qt_${Date.now().toString(36)}`,
+      text,
+      page: Number.isFinite(page) ? page : null,
+      createdAt: new Date().toISOString(),
+    });
+    textInput.value = '';
+    pageInput.value = '';
+    paint();
+  };
+
+  paint();
+
+  return {
+    node: el('div.field', {}, [
+      el('span.field__label', {}, 'Quotes'),
+      list,
+      el('div.quote-form', {}, [
+        textInput,
+        el('div.quote-form__foot', {}, [
+          pageInput,
+          el('button.btn.btn--quiet.btn--sm', { type: 'button', onClick: add }, 'Add quote'),
+        ]),
+      ]),
+    ]),
+    read: () => quotes,
+  };
+}

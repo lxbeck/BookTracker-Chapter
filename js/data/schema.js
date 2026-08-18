@@ -14,7 +14,7 @@
 
 import { isValidKey, today } from '../lib/dates.js';
 
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 /** @type {Record<string, {id: string, label: string, hint: string}>} */
 export const STATUSES = {
@@ -59,6 +59,7 @@ export function blankBook(overrides = {}) {
     isbn: '',
     pageCount: null,
     genre: '',
+    description: '',
     format: 'physical',
     status: 'planned',
     series: { name: '', number: null, total: null },
@@ -69,7 +70,9 @@ export function blankBook(overrides = {}) {
     sessions: [],
     shelves: [],
     notes: '',
+    quotes: [],
     rating: null,
+    review: '',
     createdAt: now,
     updatedAt: now,
     ...overrides,
@@ -180,6 +183,7 @@ export function normalizeBook(input = {}, todayKey = today()) {
     isbn: String(input.isbn ?? '').replace(/[^0-9Xx]/g, '').toUpperCase(),
     pageCount: pageCount && pageCount > 0 ? pageCount : null,
     genre: String(input.genre ?? '').trim(),
+    description: String(input.description ?? '').trim().slice(0, 2000),
     format: FORMATS[input.format] ? input.format : base.format,
     status,
     series: {
@@ -204,9 +208,25 @@ export function normalizeBook(input = {}, todayKey = today()) {
       .map(normalizeSession)
       .filter((session) => session.date)
       .sort((a, b) => a.date.localeCompare(b.date) || a.createdAt.localeCompare(b.createdAt)),
-    shelves: Array.isArray(input.shelves) ? input.shelves : [],
+    shelves: (Array.isArray(input.shelves) ? input.shelves : [])
+      .map((shelf) => String(shelf).trim())
+      .filter(Boolean)
+      // Shelf names are matched case-insensitively but kept as typed, so
+      // "Book Club" and "book club" never become two shelves.
+      .filter((shelf, index, all) =>
+        all.findIndex((other) => other.toLowerCase() === shelf.toLowerCase()) === index
+      ),
     notes: String(input.notes ?? ''),
+    quotes: (Array.isArray(input.quotes) ? input.quotes : [])
+      .map((quote) => ({
+        id: quote.id || newId('qt'),
+        text: String(quote.text ?? '').trim(),
+        page: toInt(quote.page),
+        createdAt: quote.createdAt || new Date().toISOString(),
+      }))
+      .filter((quote) => quote.text),
     rating: toInt(input.rating),
+    review: String(input.review ?? '').trim().slice(0, 4000),
     createdAt: input.createdAt || base.createdAt,
     updatedAt: new Date().toISOString(),
   };

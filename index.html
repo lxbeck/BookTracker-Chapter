@@ -6,6 +6,7 @@
     <title>Chapter — reading tracker</title>
     <meta name="description" content="Chapter is a reading tracker: catalogue your books, plan them onto a calendar, and see what today asks of you." />
     <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#1b2c3b" />
 
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -22,6 +23,7 @@
     <link rel="stylesheet" href="css/calendar.css" />
     <link rel="stylesheet" href="css/dayview.css" />
     <link rel="stylesheet" href="css/sessions.css" />
+    <link rel="stylesheet" href="css/stats.css" />
   </head>
   <body>
     <div class="app">
@@ -32,8 +34,17 @@
             <button class="app-nav__link" data-route="calendar" onclick="location.hash='#/calendar'">
               Calendar
             </button>
+            <button class="app-nav__link" data-route="day" onclick="location.hash='#/day'">
+              Day
+            </button>
             <button class="app-nav__link" data-route="library" onclick="location.hash='#/library'">
               Library
+            </button>
+            <button class="app-nav__link" data-route="stats" onclick="location.hash='#/stats'">
+              Stats
+            </button>
+            <button class="app-nav__link" data-route="settings" onclick="location.hash='#/settings'">
+              Settings
             </button>
           </nav>
         </div>

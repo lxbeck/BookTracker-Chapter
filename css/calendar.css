@@ -3,7 +3,12 @@
 
    The signature: today's date carries a rubber-stamp impression, the way a
    circulation card gets stamped on the day it's checked out. Everything else
-   in the grid stays quiet so the covers supply the colour.
+   stays quiet so the covers supply the colour.
+
+   Tiles are laid out in rows built by the view (1 / 2 / 3 / 2+2 / 3+2 / 3+3),
+   and every row is `flex: 1` of the cell's spare height. Sizing from height
+   and deriving width from the 2:3 ratio is what lets one cover fill a whole
+   day while six still fit, with no gaps left for tiles that aren't there.
    =========================================================================== */
 
 .cal {
@@ -11,6 +16,10 @@
   border-radius: var(--r-card);
   overflow: hidden;
   background: var(--bookcloth-edge);
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
 }
 
 .cal__weekdays {
@@ -18,6 +27,7 @@
   grid-template-columns: repeat(7, minmax(0, 1fr));
   background: var(--bookcloth-lift);
   border-bottom: var(--rule-dark);
+  flex: none;
 }
 
 .cal__weekday {
@@ -38,19 +48,25 @@
 .cal__grid {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
+  grid-template-rows: repeat(6, minmax(0, 1fr));
   gap: 1px;
-  background: rgba(242, 239, 230, 0.09);
+  background: rgba(241, 244, 247, 0.09);
+  flex: 1;
+  /* Fill the viewport rather than sitting in a short band, with a floor so a
+     laptop in a small window still shows readable covers. */
+  min-height: clamp(620px, calc(100vh - 250px), 1100px);
 }
 
 /* --- Day cell ------------------------------------------------------------- */
 
 .cal__day {
   background: var(--bookcloth);
-  min-height: 104px;
   padding: var(--s2);
   display: flex;
   flex-direction: column;
-  gap: var(--s2);
+  gap: var(--s1);
+  min-height: 0;
+  min-width: 0;
   transition: background var(--fast) var(--ease), box-shadow var(--fast) var(--ease);
 }
 
@@ -60,11 +76,11 @@
 
 .cal__day--outside .cal__date,
 .cal__day--outside .cal__tile {
-  opacity: 0.5;
+  opacity: 0.45;
 }
 
 .cal__day:hover {
-  background: #1a2b25;
+  background: var(--bookcloth-hover);
 }
 
 .cal__date {
@@ -78,55 +94,69 @@
   cursor: pointer;
   align-self: flex-start;
   line-height: 1;
+  flex: none;
   transition: color var(--fast) var(--ease), background var(--fast) var(--ease);
 }
 
 .cal__date:hover {
   color: var(--ink-inverse);
-  background: rgba(242, 239, 230, 0.08);
+  background: rgba(241, 244, 247, 0.1);
 }
 
-/* The stamp. Slightly off-square and slightly off-angle, because a real one
-   never lands straight. */
+/* The stamp. Slightly off-angle, because a real one never lands straight. */
 .cal__day--today .cal__date {
-  color: #cbb9ff;
+  color: var(--stamp-bright);
   font-weight: 700;
-  border: 1.5px solid rgba(185, 166, 238, 0.9);
+  border: 1.5px solid rgba(157, 180, 247, 0.9);
   border-radius: 2px;
   padding: 3px 7px;
   transform: rotate(-2.5deg);
-  box-shadow: 0 0 0 1px rgba(91, 63, 168, 0.35), inset 0 0 6px rgba(91, 63, 168, 0.3);
+  box-shadow: 0 0 0 1px rgba(58, 87, 189, 0.35), inset 0 0 6px rgba(58, 87, 189, 0.3);
 }
 
 .cal__day--today {
-  background: #1b2c26;
-  box-shadow: inset 0 0 0 1px rgba(185, 166, 238, 0.28);
+  background: #1f3548;
+  box-shadow: inset 0 0 0 1px rgba(157, 180, 247, 0.3);
 }
 
 /* --- Cover tiles ---------------------------------------------------------- */
 
 .cal__tiles {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.cal__tile-row {
+  flex: 1;
+  min-height: 0;
   display: flex;
   gap: 3px;
-  align-items: flex-start;
-  margin-top: auto;
-  min-width: 0;
+  justify-content: center;
+  align-items: stretch;
 }
 
 .cal__tile {
-  flex: 1 1 0;
+  height: 100%;
+  width: auto;
+  aspect-ratio: var(--cover-ratio);
+  flex: 0 1 auto;
   min-width: 0;
-  max-width: 30px;
-  padding: 0;
+  max-width: 100%;
+  padding: 0 0 2px;
   border: 0;
   background: none;
   cursor: grab;
   border-radius: var(--r-cover);
-  /* the state stripe sits under the cover rather than on it, so it never
-     obscures the art */
   border-bottom: 2px solid var(--tile-state, transparent);
-  padding-bottom: 2px;
   transition: transform var(--fast) var(--ease), filter var(--fast) var(--ease);
+}
+
+.cal__tile > .cover {
+  width: 100% !important;
+  height: 100%;
 }
 
 .cal__tile:hover {
@@ -139,13 +169,13 @@
 }
 
 .cal__tile--reading {
-  --tile-state: #d9a441;
+  --tile-state: var(--state-reading);
 }
 .cal__tile--planned {
-  --tile-state: #8d74d6;
+  --tile-state: var(--state-planned);
 }
 .cal__tile--finished {
-  --tile-state: #6aa98a;
+  --tile-state: var(--state-finished);
 }
 
 .cal__tile.is-dragging {
@@ -153,33 +183,35 @@
 }
 
 .cal__more {
-  flex: none;
-  align-self: stretch;
-  min-width: 22px;
+  height: 100%;
+  aspect-ratio: var(--cover-ratio);
+  flex: 0 1 auto;
+  display: grid;
+  place-items: center;
   font-family: var(--face-slip);
   font-size: var(--size-xs);
   color: var(--ink-inverse-soft);
-  background: rgba(242, 239, 230, 0.07);
-  border: 1px solid rgba(242, 239, 230, 0.14);
+  background: rgba(241, 244, 247, 0.07);
+  border: 1px solid rgba(241, 244, 247, 0.14);
   border-radius: var(--r-control);
   cursor: pointer;
-  padding: 0 4px;
+  padding: 0;
 }
 
 .cal__more:hover {
   color: var(--ink-inverse);
-  background: rgba(242, 239, 230, 0.14);
+  background: rgba(241, 244, 247, 0.14);
 }
 
 /* --- Drag feedback -------------------------------------------------------- */
 
 body.is-rescheduling .cal__day {
-  box-shadow: inset 0 0 0 1px rgba(242, 239, 230, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(241, 244, 247, 0.08);
 }
 
 .cal__day.is-drop-target {
-  background: rgba(91, 63, 168, 0.34);
-  box-shadow: inset 0 0 0 2px rgba(185, 166, 238, 0.85);
+  background: rgba(58, 87, 189, 0.4);
+  box-shadow: inset 0 0 0 2px rgba(157, 180, 247, 0.85);
 }
 
 /* --- Legend --------------------------------------------------------------- */
@@ -189,11 +221,12 @@ body.is-rescheduling .cal__day {
   flex-wrap: wrap;
   align-items: center;
   gap: var(--s4);
-  margin-top: var(--s4);
+  margin-top: var(--s3);
   font-family: var(--face-slip);
   font-size: var(--size-xs);
   letter-spacing: 0.06em;
   color: var(--ink-inverse-soft);
+  flex: none;
 }
 
 .cal__legend-key {
@@ -210,13 +243,13 @@ body.is-rescheduling .cal__day {
 }
 
 .swatch--reading {
-  background: #d9a441;
+  background: var(--state-reading);
 }
 .swatch--planned {
-  background: #8d74d6;
+  background: var(--state-planned);
 }
 .swatch--finished {
-  background: #6aa98a;
+  background: var(--state-finished);
 }
 
 .cal__legend-hint {
@@ -238,11 +271,23 @@ body.is-rescheduling .cal__day {
   padding: var(--s1) var(--s3);
 }
 
+.view-head--calendar {
+  align-items: center;
+  gap: var(--s5);
+  margin-bottom: var(--s3);
+  flex: none;
+}
+
+.view-head--calendar .streak {
+  margin-left: auto;
+}
+
 /* --- Inline empty state --------------------------------------------------- */
 
 .empty--inline {
-  padding: var(--s5);
-  margin-bottom: var(--s4);
+  padding: var(--s4);
+  margin-bottom: var(--s3);
+  flex: none;
 }
 
 .empty__actions {
@@ -255,15 +300,22 @@ body.is-rescheduling .cal__day {
 /* --- Responsive ----------------------------------------------------------- */
 
 @media (max-width: 860px) {
-  .cal__day {
-    min-height: 84px;
-    padding: var(--s1);
+  .cal__grid {
+    min-height: clamp(480px, calc(100vh - 230px), 900px);
   }
-  .cal__tile {
-    max-width: 32px;
+  .cal__day {
+    padding: var(--s1);
   }
   .cal__legend-hint {
     display: none;
+  }
+}
+
+@media (max-width: 720px) {
+  .view-head--calendar .streak {
+    margin-left: 0;
+    order: 3;
+    width: 100%;
   }
 }
 
@@ -274,36 +326,13 @@ body.is-rescheduling .cal__day {
   .cal__weekday i {
     display: inline;
   }
-  .cal__day {
-    min-height: 64px;
+  .cal__grid {
+    min-height: 460px;
   }
-  /* Below this width a cover is smaller than a fingernail; a count of state
-     dots carries the same information more legibly. */
   .cal__tiles {
     gap: 2px;
   }
-  .cal__tile {
-    max-width: 26px;
-  }
-  .cal__more {
-    min-width: 16px;
-    font-size: 0.5625rem;
-  }
-}
-
-.view-head--calendar {
-  align-items: center;
-  gap: var(--s5);
-}
-
-.view-head--calendar .streak {
-  margin-left: auto;
-}
-
-@media (max-width: 720px) {
-  .view-head--calendar .streak {
-    margin-left: 0;
-    order: 3;
-    width: 100%;
+  .cal__tile-row {
+    gap: 2px;
   }
 }

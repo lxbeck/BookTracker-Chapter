@@ -290,3 +290,24 @@ test('a book with no length reports no derived pace rather than guessing', async
   const vague = normalizeBook({ title: 'No length', status: 'reading' }, '2026-03-05');
   assert.equal(progressReport(vague, '2026-03-05').ok, false);
 });
+
+/* --- tile row packing (step 4.7) ------------------------------------------ */
+
+test('tiles are packed into the rows the layout calls for', async () => {
+  const { rowPlan } = await import('../js/views/calendar.js');
+  assert.deepEqual(rowPlan(0), []);
+  assert.deepEqual(rowPlan(1), [1], 'one cover fills the day');
+  assert.deepEqual(rowPlan(2), [2]);
+  assert.deepEqual(rowPlan(3), [3], 'three span the day, no gap for a fourth');
+  assert.deepEqual(rowPlan(4), [2, 2]);
+  assert.deepEqual(rowPlan(5), [3, 2], 'the short row centres itself');
+  assert.deepEqual(rowPlan(6), [3, 3]);
+});
+
+test('every row plan accounts for exactly the tiles given', async () => {
+  const { rowPlan } = await import('../js/views/calendar.js');
+  for (let n = 0; n <= 6; n += 1) {
+    assert.equal(rowPlan(n).reduce((a, b) => a + b, 0), n, `plan for ${n} loses a tile`);
+    assert.ok(rowPlan(n).length <= 2, `plan for ${n} needs more than two rows`);
+  }
+});

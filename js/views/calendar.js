@@ -23,14 +23,15 @@ import { loadSampleLibrary } from '../data/seed.js';
 import { attachHoverCard, hide as hideHoverCard } from './hoverCard.js';
 import { libraryTotals, formatDuration } from '../logic/sessions.js';
 import { openDayPopup } from './dayPopup.js';
+import { goToDay } from './day.js';
 
 /**
  * How many covers a day can hold.
  *
  * Six fits comfortably at full width; below that the tiles get too narrow to
  * read as books at all, so narrower viewports show fewer and lean on the +N
- * chip. This is a function rather than a constant because the answer changes
- * when the window does.
+ * chip. A function rather than a constant, because the answer changes when the
+ * window does.
  */
 const TILE_BREAKPOINTS = [
   { maxWidth: 600, tiles: 3 },
@@ -41,6 +42,49 @@ const TILE_BREAKPOINTS = [
 function tilesPerDay() {
   const width = globalThis.innerWidth ?? 1200;
   return TILE_BREAKPOINTS.find((stop) => width <= stop.maxWidth).tiles;
+}
+
+/**
+ * How to break N tiles into rows.
+ *
+ * Rows are sized from the cell's height, so the row shape decides how big the
+ * covers get: one book fills the whole day, three sit in a single row that
+ * spans it, and six stack as two rows of three. The alternative — a fixed grid
+ * with empty cells — leaves a gap where a fourth book would go, which reads as
+ * a missing book rather than a deliberate layout.
+ *
+ * @param {number} count
+ * @returns {number[]} how many tiles go in each row
+ */
+export function rowPlan(count) {
+  switch (count) {
+    case 0:
+      return [];
+    case 1:
+      return [1];
+    case 2:
+      return [2];
+    case 3:
+      return [3];
+    case 4:
+      return [2, 2];
+    case 5:
+      return [3, 2];
+    default:
+      return [3, 3];
+  }
+}
+
+/** Split a flat list into the chunks `rowPlan` calls for. */
+function chunkByPlan(items) {
+  const plan = rowPlan(items.length);
+  const rows = [];
+  let cursor = 0;
+  for (const size of plan) {
+    rows.push(items.slice(cursor, cursor + size));
+    cursor += size;
+  }
+  return rows;
 }
 
 /** Which month is on screen. Module state — not worth persisting. */
@@ -129,7 +173,7 @@ export function renderCalendar(mount) {
       legendKey('reading', 'Reading now'),
       legendKey('planned', 'Planned'),
       legendKey('finished', 'Finished that day'),
-      el('span.cal__legend-hint', {}, 'Drag a cover to reschedule \u00b7 Shift + arrows to nudge'),
+      el('span.cal__legend-hint', {}, 'Click a day for details, the date for the full day view \u00b7 drag a cover to reschedule'),
     ]),
   ]);
 }
@@ -192,19 +236,26 @@ function dayCell(cell, entries, todayKey, mount, maxTiles) {
     'aria-label': `${formatLong(cell.key)}, ${entries.length} book${entries.length === 1 ? '' : 's'}`,
   });
 
+  // The number opens the day at full size; the empty space opens the popup.
+  // Two weights of the same gesture, so a quick look doesn't cost a page load.
   const date = el('button.cal__date', {
     type: 'button',
-    onClick: () => openDay(cell.key, entries, mount),
-    'aria-label': `Open ${formatLong(cell.key)}`,
+    onClick: (event) => {
+      event.stopPropagation();
+      goToDay(cell.key);
+    },
+    'aria-label': `Open ${formatLong(cell.key)} in the day view`,
   }, String(cell.date));
 
-  const tiles = el(
-    'div.cal__tiles',
-    {},
-    [
-      ...shown.map((entry) => coverTile(entry, cell.key, mount)),
-      overflow > 0 &&
-        el(
+  node.addEventListener('click', (event) => {
+    if (event.target.closest('.cal__tile, .cal__date, .cal__more')) return;
+    openDay(cell.key, entries, mount);
+  });
+
+  const items = [
+    ...shown.map((entry) => coverTile(entry, cell.key, mount)),
+    overflow > 0
+      ? el(
           'button.cal__more',
           {
             type: 'button',
@@ -212,8 +263,14 @@ function dayCell(cell, entries, todayKey, mount, maxTiles) {
             'aria-label': `${overflow} more on ${formatLong(cell.key)}`,
           },
           `+${overflow}`
-        ),
-    ].filter(Boolean)
+        )
+      : null,
+  ].filter(Boolean);
+
+  const tiles = el(
+    'div.cal__tiles',
+    {},
+    chunkByPlan(items).map((row) => el('div.cal__tile-row', {}, row))
   );
 
   node.append(date, tiles);

@@ -15,6 +15,7 @@ body {
 
 body {
   margin: 0;
+  min-height: 100%;
   background: var(--bookcloth);
   color: var(--ink-inverse);
   font-family: var(--face-body);
@@ -156,6 +157,24 @@ textarea {
   max-width: var(--shell-max);
   margin: 0 auto;
   padding: var(--s6) var(--s5) var(--s7);
+  display: flex;
+  flex-direction: column;
+}
+
+/* The calendar and day views are the point of the app; they get the screen. */
+body[data-route="calendar"] .app-main,
+body[data-route="day"] .app-main {
+  max-width: min(var(--shell-wide), 98vw);
+  padding: var(--s5) var(--s4) var(--s5);
+}
+
+.app-head__inner {
+  transition: max-width var(--med) var(--ease);
+}
+
+body[data-route="calendar"] .app-head__inner,
+body[data-route="day"] .app-head__inner {
+  max-width: min(var(--shell-wide), 98vw);
 }
 
 .view-head {

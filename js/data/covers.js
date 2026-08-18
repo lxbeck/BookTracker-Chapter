@@ -22,7 +22,21 @@ const UPLOAD_MAX_WIDTH = 400;
 const UPLOAD_QUALITY = 0.82;
 
 /** @typedef {{title?: string, author?: string, pageCount?: number|null,
- *   coverUrl?: string|null, isbn?: string, source: string}} CoverResult */
+ *   coverUrl?: string|null, isbn?: string, description?: string,
+ *   genre?: string, source: string}} CoverResult */
+
+/** Blurbs arrive full of markup and boilerplate; strip it before storing. */
+function cleanDescription(raw) {
+  if (!raw) return '';
+  const text = typeof raw === 'object' ? (raw.value ?? '') : String(raw);
+  return text
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\[\[([^\]|]+)(\|[^\]]+)?\]\]/g, '$1')
+    .replace(/\(\[?source[^)]*\)?/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 2000);
+}
 
 /** fetch with a timeout, because a hung request is worse than a failed one. */
 async function fetchJson(url) {
@@ -60,7 +74,7 @@ export async function lookupByIsbn(isbn) {
   }
 
   const [openLibrary, google] = await Promise.allSettled([
-    fetchJson(`${OPEN_LIBRARY_SEARCH}?q=isbn:${clean}&limit=1&fields=title,author_name,number_of_pages_median,cover_i,isbn`),
+    fetchJson(`${OPEN_LIBRARY_SEARCH}?q=isbn:${clean}&limit=1&fields=title,author_name,number_of_pages_median,cover_i,isbn,first_sentence`),
     fetchJson(`${GOOGLE_BOOKS}?q=isbn:${clean}&maxResults=1`),
   ]);
 
@@ -71,11 +85,17 @@ export async function lookupByIsbn(isbn) {
 
   // Merge: prefer whichever provider actually has each field, rather than
   // making one of them win outright and dropping good data.
+  // Google's blurbs are consistently fuller than Open Library's, so it wins
+  // this field even though Open Library wins the others.
+  const description = fromGb?.description || fromOl?.description || '';
+
   return {
     title: fromOl?.title || fromGb?.title || '',
     author: fromOl?.author || fromGb?.author || '',
     pageCount: fromOl?.pageCount ?? fromGb?.pageCount ?? null,
     coverUrl: fromOl?.coverUrl || fromGb?.coverUrl || coverUrlForIsbn(clean),
+    description,
+    genre: fromGb?.genre || '',
     isbn: clean,
     source: fromOl?.coverUrl ? 'openlibrary' : fromGb?.coverUrl ? 'google' : 'openlibrary',
   };
@@ -101,7 +121,9 @@ export async function searchByText(query, limit = 6) {
       pageCount: doc.number_of_pages_median ?? null,
       year: doc.first_publish_year ?? null,
       isbn: doc.isbn?.[0] ?? '',
+      description: cleanDescription(doc.first_sentence?.[0]),
       coverUrl: doc.cover_i ? `${OPEN_LIBRARY_COVER}/id/${doc.cover_i}-M.jpg` : null,
+      key: doc.key ?? null,
       source: 'openlibrary',
     }))
     .filter((result) => result.title);
@@ -114,6 +136,7 @@ function parseOpenLibrary(data) {
     title: doc.title ?? '',
     author: doc.author_name?.[0] ?? '',
     pageCount: doc.number_of_pages_median ?? null,
+    description: cleanDescription(doc.first_sentence?.[0]),
     coverUrl: doc.cover_i ? `${OPEN_LIBRARY_COVER}/id/${doc.cover_i}-L.jpg` : null,
   };
 }
@@ -127,6 +150,8 @@ function parseGoogle(data) {
     title: info.title ?? '',
     author: info.authors?.[0] ?? '',
     pageCount: info.pageCount ?? null,
+    description: cleanDescription(info.description),
+    genre: info.categories?.[0] ?? '',
     // Google's default thumbnails are http and curled; ask for the flat, https one.
     coverUrl: raw ? raw.replace(/^http:/, 'https:').replace('&edge=curl', '') : null,
   };

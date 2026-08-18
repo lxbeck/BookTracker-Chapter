@@ -9,6 +9,7 @@
 
 import { el } from '../lib/dom.js';
 import { spineColor } from '../data/schema.js';
+import { cachedCoverUrl, peekCachedCoverUrl } from '../data/coverCache.js';
 
 /**
  * @param {object} book
@@ -41,8 +42,12 @@ export function coverThumb(book, { width = '100%', alt, fit = 'crop' } = {}) {
     ]);
 
   if (book.cover?.url) {
+    // A locally cached copy beats the network every time, and is the only
+    // thing that renders at all when there isn't one.
+    const cached = peekCachedCoverUrl(book.id);
+
     const img = el('img', {
-      src: book.cover.url,
+      src: cached ?? book.cover.url,
       alt: alt ?? `Cover of ${book.title}`,
       loading: 'lazy',
       decoding: 'async',
@@ -55,6 +60,14 @@ export function coverThumb(book, { width = '100%', alt, fit = 'crop' } = {}) {
       node.replaceChildren(fallback());
     });
     node.append(img);
+
+    // If the cache hadn't been warmed yet, swap in the local copy once it
+    // resolves. Silent on failure — the network URL is already loading.
+    if (!cached) {
+      cachedCoverUrl(book.id).then((url) => {
+        if (url && node.isConnected) img.src = url;
+      }).catch(() => null);
+    }
   } else {
     node.append(fallback());
   }

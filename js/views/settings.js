@@ -6,7 +6,10 @@
  */
 
 import { el, fill, toast } from '../lib/dom.js';
-import { allBooks, getSettings, updateSettings, replaceAll } from '../data/store.js';
+import {
+  allBooks, getSettings, updateSettings, replaceAll,
+  storageStatus, requestPersistentStorage,
+} from '../data/store.js';
 import { exportJson, exportCsv, exportSessionsCsv, importJson, download, backupFilename } from '../data/transfer.js';
 import { cacheAll, cachedIds, cacheSize } from '../data/coverCache.js';
 import { goalProgress } from '../logic/stats.js';
@@ -25,6 +28,7 @@ export function renderSettings(mount) {
       ]),
     ]),
 
+    storageSection(redraw),
     goalSection(books, settings, redraw),
     offlineSection(books),
     dataSection(books, redraw),
@@ -173,10 +177,61 @@ function dataSection(books, redraw) {
   ].filter(Boolean));
 }
 
-function aboutSection() {
-  return section('Where your data lives', [
+/* --- Storage -------------------------------------------------------------- */
+
+function storageSection(redraw) {
+  const status = storageStatus();
+  const kb = (status.bytes / 1024).toFixed(1);
+  // localStorage is around 5MB in every browser that matters.
+  const percent = Math.min(100, Math.round((status.bytes / (5 * 1024 * 1024)) * 100));
+
+  const persistNote = el('p.settings__note', { 'aria-live': 'polite' },
+    'Browsers may clear site data when storage runs low.');
+
+  navigator.storage?.persisted?.().then((already) => {
+    if (already) persistNote.textContent = 'This browser has marked your library as persistent.';
+  }).catch(() => null);
+
+  return section('Is my library saved?', [
+    el('p.storage-verdict', { class: status.saved ? 'is-ok' : 'is-failing' }, [
+      el('span.save-status__dot', { 'aria-hidden': 'true' }),
+      status.saved
+        ? `Yes \u2014 ${status.books} books are written to this browser.`
+        : 'No \u2014 changes are not reaching storage in this browser.',
+    ]),
+    el('dl.storage-facts', {}, [
+      storageFact('Where', 'This browser, on this device'),
+      storageFact('Under the key', status.key),
+      storageFact('Size', `${kb} KB of about 5 MB (${percent}%)`),
+      storageFact('Last written', status.lastSavedAt
+        ? status.lastSavedAt.toLocaleString()
+        : 'Not yet this session'),
+    ]),
     el('p.settings__hint', {},
-      'Records are kept in this browser\u2019s local storage, and stored covers in its database. Nothing is sent anywhere. Clearing site data for this address erases the library, so export a backup before you do.'),
+      'To check it yourself: open developer tools, go to Application, then Local Storage. Or close the browser entirely, reopen it, and see that your books are still here \u2014 that is the same test that matters.'),
+    el('div.settings__row', {}, [
+      el('button.btn.btn--quiet.btn--sm', {
+        type: 'button',
+        onClick: async () => {
+          const granted = await requestPersistentStorage();
+          toast(granted
+            ? 'This browser will now keep your library through storage pressure.'
+            : 'The browser declined. Data is still saved, just evictable under pressure.');
+          redraw();
+        },
+      }, 'Ask browser to keep this data'),
+    ]),
+    persistNote,
+  ]);
+}
+
+const storageFact = (label, value) =>
+  el('div.storage-facts__row', {}, [el('dt', {}, label), el('dd', {}, value)]);
+
+function aboutSection() {
+  return section('A warning worth reading', [
+    el('p.settings__hint', {},
+      'Everything lives in this browser and nowhere else. Clearing site data, using a private window, or opening the app from a different address or port will not show this library. Export a JSON backup before doing any of those.'),
   ]);
 }
 

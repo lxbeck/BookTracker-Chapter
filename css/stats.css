@@ -298,10 +298,138 @@
   color: var(--ink-inverse-soft);
 }
 
+/* One rectangle, the same height as the calendar board. Cards run across it
+   and scroll sideways if the day is busy, so the page itself never scrolls. */
 .day-board {
+  height: var(--board-height);
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(230px, 1fr);
+  gap: 1px;
+  background: rgba(241, 244, 247, 0.09);
+  border: var(--rule-dark);
+  border-radius: var(--r-card);
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.day-board__empty {
+  grid-column: 1 / -1;
+  background: var(--bookcloth);
   display: flex;
   flex-direction: column;
-  gap: var(--s4);
+  align-items: center;
+  justify-content: center;
+  gap: var(--s3);
+  text-align: center;
+  color: var(--ink-inverse-soft);
+  padding: var(--s5);
+}
+
+.day-board__empty h3 {
+  color: var(--ink-inverse);
+  font-size: var(--size-md);
+}
+
+.day-board__empty p {
+  max-width: 40ch;
+  font-size: var(--size-sm);
+}
+
+/* --- Day card ------------------------------------------------------------- */
+
+.day-card {
+  background: var(--bookcloth);
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto auto;
+  gap: var(--s3);
+  padding: var(--s4);
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.day-card__art {
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Height-driven, like the calendar tiles: the art takes the room left over. */
+.day-card__art .cover {
+  height: 100%;
+  width: auto !important;
+  aspect-ratio: var(--cover-ratio);
+  box-shadow: var(--lift-2);
+}
+
+.day-card__text {
+  min-width: 0;
+}
+
+.day-card__state {
+  font-family: var(--face-slip);
+  font-size: 0.625rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.day-card__state.is-reading {
+  color: var(--state-reading);
+}
+.day-card__state.is-planned {
+  color: var(--state-planned);
+}
+.day-card__state.is-finished {
+  color: var(--state-finished);
+}
+
+.day-card__title {
+  font-size: var(--size-md);
+  color: var(--ink-inverse);
+  line-height: 1.2;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.day-card__author {
+  font-size: var(--size-sm);
+  color: var(--ink-inverse-soft);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.day-card__lead {
+  font-family: var(--face-slip);
+  font-size: var(--size-sm);
+  color: var(--stamp-bright);
+  margin-top: var(--s2);
+}
+
+.day-card__meta,
+.day-card__standing {
+  font-size: var(--size-xs);
+  color: var(--ink-inverse-soft);
+}
+
+.day-card__standing.is-behind,
+.day-card__standing.is-overdue {
+  color: #e8899d;
+}
+
+.day-card__standing.is-ahead {
+  color: var(--state-finished);
+}
+
+.day-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
 }
 
 .day-row--large {
@@ -487,4 +615,56 @@
   .view-head--day .streak {
     margin-left: 0;
   }
+}
+
+/* --- Storage readout ------------------------------------------------------ */
+
+.storage-verdict {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  font-family: var(--face-slip);
+  font-size: var(--size-sm);
+  color: var(--shelved);
+  margin-bottom: var(--s3);
+}
+
+.storage-verdict.is-failing {
+  color: var(--overdue);
+}
+
+.storage-verdict .save-status__dot {
+  background: var(--shelved);
+  box-shadow: 0 0 0 3px rgba(60, 122, 99, 0.18);
+}
+
+.storage-verdict.is-failing .save-status__dot {
+  background: var(--overdue);
+  box-shadow: 0 0 0 3px rgba(168, 50, 74, 0.18);
+}
+
+.storage-facts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--s1) var(--s4);
+  margin: 0 0 var(--s4);
+}
+
+.storage-facts__row {
+  display: contents;
+}
+
+.storage-facts dt {
+  font-family: var(--face-slip);
+  font-size: var(--size-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.storage-facts dd {
+  margin: 0;
+  font-size: var(--size-sm);
+  color: var(--ink);
+  word-break: break-all;
 }

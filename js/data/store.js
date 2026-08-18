@@ -27,6 +27,7 @@ let state = { version: SCHEMA_VERSION, books: [], settings: { weekStartsOn: 0 } 
 const listeners = new Set();
 
 let persistFailed = false;
+let lastSavedAt = null;
 
 /* --- Persistence ---------------------------------------------------------- */
 
@@ -80,6 +81,7 @@ function persist() {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     persistFailed = false;
+    lastSavedAt = new Date();
   } catch (error) {
     persistFailed = true;
     console.error('[chapter] Could not save the library.', error);
@@ -100,6 +102,50 @@ export function onPersistError(handler) {
 }
 
 export const isPersisting = () => !persistFailed;
+
+/**
+ * Everything needed to answer "is my library actually saved?" without asking
+ * the user to take it on faith.
+ *
+ * `bytes` is the real serialised size, measured rather than estimated, so the
+ * readout is honest about how close the library is to the storage ceiling.
+ */
+export function storageStatus() {
+  let bytes = 0;
+  let readable = false;
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    bytes = raw ? new Blob([raw]).size : 0;
+    readable = raw != null;
+  } catch {
+    readable = false;
+  }
+
+  return {
+    saving: !persistFailed,
+    // A library that has never been written is not the same as one that failed.
+    saved: readable && !persistFailed,
+    lastSavedAt,
+    bytes,
+    books: state.books.length,
+    key: STORAGE_KEY,
+  };
+}
+
+/**
+ * Ask the browser not to evict this data under storage pressure. Silently
+ * declined by most browsers unless the site is installed or frequently used,
+ * which is fine — it only ever improves the odds.
+ */
+export async function requestPersistentStorage() {
+  try {
+    if (!navigator.storage?.persist) return false;
+    if (await navigator.storage.persisted()) return true;
+    return await navigator.storage.persist();
+  } catch {
+    return false;
+  }
+}
 
 /* --- Core loop ------------------------------------------------------------ */
 

@@ -89,6 +89,11 @@
 
   /* --- Layout ----------------------------------------------------------- */
   --shell-max: 1180px;
+  /* The calendar and day boards are sized explicitly from the viewport: header,
+     view heading and legend subtracted, so the board fits with no scrolling.
+     A definite height here is also what lets cover tiles resolve their width
+     from their height rather than collapsing into a content-sized stack. */
+  --board-height: clamp(380px, calc(100vh - 232px), 1080px);
   --shell-wide: 1800px; /* calendar and day views run near full width */
 }
 

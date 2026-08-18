@@ -11,8 +11,13 @@ import { allBooks } from '../data/store.js';
 import { entriesForDay } from '../logic/schedule.js';
 import { libraryTotals, formatDuration } from '../logic/sessions.js';
 import { today, addDays, formatLong, relativeDay, formatShort } from '../lib/dates.js';
-import { dayRow } from './dayRow.js';
 import { openBookForm } from './bookForm.js';
+import { coverThumb } from './cover.js';
+import { paceFor, paceStanding } from '../logic/pacing.js';
+import { DAY_STATE_LABEL } from '../logic/schedule.js';
+import { FORMATS } from '../data/schema.js';
+import { setStatus } from '../data/store.js';
+import { openDayPopup } from './dayPopup.js';
 
 /** Which day is on screen. Module state, like the calendar's month cursor. */
 let cursor = null;
@@ -72,18 +77,18 @@ export function renderDay(mount) {
 
     el('div.day-strip', {}, weekStrip(books, cursor, todayKey, mount)),
 
-    entries.length
-      ? el('div.day-board', {}, entries.map((entry) =>
-          dayRow(entry, cursor, todayKey, { redraw, size: 'large' })
-        ))
-      : el('div.empty', {}, [
-          el('h3', {}, 'Nothing on this day'),
-          el('p', {}, 'No book is planned or in progress for this date.'),
-          el('button.btn.btn--stamp', {
-            type: 'button',
-            onClick: () => openBookForm({ defaultStart: cursor }),
-          }, 'Schedule a book here'),
-        ]),
+    el('div.day-board', {},
+      entries.length
+        ? entries.map((entry) => dayCard(entry, cursor, todayKey, redraw))
+        : el('div.day-board__empty', {}, [
+            el('h3', {}, 'Nothing on this day'),
+            el('p', {}, 'No book is planned or in progress for this date.'),
+            el('button.btn.btn--stamp', {
+              type: 'button',
+              onClick: () => openBookForm({ defaultStart: cursor }),
+            }, 'Schedule a book here'),
+          ])
+    ),
   ].filter(Boolean));
 }
 
@@ -118,4 +123,66 @@ function weekStrip(books, dayKey, todayKey, mount) {
       el('span.day-strip__count', {}, count ? `${count} book${count === 1 ? '' : 's'}` : '\u2014'),
     ]);
   });
+}
+
+/**
+ * One book as a full-height card.
+ *
+ * The day is a single fixed rectangle, so the cover takes whatever height is
+ * left after the text and derives its width from that — the same rule the
+ * calendar tiles follow. Detail beyond a glance lives in the record; this view
+ * is for seeing the day, not editing it.
+ */
+function dayCard({ book, state }, dayKey, todayKey, redraw) {
+  const pace = paceFor(book, dayKey, todayKey);
+  const unit = FORMATS[book.format].unit;
+  const noun = unit === 'minutes' ? 'minutes' : 'pages';
+  const standing = paceStanding(book, todayKey);
+
+  const lead =
+    state === 'finished'
+      ? 'Finished on this day'
+      : !pace.ok
+        ? pace.reason
+        : !pace.inPlan
+          ? 'Outside this book\u2019s plan'
+          : `${pace.todayTarget} ${noun} ${
+              dayKey < todayKey ? 'were due' : dayKey === todayKey ? 'to read today' : 'due that day'
+            }`;
+
+  return el('article.day-card', {}, [
+    el('div.day-card__art', {}, coverThumb(book, { width: 'auto', alt: '' })),
+
+    el('div.day-card__text', {}, [
+      el('p.day-card__state', { class: `is-${state}` }, DAY_STATE_LABEL[state]),
+      el('h3.day-card__title', {}, book.title),
+      el('p.day-card__author', {}, book.author || 'Unknown author'),
+      el('p.day-card__lead', {}, lead),
+      pace.ok
+        ? el('p.day-card__meta', {},
+            `Day ${Math.min(Math.max(pace.dayIndex, 1), pace.days)} of ${pace.days} \u00b7 target ${unit === 'minutes' ? '' : 'page '}${pace.cumulative}`.trim())
+        : null,
+      standing ? el('p.day-card__standing', { class: `is-${standing.tone}` }, standing.text) : null,
+    ].filter(Boolean)),
+
+    el('div.day-card__actions', {}, [
+      el('button.btn.btn--stamp.btn--sm', {
+        type: 'button',
+        onClick: () => openDayPopup(dayKey),
+      }, 'Log reading'),
+      book.status !== 'finished'
+        ? el('button.btn.btn--quiet.btn--sm', {
+            type: 'button',
+            onClick: () => {
+              setStatus(book.id, 'finished');
+              redraw();
+            },
+          }, 'Finished')
+        : null,
+      el('button.btn.btn--quiet.btn--sm', {
+        type: 'button',
+        onClick: () => openBookForm({ book }),
+      }, 'Record'),
+    ].filter(Boolean)),
+  ]);
 }

@@ -7,7 +7,7 @@
  * cost clarity.
  */
 
-import { $, toast } from './lib/dom.js';
+import { $, el, fill, toast } from './lib/dom.js';
 import * as store from './data/store.js';
 import { renderLibrary } from './views/library.js';
 import { renderCalendar } from './views/calendar.js';
@@ -43,6 +43,34 @@ function render() {
   }
 
   ROUTES[name].render(mount);
+  paintSaveStatus();
+}
+
+/**
+ * A standing answer to "is this actually saved?".
+ *
+ * Local-only storage asks people to trust an invisible mechanism, so the state
+ * of that mechanism is on screen rather than assumed. Green is not decoration:
+ * it flips the moment a write fails, which is the only time it matters.
+ */
+function paintSaveStatus() {
+  const slot = $('#save-status');
+  if (!slot) return;
+
+  const status = store.storageStatus();
+  const time = status.lastSavedAt
+    ? status.lastSavedAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+    : null;
+
+  slot.className = `save-status ${status.saving ? 'is-ok' : 'is-failing'}`;
+  slot.title = status.saving
+    ? `${status.books} books held in this browser${time ? `, last written at ${time}` : ''}`
+    : 'Changes are not being written to this browser.';
+
+  fill(slot, [
+    el('span.save-status__dot', { 'aria-hidden': 'true' }),
+    el('span', {}, status.saving ? (time ? `Saved ${time}` : 'Saved locally') : 'Not saving'),
+  ]);
 }
 
 function start() {
@@ -65,7 +93,24 @@ document.addEventListener('DOMContentLoaded', start);
  */
 function registerServiceWorker() {
   if (!('serviceWorker' in navigator) || location.protocol === 'file:') return;
-  navigator.serviceWorker.register('sw.js').catch(() => {
-    console.info('[chapter] Offline support unavailable in this context.');
-  });
+
+  navigator.serviceWorker
+    .register('sw.js')
+    .then((registration) => {
+      // A worker that installs while a page is open would otherwise sit idle
+      // until every tab closed — which is how people end up staring at a stale
+      // build wondering why their changes did nothing.
+      registration.addEventListener('updatefound', () => {
+        const incoming = registration.installing;
+        incoming?.addEventListener('statechange', () => {
+          if (incoming.state === 'installed' && navigator.serviceWorker.controller) {
+            toast('An update is ready. Reload to pick it up.');
+          }
+        });
+      });
+      registration.update().catch(() => null);
+    })
+    .catch(() => {
+      console.info('[chapter] Offline support unavailable in this context.');
+    });
 }

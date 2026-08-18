@@ -1,16 +1,20 @@
 /**
  * Service worker: makes the app itself work offline.
  *
- * The shell (HTML, CSS, modules) is precached on install and served
- * cache-first, because it only changes when a new version ships. Cover art
- * from third-party hosts is cached opportunistically as it's requested, which
- * covers the images IndexedDB couldn't store because the host sent no CORS
- * headers.
+ * The shell is precached on install so the app opens with no network, but it
+ * is served *network-first*: cache-first means the first load after any change
+ * serves the previous version, which during development looks exactly like the
+ * update didn't happen. Correctness beats the few milliseconds cache-first
+ * would save on an app this size.
  *
- * Bump CACHE_VERSION to ship an update; the old cache is dropped on activate.
+ * Cover art is the opposite case — immutable once fetched, and expensive to
+ * refetch — so images stay cache-first. That also picks up images IndexedDB
+ * couldn't store because the host sent no CORS headers.
+ *
+ * Bump CACHE_VERSION to ship an update; old caches are dropped on activate.
  */
 
-const CACHE_VERSION = 'chapter-v1';
+const CACHE_VERSION = 'chapter-v2';
 const SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const IMAGE_CACHE = `${CACHE_VERSION}-images`;
 
@@ -92,9 +96,24 @@ self.addEventListener('fetch', (event) => {
   }
 
   if (url.origin === self.location.origin) {
-    event.respondWith(cacheFirstThenNetwork(request, SHELL_CACHE));
+    event.respondWith(networkFirstThenCache(request, SHELL_CACHE));
   }
 });
+
+/** Fresh if the network answers, cached if it doesn't. */
+async function networkFirstThenCache(request, cacheName) {
+  const cache = await caches.open(cacheName);
+
+  try {
+    const response = await fetch(request);
+    if (response.ok) cache.put(request, response.clone()).catch(() => null);
+    return response;
+  } catch {
+    const hit = await cache.match(request);
+    if (hit) return hit;
+    return new Response('Offline and not cached.', { status: 503, statusText: 'Offline' });
+  }
+}
 
 async function cacheFirstThenNetwork(request, cacheName) {
   const cache = await caches.open(cacheName);

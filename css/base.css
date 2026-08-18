@@ -124,6 +124,7 @@ textarea {
   display: flex;
   gap: var(--s1);
   margin-left: auto;
+  flex-wrap: wrap;
 }
 
 .app-nav__link {
@@ -208,9 +209,41 @@ body[data-route="day"] .app-head__inner {
     padding: var(--s3) var(--s4);
     gap: var(--s3);
   }
+  /* Wrapping, not scrolling. A horizontally scrolling nav hides the tabs at
+     the end of the row, which looks exactly like they don't work. */
   .app-nav {
     width: 100%;
     margin-left: 0;
-    overflow-x: auto;
+    flex-wrap: wrap;
   }
+}
+
+/* --- Save status ---------------------------------------------------------- */
+
+.save-status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  font-family: var(--face-slip);
+  font-size: var(--size-xs);
+  letter-spacing: 0.08em;
+  color: var(--ink-inverse-soft);
+  cursor: default;
+}
+
+.save-status__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--state-finished);
+  box-shadow: 0 0 0 3px rgba(111, 180, 149, 0.18);
+}
+
+.save-status.is-failing {
+  color: #e8899d;
+}
+
+.save-status.is-failing .save-status__dot {
+  background: #e8899d;
+  box-shadow: 0 0 0 3px rgba(232, 137, 157, 0.2);
 }

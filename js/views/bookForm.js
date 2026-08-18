@@ -12,7 +12,9 @@ import { coverPicker } from './coverPicker.js';
 import { sessionLog } from './sessionLog.js';
 import { progressReport, catchUpPreview, catchUpPatch } from '../logic/pacing.js';
 import { allBooks } from '../data/store.js';
-import { STATUSES, STATUS_ORDER, FORMATS, blankBook, resolveProgress } from '../data/schema.js';
+import {
+  STATUSES, STATUS_ORDER, FORMATS, CATEGORIES, CATEGORY_ORDER, blankBook, resolveProgress,
+} from '../data/schema.js';
 import { formatShort } from '../lib/dates.js';
 import { addBook, updateBook, removeBook, restoreBook, getBook } from '../data/store.js';
 import { addDays } from '../lib/dates.js';
@@ -174,6 +176,14 @@ export function openBookForm({ book = null, defaultStart = null, onSaved } = {})
     )
   );
 
+  const categorySelect = el(
+    'select.select',
+    { id: 'f-category', name: 'category' },
+    CATEGORY_ORDER.map((id) =>
+      el('option', { value: id, selected: draft.category === id }, CATEGORIES[id].label)
+    )
+  );
+
   const statusSelect = el(
     'select.select',
     { id: 'f-status', name: 'status' },
@@ -312,7 +322,8 @@ export function openBookForm({ book = null, defaultStart = null, onSaved } = {})
       field('isbn', 'ISBN', isbnInput, 'Used to look up cover art'),
     ]),
     el('div.field-row', {}, [
-      field('format', 'Format', formatSelect),
+      field('category', 'Kind', categorySelect, 'Book, comic, manga\u2026'),
+      field('format', 'Format', formatSelect, 'How you read it'),
       field('pageCount', 'Length', pagesInput, 'Pages, or minutes for audio'),
       field('genre', 'Genre', genreInput),
     ]),
@@ -426,6 +437,7 @@ export function openBookForm({ book = null, defaultStart = null, onSaved } = {})
       pageCount: pagesInput.value,
       genre: genreInput.value,
       format: formatSelect.value,
+      category: categorySelect.value,
       status: statusSelect.value,
       cover: draft.cover,
       description: descriptionInput.value,

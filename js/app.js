@@ -14,6 +14,7 @@ import { warmCoverCache, setServerCovers, evacuateDataUrls } from './data/coverC
 import { renderLibrary } from './views/library.js';
 import { renderCalendar } from './views/calendar.js';
 import { renderDay } from './views/day.js';
+import { renderYear } from './views/year.js';
 import { renderOrders } from './views/orders.js';
 import { renderStats } from './views/stats.js';
 import { renderSettings } from './views/settings.js';
@@ -21,6 +22,7 @@ import { renderSettings } from './views/settings.js';
 const ROUTES = {
   calendar: { label: 'Calendar', render: renderCalendar },
   day: { label: 'Day', render: renderDay },
+  year: { label: 'Year', render: renderYear },
   library: { label: 'Library', render: renderLibrary },
   orders: { label: 'Orders', render: renderOrders },
   stats: { label: 'Stats', render: renderStats },

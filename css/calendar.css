@@ -342,3 +342,117 @@ body.is-rescheduling .cal__day {
     gap: 2px;
   }
 }
+
+/* ===========================================================================
+   Year view
+   =========================================================================== */
+
+.year-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--s4);
+}
+
+.year-month {
+  background: var(--bookcloth-edge);
+  border: var(--rule-dark);
+  border-radius: var(--r-card);
+  padding: var(--s3);
+}
+
+.year-month__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s2);
+  margin-bottom: var(--s2);
+}
+
+.year-month__name {
+  font-size: var(--size-base);
+  color: var(--ink-inverse);
+}
+
+.year-month__count {
+  font-family: var(--face-slip);
+  font-size: 0.625rem;
+  letter-spacing: 0.08em;
+  color: var(--ink-inverse-soft);
+  background: rgba(241, 244, 247, 0.08);
+  border-radius: 999px;
+  padding: 1px 7px;
+}
+
+.year-month__weekdays,
+.year-month__grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 2px;
+}
+
+.year-month__weekdays {
+  margin-bottom: 3px;
+}
+
+.year-month__weekdays span {
+  font-family: var(--face-slip);
+  font-size: 0.5rem;
+  letter-spacing: 0.04em;
+  text-align: center;
+  color: var(--ink-faint);
+}
+
+.year-day {
+  aspect-ratio: 1;
+  min-width: 0;
+  border: 0;
+  border-radius: 2px;
+  background: rgba(241, 244, 247, 0.05);
+  color: var(--ink-inverse-soft);
+  font-family: var(--face-slip);
+  font-size: 0.5625rem;
+  line-height: 1;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  padding: 0;
+  transition: transform var(--fast) var(--ease), box-shadow var(--fast) var(--ease);
+}
+
+.year-day:hover {
+  transform: scale(1.18);
+  box-shadow: var(--lift-2);
+  z-index: 2;
+  color: var(--ink-inverse);
+}
+
+.year-day--blank {
+  background: none;
+  cursor: default;
+}
+
+.year-day--1 { background: #2f4a78; color: #cdd9f5; }
+.year-day--2 { background: #3a58a0; color: #e2e9fb; }
+.year-day--3 { background: #4364c2; color: #fff; }
+.year-day--4 { background: var(--stamp); color: #fff; }
+
+.year-day--finished {
+  box-shadow: inset 0 -2px 0 var(--state-finished);
+}
+
+.year-day--today {
+  outline: 1.5px solid var(--stamp-bright);
+  outline-offset: 1px;
+  font-weight: 700;
+  color: var(--stamp-bright);
+}
+
+@media (max-width: 600px) {
+  .year-grid {
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: var(--s3);
+  }
+  .year-day {
+    font-size: 0;
+  }
+}

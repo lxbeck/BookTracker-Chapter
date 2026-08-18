@@ -59,10 +59,12 @@ test('cover paths are kept beside the books, not on them', () => {
   assert.ok(!('_coverPath' in books[0]), 'the path leaked onto the record');
 });
 
-test('imported books arrive unscheduled and unread', () => {
+test('imported books land in the backlog, unscheduled and unread', () => {
   const { books } = parseCalibreCsv(REAL);
   for (const book of books) {
-    assert.equal(book.status, 'planned');
+    // Backlog, not planned: a catalogue of what you own carries no dates, and
+    // burying a real plan under it would make the planned shelf useless.
+    assert.equal(book.status, 'backlog');
     assert.equal(book.schedule.start, null);
     assert.equal(book.pageCount, null, 'Calibre carries no page count; none should be invented');
   }
@@ -83,4 +85,10 @@ test('a file that is not a Calibre catalogue is rejected with a reason', () => {
   const result = parseCalibreCsv('foo,bar\n1,2');
   assert.ok(!result.ok);
   assert.match(result.error, /no title column/);
+});
+
+test('comics are recognised from the metadata rather than all filed as books', () => {
+  const { books } = parseCalibreCsv(REAL);
+  const nemo = books.find((book) => book.title.startsWith('Little Nemo'));
+  assert.equal(nemo.category, 'comic', 'a numbered volume should read as a comic');
 });

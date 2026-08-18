@@ -18,6 +18,7 @@ import { goalProgress } from '../logic/stats.js';
 import { sampleBooks } from '../data/seed.js';
 import { parseGoodreadsCsv } from '../data/goodreads.js';
 import { parseCalibreCsv } from '../data/calibre.js';
+import { buildSnapshot } from '../data/snapshot.js';
 import {
   storeLocalCoverOnServer, storeCoverOnServer, hasServer, LOCAL_COVER,
 } from '../data/coverCache.js';
@@ -40,6 +41,7 @@ export function renderSettings(mount) {
 
     syncSection(),
     storageSection(redraw),
+    snapshotSection(),
     goalSection(books, settings, redraw),
     offlineSection(books),
     dataSection(books, redraw),
@@ -189,6 +191,67 @@ function dataSection(books, redraw) {
         ])
       : null,
   ].filter(Boolean));
+}
+
+/* --- Offline snapshot ------------------------------------------------------ */
+
+/**
+ * A file you can send to a phone and open with no network at all.
+ *
+ * Distinct from the JSON backup: that's for restoring, this is for reading.
+ * One self-contained HTML file, covers inlined, no server required.
+ */
+function snapshotSection() {
+  const daysSelect = el('select.select', { 'aria-label': 'How far ahead' }, [
+    el('option', { value: '7' }, 'Next week'),
+    el('option', { value: '14' }, 'Next fortnight'),
+    el('option', { value: '30', selected: true }, 'Next month'),
+    el('option', { value: '90' }, 'Next three months'),
+  ]);
+
+  const coversToggle = el('input', { type: 'checkbox', checked: true, id: 'snap-covers' });
+  const status = el('p.settings__note', { 'aria-live': 'polite' });
+
+  const button = el('button.btn.btn--stamp.btn--sm', {
+    type: 'button',
+    onClick: async () => {
+      button.disabled = true;
+      status.textContent = 'Building the file\u2026';
+
+      try {
+        const result = await buildSnapshot({
+          days: Number.parseInt(daysSelect.value, 10),
+          includeCovers: coversToggle.checked,
+          onProgress: (done, total) => {
+            status.textContent = `Gathering covers\u2026 ${done} of ${total}`;
+          },
+        });
+
+        download(`chapter-plan-${new Date().toISOString().slice(0, 10)}.html`, result.html, 'text/html');
+        status.textContent =
+          `Saved: ${result.books} books over ${result.days} days, ` +
+          `${result.covers} covers included, ${(result.bytes / 1024).toFixed(0)} KB.`;
+      } catch (error) {
+        status.textContent = `Could not build the file: ${error.message}`;
+        toast('The snapshot could not be built.', { variant: 'error' });
+      } finally {
+        button.disabled = false;
+      }
+    },
+  }, 'Export offline copy');
+
+  return section('Take it offline', [
+    el('p.settings__hint', {},
+      'Saves your schedule as a single HTML file with the covers built in. Send it to your phone and open it from Files \u2014 no network, no server, nothing to install. It is read-only: a copy you could edit would be a second library with no way to merge it back.'),
+    el('div.settings__row', {}, [
+      daysSelect,
+      el('label.bulk-check', { for: 'snap-covers' }, [coversToggle, el('span', {}, 'Include covers')]),
+      button,
+    ]),
+    status,
+    el('p.settings__note', {},
+      'Covers make the file much larger. Without them it is a few kilobytes and sends anywhere.'),
+  ]);
 }
 
 /* --- Sync ----------------------------------------------------------------- */

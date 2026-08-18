@@ -13,7 +13,7 @@ import {
   allBooks, updateBook, removeBook, restoreBook, getBook,
   allOrders, addToOrder, createOrder, positionInOrder,
 } from '../data/store.js';
-import { STATUSES, STATUS_ORDER, FORMATS } from '../data/schema.js';
+import { STATUSES, STATUS_ORDER, FORMATS, CATEGORIES, CATEGORY_ORDER } from '../data/schema.js';
 import { coverThumb } from './cover.js';
 import { openBookForm } from './bookForm.js';
 import { formatShort, relativeDay } from '../lib/dates.js';
@@ -25,9 +25,31 @@ import { progressReport } from '../logic/pacing.js';
 /** Tabs are reading intents, not raw statuses — "To read" folds in on-hold. */
 const SHELVES = {
   reading: { label: 'Reading', match: (b) => b.status === 'reading' },
-  tbr: { label: 'To read', match: (b) => b.status === 'planned' || b.status === 'on-hold' },
+  planned: { label: 'Planned', match: (b) => b.status === 'planned' || b.status === 'on-hold' },
+  backlog: { label: 'Backlog', match: (b) => b.status === 'backlog' },
   finished: { label: 'Finished', match: (b) => b.status === 'finished' },
   all: { label: 'Everything', match: () => true },
+};
+
+/**
+ * Filters for finding records that need work.
+ *
+ * A library of a few hundred imported books always has gaps, and the gaps are
+ * invisible until you can ask for them directly. Each is phrased as the thing
+ * you'd say out loud, not as a field name.
+ */
+const NEEDS = {
+  noPages: { label: 'No length', match: (b) => !b.pageCount },
+  unscheduled: { label: 'Not scheduled', match: (b) => !b.schedule.start && b.status !== 'finished' },
+  noCover: { label: 'No cover', match: (b) => !b.cover?.url },
+  noDescription: { label: 'No description', match: (b) => !b.description },
+  noAuthor: { label: 'No author', match: (b) => !b.author },
+  noIsbn: { label: 'No ISBN', match: (b) => !b.isbn },
+  unrated: { label: 'Finished, unrated', match: (b) => b.status === 'finished' && !b.rating },
+  stalled: {
+    label: 'Started, no log',
+    match: (b) => b.status === 'reading' && b.sessions.length === 0,
+  },
 };
 
 const SORTS = {
@@ -86,7 +108,8 @@ const selection = new Set();
 let anchorId = null;
 
 const filters = {
-  shelf: 'reading', sort: 'planned', query: '', tag: null, format: null, order: null,
+  shelf: 'reading', sort: 'planned', query: '', tag: null,
+  format: null, order: null, category: null, need: null,
 };
 
 export function renderLibrary(mount) {
@@ -109,6 +132,8 @@ export function renderLibrary(mount) {
     .filter(matchesQuery(filters.query))
     .filter((book) => !filters.tag || book.shelves.includes(filters.tag))
     .filter((book) => !filters.format || book.format === filters.format)
+    .filter((book) => !filters.category || book.category === filters.category)
+    .filter((book) => !filters.need || NEEDS[filters.need].match(book))
     .filter((book) => !filters.order || positionInOrder(filters.order, book.id) !== Infinity)
     // Picking a reading order overrides the sort: the whole point of the list
     // is its sequence, and sorting it by title would discard that.
@@ -134,6 +159,8 @@ export function renderLibrary(mount) {
 
     books.length ? toolbar(counts) : null,
     books.length ? formatBar(books) : null,
+    books.length ? categoryBar(books) : null,
+    books.length ? needsBar(books) : null,
     allOrders().length ? orderBar() : null,
     tags.length ? tagBar(tags) : null,
     selection.size ? bulkBar(visible) : null,
@@ -263,6 +290,63 @@ function selectRange(fromId, toId) {
 /** Ids in the order they are displayed, for range selection. */
 let lastVisibleOrder = [];
 
+function categoryBar(books) {
+  const rerender = () => renderLibrary(document.querySelector('#view'));
+  const present = CATEGORY_ORDER.filter((id) => books.some((book) => book.category === id));
+  if (present.length < 2) return null;
+
+  return el('div.tag-bar', {}, [
+    el('span.tag-bar__label', {}, 'Kind'),
+    ...present.map((id) =>
+      el('button.tag', {
+        type: 'button',
+        'aria-pressed': String(filters.category === id),
+        onClick: () => {
+          filters.category = filters.category === id ? null : id;
+          rerender();
+        },
+      }, `${CATEGORIES[id].label} (${books.filter((book) => book.category === id).length})`)
+    ),
+  ]);
+}
+
+/** Only shows the gaps that actually exist, so it stays short. */
+function needsBar(books) {
+  const rerender = () => renderLibrary(document.querySelector('#view'));
+
+  const present = Object.entries(NEEDS)
+    .map(([id, need]) => [id, need, books.filter(need.match).length])
+    .filter(([, , count]) => count > 0);
+
+  if (!present.length) return null;
+
+  return el('div.tag-bar.tag-bar--needs', {}, [
+    el('span.tag-bar__label', {}, 'Needs work'),
+    ...present.map(([id, need, count]) =>
+      el('button.tag.tag--need', {
+        type: 'button',
+        'aria-pressed': String(filters.need === id),
+        onClick: () => {
+          filters.need = filters.need === id ? null : id;
+          // These live across shelves; looking at just the reading shelf would
+          // hide almost every gap.
+          if (filters.need) filters.shelf = 'all';
+          rerender();
+        },
+      }, `${need.label} (${count})`)
+    ),
+    filters.need
+      ? el('button.link-btn.tag-bar__clear', {
+          type: 'button',
+          onClick: () => {
+            filters.need = null;
+            rerender();
+          },
+        }, 'Clear')
+      : null,
+  ].filter(Boolean));
+}
+
 function orderBar() {
   const rerender = () => renderLibrary(document.querySelector('#view'));
   const orders = allOrders();
@@ -369,6 +453,20 @@ function bulkBar(visible) {
     el('button.btn.btn--quiet.btn--sm', {
       type: 'button', onClick: () => openShelfDialog(chosen(), rerender),
     }, 'Shelve'),
+
+    el('select.select.bulk-bar__select', {
+      'aria-label': 'Set kind for selected books',
+      onChange: (event) => {
+        const category = event.target.value;
+        if (!category) return;
+        for (const book of chosen()) updateBook(book.id, { category });
+        toast(`${count} books set to ${CATEGORIES[category].label.toLowerCase()}.`);
+        rerender();
+      },
+    }, [
+      el('option', { value: '' }, 'Set kind\u2026'),
+      ...CATEGORY_ORDER.map((id) => el('option', { value: id }, CATEGORIES[id].label)),
+    ]),
 
     el('button.btn.btn--quiet.btn--sm', {
       type: 'button', onClick: () => openOrderDialog(chosen(), rerender),

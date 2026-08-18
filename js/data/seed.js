@@ -23,6 +23,7 @@ export function sampleBooks(from = today()) {
       isbn: '9780486436173',
       pageCount: 176,
       genre: 'Adventure',
+      category: 'book',
       description:
         'John Carter, a Virginian soldier, is transported to Mars, where the lesser gravity gives him uncommon strength and the warring peoples of a dying world take him for a champion.',
       format: 'physical',
@@ -126,6 +127,7 @@ export function sampleBooks(from = today()) {
     },
     {
       title: 'The Turn of the Screw',
+      category: 'book',
       author: 'Henry James',
       isbn: '9780486266848',
       pageCount: 121,

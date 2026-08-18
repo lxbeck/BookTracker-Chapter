@@ -71,7 +71,12 @@ test('a tile takes its width from its height, and the cover fills the tile', () 
 test('the day view is one fixed rectangle, matching the calendar board', () => {
   const board = rule(stats, '.day-board');
   assert.match(board, /height:\s*var\(--board-height\)/);
-  assert.match(board, /overflow-y:\s*hidden/);
+  assert.match(board, /overflow:\s*hidden/, 'the board must clip, not scroll sideways');
+  // Cards wrap into a grid; a single row is what squeezed a busy day into
+  // slivers behind a horizontal scrollbar.
+  assert.match(board, /grid-template-columns:\s*repeat\(var\(--day-cols/);
+  assert.match(board, /grid-template-rows:\s*repeat\(var\(--day-rows/);
+  assert.doesNotMatch(board, /overflow-x:\s*auto/, 'the day view must not scroll sideways');
 
   const card = rule(stats, '.day-card');
   assert.match(card, /overflow:\s*hidden/);
@@ -110,4 +115,26 @@ test('the service worker precaches every module the app imports', () => {
   for (const path of imports) {
     assert.match(sw, new RegExp(`'\\./js/${path.replace(/[.]/g, '\\.')}'`), `sw.js misses js/${path}`);
   }
+});
+
+test('a day card cover keeps its proportions instead of being cropped', () => {
+  const cover = rule(stats, '.day-card__art .cover');
+  assert.match(cover, /height:\s*100%/);
+  assert.match(cover, /width:\s*auto/);
+  assert.match(cover, /aspect-ratio:\s*var\(--cover-ratio\)/);
+  assert.match(cover, /max-width:\s*100%/, 'the art must not overflow its column');
+});
+
+test('the year grid lays months out responsively without fixed columns', () => {
+  const calendar = read('css/calendar.css');
+  assert.match(rule(calendar, '.year-grid'), /grid-template-columns:\s*repeat\(auto-fit/);
+  assert.match(rule(calendar, '.year-day'), /aspect-ratio:\s*1/, 'day squares must stay square');
+});
+
+test('the element helper sets CSS custom properties, not just plain ones', async () => {
+  // Object.assign on a style declaration silently drops anything beginning
+  // with `--`, which lost every CSS variable a view tried to set.
+  const source = read('js/lib/dom.js');
+  assert.match(source, /setProperty\(property/, 'custom properties need setProperty');
+  assert.doesNotMatch(source, /Object\.assign\(node\.style/, 'Object.assign drops CSS variables');
 });

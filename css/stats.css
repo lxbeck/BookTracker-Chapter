@@ -298,19 +298,22 @@
   color: var(--ink-inverse-soft);
 }
 
-/* One rectangle, the same height as the calendar board. Cards run across it
-   and scroll sideways if the day is busy, so the page itself never scrolls. */
+/* One rectangle, the same height as the calendar board.
+   Cards wrap into a grid rather than running off the side: a single row forced
+   eight books into slivers and hid the rest behind a horizontal scrollbar,
+   when the whole point of the view is seeing the day at a glance. The column
+   count comes from the view (see day.js), which knows how many books there
+   are, so four books make a 2x2 rather than four slivers. */
 .day-board {
   height: var(--board-height);
   display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: minmax(230px, 1fr);
+  grid-template-columns: repeat(var(--day-cols, 3), minmax(0, 1fr));
+  grid-template-rows: repeat(var(--day-rows, 1), minmax(0, 1fr));
   gap: 1px;
   background: rgba(241, 244, 247, 0.09);
   border: var(--rule-dark);
   border-radius: var(--r-card);
-  overflow-x: auto;
-  overflow-y: hidden;
+  overflow: hidden;
 }
 
 .day-board__empty {
@@ -342,11 +345,32 @@
   background: var(--bookcloth);
   display: grid;
   grid-template-rows: minmax(0, 1fr) auto auto;
-  gap: var(--s3);
-  padding: var(--s4);
+  gap: var(--s2);
+  padding: var(--s3);
   min-width: 0;
   min-height: 0;
   overflow: hidden;
+}
+
+/* A dense day gets terser cards rather than clipped ones. */
+.day-board--dense .day-card {
+  padding: var(--s2);
+  gap: var(--s1);
+}
+
+.day-board--dense .day-card__meta,
+.day-board--dense .day-card__author {
+  display: none;
+}
+
+.day-board--dense .day-card__title {
+  font-size: var(--size-sm);
+  -webkit-line-clamp: 1;
+}
+
+.day-board--dense .day-card__actions .btn {
+  padding: 2px var(--s2);
+  font-size: 0.5625rem;
 }
 
 .day-card__art {
@@ -356,12 +380,19 @@
   justify-content: center;
 }
 
-/* Height-driven, like the calendar tiles: the art takes the room left over. */
+/* Height-driven, like the calendar tiles: the art takes the room left over and
+   derives its width from it, so a cover is never stretched or cropped. The
+   max-width stops a short card from making the art wider than its column. */
 .day-card__art .cover {
   height: 100%;
   width: auto !important;
+  max-width: 100%;
   aspect-ratio: var(--cover-ratio);
   box-shadow: var(--lift-2);
+}
+
+.day-card__art .cover img {
+  object-fit: contain;
 }
 
 .day-card__text {
@@ -605,6 +636,19 @@
 .shelf-card__rating {
   color: #b8860b;
   letter-spacing: 2px;
+}
+
+@media (max-width: 900px) {
+  /* Below this width the computed column count is too many to read; two is
+     the most that fits with a legible cover. */
+  .day-board {
+    grid-template-columns: repeat(min(var(--day-cols, 2), 2), minmax(0, 1fr));
+    grid-template-rows: none;
+    grid-auto-rows: minmax(220px, 1fr);
+    height: auto;
+    max-height: none;
+    overflow-y: auto;
+  }
 }
 
 @media (max-width: 720px) {
@@ -883,4 +927,78 @@
   width: auto;
   flex: none;
   font-size: var(--size-sm);
+}
+
+/* --- Category breakdown --------------------------------------------------- */
+
+.category-bar {
+  display: flex;
+  height: 14px;
+  border-radius: 3px;
+  overflow: hidden;
+  margin-bottom: var(--s3);
+  background: var(--slip-shade);
+}
+
+.category-bar__part {
+  display: block;
+  min-width: 2px;
+}
+
+.category-bar__part.is-book,
+.category-legend dt.is-book { --swatch: #3a57bd; }
+.category-bar__part.is-comic,
+.category-legend dt.is-comic { --swatch: #b07d1c; }
+.category-bar__part.is-manga,
+.category-legend dt.is-manga { --swatch: #a8324a; }
+.category-bar__part.is-graphicNovel,
+.category-legend dt.is-graphicNovel { --swatch: #3c7a63; }
+.category-bar__part.is-anthology,
+.category-legend dt.is-anthology { --swatch: #6b5aa8; }
+.category-bar__part.is-nonfiction,
+.category-legend dt.is-nonfiction { --swatch: #2f6a86; }
+
+.category-bar__part {
+  background: var(--swatch, var(--ink-faint));
+}
+
+.category-legend {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--s1) var(--s4);
+  margin: 0;
+}
+
+.category-legend dt {
+  font-family: var(--face-slip);
+  font-size: var(--size-xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+}
+
+.category-legend dt::before {
+  content: "";
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  background: var(--swatch, var(--ink-faint));
+  flex: none;
+}
+
+.category-legend dd {
+  margin: 0 0 var(--s2);
+  font-size: var(--size-sm);
+  color: var(--ink);
+}
+
+.tag-bar--needs .tag--need {
+  border-style: dashed;
+}
+
+.tag-bar--needs .tag--need[aria-pressed="true"] {
+  border-style: solid;
 }

@@ -119,6 +119,33 @@ export function breakdown(books, read, { onlyFinished = false } = {}) {
  * days, because "you read 4 pages a day" is a misleading thing to tell someone
  * who reads 80 pages twice a week.
  */
+/**
+ * Finished books split by kind.
+ *
+ * "8 books finished this year" is misleading when four are single comic
+ * issues; the split is what makes the number mean anything.
+ */
+export function finishedByCategory(books, { year = null } = {}) {
+  const finished = books.filter(
+    (book) =>
+      book.status === 'finished' &&
+      (!year || book.actual.finishedAt?.startsWith(String(year)))
+  );
+
+  const counts = new Map();
+  for (const book of finished) {
+    const key = book.category ?? 'book';
+    const entry = counts.get(key) ?? { count: 0, pages: 0 };
+    entry.count += 1;
+    entry.pages += book.pageCount ?? 0;
+    counts.set(key, entry);
+  }
+
+  return [...counts.entries()]
+    .map(([category, entry]) => ({ category, ...entry }))
+    .sort((a, b) => b.count - a.count);
+}
+
 export function headline(books, todayKey = today()) {
   const sessions = allSessions(books);
   const finished = books.filter((book) => book.status === 'finished');
@@ -135,6 +162,8 @@ export function headline(books, todayKey = today()) {
 
   return {
     booksFinished: finished.length,
+    byCategory: finishedByCategory(books),
+    byCategoryThisYear: finishedByCategory(books, { year: todayKey.slice(0, 4) }),
     pagesFinished: finishedPages,
     minutes,
     hours: minutes / 60,

@@ -52,7 +52,8 @@ test('a Goodreads export maps onto book records', () => {
   assert.ok(result.ok, result.error);
   assert.equal(result.books.length, 4);
   assert.equal(result.source, 'Goodreads');
-  assert.deepEqual(result.counts, { finished: 2, planned: 1, reading: 1 });
+  // "to-read" is a backlog: it records intent, not a date.
+  assert.deepEqual(result.counts, { finished: 2, backlog: 1, reading: 1 });
 });
 
 test('the ="..." ISBN wrapper is stripped', () => {
@@ -70,7 +71,7 @@ test('shelf names become status, and extra shelves become shelves', () => {
   const { books } = parseGoodreadsCsv(GOODREADS);
   assert.equal(books[0].status, 'finished');
   assert.deepEqual(books[0].shelves, ['favourites', 'book-club']);
-  assert.equal(books[1].status, 'planned');
+  assert.equal(books[1].status, 'backlog');
   assert.equal(books[3].status, 'reading');
 });
 

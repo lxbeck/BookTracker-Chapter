@@ -77,7 +77,10 @@ export function renderDay(mount) {
 
     el('div.day-strip', {}, weekStrip(books, cursor, todayKey, mount)),
 
-    el('div.day-board', {},
+    el('div.day-board', {
+      class: entries.length > 6 ? 'day-board--dense' : '',
+      style: gridShape(entries.length),
+    },
       entries.length
         ? entries.map((entry) => dayCard(entry, cursor, todayKey, redraw))
         : el('div.day-board__empty', {}, [
@@ -90,6 +93,25 @@ export function renderDay(mount) {
           ])
     ),
   ].filter(Boolean));
+}
+
+/**
+ * How to lay N cards into the fixed rectangle.
+ *
+ * Chosen to keep each card as close to a portrait shape as possible, since the
+ * cover is the tallest thing in it: two books side by side, four as a 2x2,
+ * nine as a 3x3. Squeezing everything into one row was what turned a busy day
+ * into slivers and a sideways scrollbar.
+ */
+function gridShape(count) {
+  if (count <= 1) return { '--day-cols': '1', '--day-rows': '1' };
+  if (count === 2) return { '--day-cols': '2', '--day-rows': '1' };
+  if (count <= 4) return { '--day-cols': '2', '--day-rows': '2' };
+  if (count <= 6) return { '--day-cols': '3', '--day-rows': '2' };
+  if (count <= 9) return { '--day-cols': '3', '--day-rows': '3' };
+  if (count <= 12) return { '--day-cols': '4', '--day-rows': '3' };
+  if (count <= 16) return { '--day-cols': '4', '--day-rows': '4' };
+  return { '--day-cols': '5', '--day-rows': String(Math.ceil(count / 5)) };
 }
 
 function move(delta, mount) {

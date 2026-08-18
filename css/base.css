@@ -164,6 +164,7 @@ textarea {
 
 /* The calendar and day views are the point of the app; they get the screen. */
 body[data-route="calendar"] .app-main,
+body[data-route="year"] .app-main,
 body[data-route="day"] .app-main {
   max-width: min(var(--shell-wide), 98vw);
   padding: var(--s5) var(--s4) var(--s5);
@@ -174,6 +175,7 @@ body[data-route="day"] .app-main {
 }
 
 body[data-route="calendar"] .app-head__inner,
+body[data-route="year"] .app-head__inner,
 body[data-route="day"] .app-head__inner {
   max-width: min(var(--shell-wide), 98vw);
 }

@@ -14,10 +14,14 @@
 
 import { isValidKey, today } from '../lib/dates.js';
 
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 6;
 
 /** @type {Record<string, {id: string, label: string, hint: string}>} */
 export const STATUSES = {
+  // "Planned" means dated. Everything you own but haven't scheduled needs its
+  // own home — lumping an unscheduled backlog in with a dated plan makes the
+  // planned shelf useless as a picture of what's actually coming up.
+  backlog: { id: 'backlog', label: 'Backlog', hint: 'Owned, not yet scheduled' },
   planned: { id: 'planned', label: 'Planned', hint: 'On the shelf, dated to start' },
   reading: { id: 'reading', label: 'Reading', hint: 'Checked out and in progress' },
   finished: { id: 'finished', label: 'Finished', hint: 'Read to the end' },
@@ -25,7 +29,26 @@ export const STATUSES = {
   'on-hold': { id: 'on-hold', label: 'On hold', hint: 'Paused, will return' },
 };
 
-export const STATUS_ORDER = ['reading', 'planned', 'on-hold', 'finished', 'dnf'];
+export const STATUS_ORDER = ['reading', 'planned', 'backlog', 'on-hold', 'finished', 'dnf'];
+
+/**
+ * What kind of thing this is, as distinct from how you read it.
+ *
+ * Format answers "paper, screen or ears"; category answers "is this a novel or
+ * a single issue". Both matter and neither implies the other — a manga volume
+ * can be physical or an ebook — so a stats line reading "8 books finished" is
+ * misleading when four are single comics.
+ */
+export const CATEGORIES = {
+  book: { id: 'book', label: 'Book', plural: 'books' },
+  comic: { id: 'comic', label: 'Comic', plural: 'comics' },
+  manga: { id: 'manga', label: 'Manga', plural: 'manga volumes' },
+  graphicNovel: { id: 'graphicNovel', label: 'Graphic novel', plural: 'graphic novels' },
+  anthology: { id: 'anthology', label: 'Anthology', plural: 'anthologies' },
+  nonfiction: { id: 'nonfiction', label: 'Non-fiction', plural: 'non-fiction' },
+};
+
+export const CATEGORY_ORDER = ['book', 'nonfiction', 'comic', 'graphicNovel', 'manga', 'anthology'];
 
 export const FORMATS = {
   physical: { id: 'physical', label: 'Physical', unit: 'pages' },
@@ -75,6 +98,7 @@ export function blankBook(overrides = {}) {
     genre: '',
     description: '',
     format: 'physical',
+    category: 'book',
     status: 'planned',
     series: { name: '', number: null, total: null },
     cover: { url: null, source: null },
@@ -258,6 +282,7 @@ export function normalizeBook(input = {}, todayKey = today()) {
     genre: String(input.genre ?? '').trim(),
     description: String(input.description ?? '').trim().slice(0, 2000),
     format: FORMATS[input.format] ? input.format : base.format,
+    category: CATEGORIES[input.category] ? input.category : base.category,
     status,
     series: {
       name: String(input.series?.name ?? '').trim(),
@@ -327,6 +352,11 @@ export function applyStatusRules(book, todayKey = today()) {
   if (next.status === 'reading') {
     next.actual.startedAt ??= next.schedule.start ?? day;
   }
+
+  // Planned means dated. Removing the dates from a planned book drops it back
+  // to the backlog rather than leaving it claiming a plan it hasn't got.
+  if (next.status === 'planned' && !next.schedule.start) next.status = 'backlog';
+  if (next.status === 'backlog' && next.schedule.start) next.status = 'planned';
 
   // The log is the source of truth for how far in you are. Enforcing it here
   // rather than only on the store's write path means a book loaded from disk,

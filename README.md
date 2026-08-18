@@ -308,6 +308,61 @@ Bulk scheduling lists the books **in the order you selected them**, with the
 dates each will get, and arrows to reorder before committing. The order was
 always the selection order; it just wasn't visible, which made it a guess.
 
+## The four views
+
+- **Calendar** — a month, covers on the days they're scheduled.
+- **Day** — one date filling the screen. Cards wrap into a grid sized to how
+  many books there are: two side by side, four as a 2x2, nine as a 3x3. Nothing
+  scrolls sideways, and covers keep their proportions rather than being
+  squeezed.
+- **Year** — twelve months of day-squares, shaded by how many books fall on
+  each. Any twelve consecutive months, not just January to December, because a
+  plan running August to August is a normal thing to want to see whole. A cover
+  is illegible at this size, so the detail comes from hovering or clicking.
+- **Library** — the records themselves.
+
+## Backlog versus planned
+
+"Planned" means **dated**. Everything you own but haven't scheduled lives in
+the backlog, on its own shelf. Without the split, importing nine hundred books
+from Goodreads buries the handful of things actually coming up.
+
+The two convert automatically: give a backlog book dates and it becomes
+planned; clear the dates and it drops back. A status that could contradict its
+own dates would be worse than no status at all.
+
+## Kinds of book
+
+Category is separate from format: format is paper, screen or ears; category is
+whether this is a novel, a comic, a manga volume. Neither implies the other — a
+manga volume can be an ebook.
+
+This exists because "8 books finished this year" is misleading when four of
+them are single comic issues. The stats page shows the split, and the library
+filters by it. Calibre imports guess a category from the metadata, which is a
+guess and editable.
+
+## Finding records that need work
+
+An imported library always has gaps, and they're invisible until you can ask
+for them directly. The "Needs work" filters show only the gaps that actually
+exist: no length, not scheduled, no cover, no description, no author, no ISBN,
+finished but unrated, started but never logged. Each shows its count, and
+picking one switches to the whole library, since gaps span every shelf.
+
+## Taking it offline
+
+Settings has "Export offline copy": one self-contained HTML file with the
+styles and covers built in. Send it to your phone, open it from Files, and read
+your schedule with no network, no server and nothing installed.
+
+Everything is inlined deliberately — a file that referenced `css/base.css`
+would arrive as unstyled text on the other device, which is the exact failure
+it exists to avoid. Covers can be left out to keep it small enough to message.
+
+It's read-only. An editable copy would be a second library with no way to merge
+it back, and editing it is the first thing anyone would try.
+
 ## Reading orders
 
 A shelf is a set; a reading order is a **sequence**. "Poe tales, in

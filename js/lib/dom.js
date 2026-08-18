@@ -28,7 +28,14 @@ export function el(tag, attrs = {}, children = []) {
     } else if (key === 'dataset') {
       Object.assign(node.dataset, value);
     } else if (key === 'style' && typeof value === 'object') {
-      Object.assign(node.style, value);
+      for (const [property, setting] of Object.entries(value)) {
+        if (setting == null) continue;
+        // Custom properties have to go through setProperty: assigning them as
+        // object keys silently does nothing, which is a very quiet way to lose
+        // every CSS variable a view sets.
+        if (property.startsWith('--')) node.style.setProperty(property, String(setting));
+        else node.style[property] = setting;
+      }
     } else if (key === 'text') {
       node.textContent = value;
     } else if (key.startsWith('on') && typeof value === 'function') {

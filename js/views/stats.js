@@ -10,9 +10,10 @@ import { el, fill } from '../lib/dom.js';
 import { allBooks, getSettings } from '../data/store.js';
 import {
   headline, goalProgress, finishedByMonth, loggedByMonth,
-  cumulativePages, dailyMinutes, breakdown,
+  cumulativePages, dailyMinutes, breakdown, finishedByCategory,
 } from '../logic/stats.js';
 import { formatDuration } from '../logic/sessions.js';
+import { CATEGORIES } from '../data/schema.js';
 import { barChart, lineChart, rankChart, heatGrid } from '../lib/charts.js';
 import { openBookForm } from './bookForm.js';
 
@@ -45,8 +46,10 @@ export function renderStats(mount) {
 
     goal ? goalPanel(goal) : null,
 
+    stats.byCategory.length > 1 ? categoryPanel(stats) : null,
+
     el('div.stat-row', {}, [
-      statCard('Books finished', String(stats.booksFinished), `${stats.pagesFinished.toLocaleString()} pages`),
+      statCard('Finished', String(stats.booksFinished), `${stats.pagesFinished.toLocaleString()} pages`),
       statCard('Time logged', formatDuration(stats.minutes), `${stats.sessions} sittings`),
       statCard('Pages logged', stats.pagesLogged.toLocaleString(), `across ${stats.daysRead} days`),
       statCard(
@@ -93,8 +96,49 @@ export function renderStats(mount) {
       panel('By author', rankChart(breakdown(books, (b) => b.author), { label: 'Books by author' })),
     ]),
 
+    panel('By kind',
+      rankChart(breakdown(books, (b) => CATEGORIES[b.category]?.label ?? 'Book'),
+        { label: 'Books by kind' })),
+
     breakdown(books, (b) => b.shelves).length
       ? panel('By shelf', rankChart(breakdown(books, (b) => b.shelves), { label: 'Books by shelf' }))
+      : null,
+  ].filter(Boolean));
+}
+
+/**
+ * The split that makes the headline count honest.
+ *
+ * A single-issue comic and a 900-page novel both add one to "books finished",
+ * which flatters the total in a way that stops being useful the moment you
+ * read a lot of comics.
+ */
+function categoryPanel(stats) {
+  const year = new Date().getFullYear();
+  const total = stats.byCategory.reduce((sum, row) => sum + row.count, 0);
+
+  const bar = el('div.category-bar', {},
+    stats.byCategory.map((row) =>
+      el('span.category-bar__part', {
+        class: `is-${row.category}`,
+        style: { width: `${(row.count / total) * 100}%` },
+        title: `${row.count} ${CATEGORIES[row.category]?.plural ?? row.category}`,
+      })));
+
+  return el('section.stat-panel.slip.slip--plain', {}, [
+    el('h3.stat-panel__title', {}, 'What those finished books actually are'),
+    bar,
+    el('dl.category-legend', {},
+      stats.byCategory.flatMap((row) => [
+        el('dt', { class: `is-${row.category}` }, CATEGORIES[row.category]?.label ?? row.category),
+        el('dd', {},
+          `${row.count} \u00b7 ${row.pages.toLocaleString()} pages`),
+      ])),
+    stats.byCategoryThisYear.length
+      ? el('p.stat-panel__note', {},
+          `In ${year}: ${stats.byCategoryThisYear
+            .map((row) => `${row.count} ${row.count === 1 ? (CATEGORIES[row.category]?.label ?? row.category).toLowerCase() : (CATEGORIES[row.category]?.plural ?? row.category)}`)
+            .join(', ')}.`)
       : null,
   ].filter(Boolean));
 }

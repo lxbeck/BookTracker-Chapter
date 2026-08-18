@@ -19,6 +19,7 @@
     <link rel="stylesheet" href="css/components.css" />
     <link rel="stylesheet" href="css/covers.css" />
     <link rel="stylesheet" href="css/library.css" />
+    <link rel="stylesheet" href="css/calendar.css" />
   </head>
   <body>
     <div class="app">
@@ -26,6 +27,9 @@
         <div class="app-head__inner">
           <h1 class="wordmark">Chapter<span>Reading log</span></h1>
           <nav class="app-nav" aria-label="Views">
+            <button class="app-nav__link" data-route="calendar" onclick="location.hash='#/calendar'">
+              Calendar
+            </button>
             <button class="app-nav__link" data-route="library" onclick="location.hash='#/library'">
               Library
             </button>

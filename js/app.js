@@ -10,12 +10,14 @@
 import { $, toast } from './lib/dom.js';
 import * as store from './data/store.js';
 import { renderLibrary } from './views/library.js';
+import { renderCalendar } from './views/calendar.js';
 
 const ROUTES = {
+  calendar: { label: 'Calendar', render: renderCalendar },
   library: { label: 'Library', render: renderLibrary },
 };
 
-const DEFAULT_ROUTE = 'library';
+const DEFAULT_ROUTE = 'calendar';
 
 function currentRoute() {
   const name = location.hash.replace(/^#\/?/, '') || DEFAULT_ROUTE;

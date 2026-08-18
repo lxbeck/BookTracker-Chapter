@@ -15,9 +15,21 @@ import { spineColor } from '../data/schema.js';
  * @param {Object} [options]
  * @param {string} [options.width] - any CSS length; height follows 2:3
  * @param {string} [options.alt] - overrides the default alt text
+ * @param {'crop'|'whole'} [options.fit]
+ *   `crop` locks every thumbnail to 2:3 and trims the overflow — right for
+ *   grids and calendar tiles, where a ragged row of mismatched heights reads
+ *   as broken. `whole` shows the entire cover at its own proportions, for
+ *   anywhere the art itself is the point. Most covers are near enough to 2:3
+ *   that cropping is invisible; the ones that aren't get beheaded, which is
+ *   why detail views use `whole`.
  */
-export function coverThumb(book, { width = '100%', alt } = {}) {
+export function coverThumb(book, { width = '100%', alt, fit = 'crop' } = {}) {
+  // A cover with no art still needs a box with a shape, so the fallback spine
+  // keeps the fixed ratio even in `whole` mode.
+  const whole = fit === 'whole' && Boolean(book.cover?.url);
+
   const node = el('div.cover', {
+    class: whole ? 'cover--whole' : '',
     style: { width, containerType: 'inline-size' },
     'aria-hidden': alt === '' ? 'true' : null,
   });
@@ -36,8 +48,12 @@ export function coverThumb(book, { width = '100%', alt } = {}) {
       decoding: 'async',
     });
     // A dead cover URL is common with third-party art; degrade rather than
-    // leave a broken-image glyph on the calendar.
-    img.addEventListener('error', () => node.replaceChildren(fallback()));
+    // leave a broken-image glyph on the calendar. The ratio box has to come
+    // back with it, or the fallback collapses to nothing.
+    img.addEventListener('error', () => {
+      node.classList.remove('cover--whole');
+      node.replaceChildren(fallback());
+    });
     node.append(img);
   } else {
     node.append(fallback());

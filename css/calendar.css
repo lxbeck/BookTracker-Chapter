@@ -116,7 +116,7 @@
 .cal__tile {
   flex: 1 1 0;
   min-width: 0;
-  max-width: 38px;
+  max-width: 30px;
   padding: 0;
   border: 0;
   background: none;
@@ -260,7 +260,7 @@ body.is-rescheduling .cal__day {
     padding: var(--s1);
   }
   .cal__tile {
-    max-width: 30px;
+    max-width: 32px;
   }
   .cal__legend-hint {
     display: none;
@@ -283,7 +283,7 @@ body.is-rescheduling .cal__day {
     gap: 2px;
   }
   .cal__tile {
-    max-width: 18px;
+    max-width: 26px;
   }
   .cal__more {
     min-width: 16px;

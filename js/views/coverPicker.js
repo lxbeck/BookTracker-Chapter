@@ -40,7 +40,7 @@ export function coverPicker({ draft, readForm, onPick }) {
 
   function drawPreview() {
     fill(preview, [
-      coverThumb({ ...draft, cover }, { width: '104px', alt: '' }),
+      coverThumb({ ...draft, cover }, { width: '104px', alt: '', fit: 'whole' }),
       el('span.cover-picker__source', {
         text: cover.url ? SOURCE_LABEL[cover.source] ?? 'Custom' : 'No cover',
       }),

@@ -83,7 +83,7 @@ function dayRow({ book, state }, dayKey, todayKey, redraw, modal) {
           : `${pace.todayTarget} ${noun} ${dayKey < todayKey ? 'were due' : dayKey === todayKey ? 'to read today' : 'due that day'}`;
 
   return el('article.day-row', {}, [
-    coverThumb(book, { width: '68px', alt: '' }),
+    coverThumb(book, { width: '76px', alt: '', fit: 'whole' }),
 
     el('div.day-row__body', {}, [
       el('header.day-row__head', {}, [

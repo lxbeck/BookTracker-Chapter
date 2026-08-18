@@ -23,7 +23,24 @@ import { loadSampleLibrary } from '../data/seed.js';
 import { attachHoverCard, hide as hideHoverCard } from './hoverCard.js';
 import { openDayPopup } from './dayPopup.js';
 
-const MAX_TILES = 4;
+/**
+ * How many covers a day can hold.
+ *
+ * Six fits comfortably at full width; below that the tiles get too narrow to
+ * read as books at all, so narrower viewports show fewer and lean on the +N
+ * chip. This is a function rather than a constant because the answer changes
+ * when the window does.
+ */
+const TILE_BREAKPOINTS = [
+  { maxWidth: 600, tiles: 3 },
+  { maxWidth: 860, tiles: 4 },
+  { maxWidth: Infinity, tiles: 6 },
+];
+
+function tilesPerDay() {
+  const width = globalThis.innerWidth ?? 1200;
+  return TILE_BREAKPOINTS.find((stop) => width <= stop.maxWidth).tiles;
+}
 
 /** Which month is on screen. Module state — not worth persisting. */
 let cursor = null;
@@ -37,6 +54,22 @@ export const calendarHooks = {
   attachHover: attachHoverCard,
 };
 
+/** Re-render only when a resize actually changes how many tiles fit. */
+let lastTileCount = null;
+let resizeBound = false;
+
+function bindResize(mount) {
+  if (resizeBound) return;
+  resizeBound = true;
+  let frame = null;
+  globalThis.addEventListener?.('resize', () => {
+    cancelAnimationFrame(frame);
+    frame = requestAnimationFrame(() => {
+      if (tilesPerDay() !== lastTileCount && document.contains(mount)) renderCalendar(mount);
+    });
+  });
+}
+
 export function renderCalendar(mount) {
   hideHoverCard();
   const books = allBooks();
@@ -48,6 +81,9 @@ export function renderCalendar(mount) {
     cursor = { year: now.getFullYear(), month: now.getMonth() };
   }
 
+  const maxTiles = tilesPerDay();
+  lastTileCount = maxTiles;
+  bindResize(mount);
   const cells = monthGrid(cursor.year, cursor.month, weekStartsOn);
   const buckets = groupByDay(books, cells.map((cell) => cell.key), todayKey);
 
@@ -82,7 +118,7 @@ export function renderCalendar(mount) {
       el(
         'div.cal__grid',
         { role: 'grid', 'aria-label': `${monthName(cursor.month)} ${cursor.year}` },
-        cells.map((cell) => dayCell(cell, buckets.get(cell.key) ?? [], todayKey, mount))
+        cells.map((cell) => dayCell(cell, buckets.get(cell.key) ?? [], todayKey, mount, maxTiles))
       ),
     ]),
 
@@ -117,9 +153,11 @@ const legendKey = (state, label) =>
 
 /* --- Cells ---------------------------------------------------------------- */
 
-function dayCell(cell, entries, todayKey, mount) {
+function dayCell(cell, entries, todayKey, mount, maxTiles) {
   const isToday = cell.key === todayKey;
-  const shown = entries.length > MAX_TILES ? entries.slice(0, MAX_TILES - 1) : entries;
+  // Overflowing days give up one cover slot to the count, so the row never
+  // grows past `maxTiles` items in total.
+  const shown = entries.length > maxTiles ? entries.slice(0, maxTiles - 1) : entries;
   const overflow = entries.length - shown.length;
 
   const node = el('div.cal__day', {

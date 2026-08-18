@@ -216,6 +216,20 @@
   object-fit: cover;
 }
 
+/* Show the whole cover, whatever shape it is, instead of cropping to 2:3. */
+.cover--whole {
+  aspect-ratio: auto;
+  background: transparent;
+  box-shadow: none;
+}
+
+.cover--whole img {
+  height: auto;
+  object-fit: contain;
+  border-radius: var(--r-cover);
+  box-shadow: var(--lift-1), inset 0 0 0 1px rgba(25, 27, 24, 0.12);
+}
+
 /* Fallback: a typeset spine, so a coverless book still reads as a book */
 .cover__spine {
   position: absolute;

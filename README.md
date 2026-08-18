@@ -24,11 +24,13 @@ index.html            app shell
 css/tokens.css        design tokens — palette, type, spacing, motion
 css/base.css          reset, typography, shell layout
 css/components.css    buttons, fields, slips, modal, chips, covers
+css/covers.css        cover picker
 css/library.css       record lists
 js/app.js             bootstrap + hash router
 js/lib/dom.js         element helper, focus trap, toasts
 js/lib/dates.js       day-key arithmetic and the month grid
 js/data/schema.js     the Book record: defaults, normalise, validate
 js/data/store.js      persistence, migrations, CRUD, pub/sub
+js/data/covers.js     Open Library + Google Books lookup, upload downscaling
 js/views/             one module per view
 tests/                data-layer tests

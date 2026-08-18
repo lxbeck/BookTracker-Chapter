@@ -8,6 +8,7 @@
 
 import { el, $, toast } from '../lib/dom.js';
 import { showModal } from './modal.js';
+import { coverPicker } from './coverPicker.js';
 import { STATUSES, STATUS_ORDER, FORMATS, blankBook } from '../data/schema.js';
 import { addBook, updateBook, removeBook, restoreBook } from '../data/store.js';
 
@@ -101,7 +102,33 @@ export function openBookForm({ book = null, defaultStart = null, onSaved } = {})
   );
   refreshPaceNote();
 
+  // Cover art. A lookup can autofill the fields the user hasn't filled in
+  // themselves — never overwrite what they typed.
+  const picker = coverPicker({
+    draft,
+    readForm: () => ({
+      isbn: isbnInput.value,
+      title: titleInput.value,
+      author: authorInput.value,
+    }),
+    onPick: (cover, meta) => {
+      draft.cover = cover;
+      if (!meta) return;
+      if (!titleInput.value.trim() && meta.title) titleInput.value = meta.title;
+      if (!authorInput.value.trim() && meta.author) authorInput.value = meta.author;
+      if (!isbnInput.value.trim() && meta.isbn) isbnInput.value = meta.isbn;
+      if (!pagesInput.value && meta.pageCount) {
+        pagesInput.value = meta.pageCount;
+        refreshPaceNote();
+      }
+    },
+  });
+
   const body = [
+    el('div.field', {}, [
+      el('span.field__label', { text: 'Cover' }),
+      picker,
+    ]),
     field('title', 'Title', titleInput),
     el('div.field-row', {}, [
       field('author', 'Author', authorInput),
@@ -147,6 +174,7 @@ export function openBookForm({ book = null, defaultStart = null, onSaved } = {})
       genre: genreInput.value,
       format: formatSelect.value,
       status: statusSelect.value,
+      cover: draft.cover,
       schedule: { start: startInput.value || null, end: endInput.value || null },
     };
   }

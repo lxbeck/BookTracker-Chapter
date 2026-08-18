@@ -1,0 +1,13 @@
+{
+  "name": "chapter",
+  "version": "0.1.0",
+  "description": "A reading tracker: catalogue books, plan them onto a calendar, and see what today asks of you.",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "python3 -m http.server 8080",
+    "test": "node --test tests/*.test.js"
+  },
+  "keywords": ["reading", "tracker", "calendar", "vanilla-js"],
+  "license": "MIT"
+}

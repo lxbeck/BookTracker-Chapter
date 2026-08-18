@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Chapter — reading tracker</title>
+    <meta name="description" content="Chapter is a reading tracker: catalogue your books, plan them onto a calendar, and see what today asks of you." />
+    <meta name="color-scheme" content="dark" />
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter+Tight:wght@400;500;600&family=Courier+Prime:wght@400;700&display=swap"
+      rel="stylesheet"
+    />
+
+    <link rel="stylesheet" href="css/tokens.css" />
+    <link rel="stylesheet" href="css/base.css" />
+    <link rel="stylesheet" href="css/components.css" />
+    <link rel="stylesheet" href="css/library.css" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="app-head chrome">
+        <div class="app-head__inner">
+          <h1 class="wordmark">Chapter<span>Reading log</span></h1>
+          <nav class="app-nav" aria-label="Views">
+            <button class="app-nav__link" data-route="library" onclick="location.hash='#/library'">
+              Library
+            </button>
+          </nav>
+        </div>
+      </header>
+
+      <main class="app-main" id="view" aria-live="polite"></main>
+    </div>
+
+    <script type="module" src="js/app.js"></script>
+  </body>
+</html>

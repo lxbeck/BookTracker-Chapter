@@ -1,0 +1,90 @@
+/* ===========================================================================
+   Chapter — library / record lists
+   =========================================================================== */
+
+.record-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+}
+
+.record {
+  display: flex;
+  align-items: center;
+  gap: var(--s4);
+  padding: var(--s3) var(--s4) var(--s3) var(--s5);
+  transition: transform var(--fast) var(--ease), box-shadow var(--fast) var(--ease);
+}
+
+.record:hover {
+  transform: translateX(2px);
+  box-shadow: var(--lift-2);
+}
+
+.record__main {
+  flex: 1;
+  min-width: 0;
+}
+
+.record__title {
+  font-size: var(--size-md);
+  font-variation-settings: var(--wonk-on);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.record__byline {
+  font-size: var(--size-sm);
+  color: var(--ink-soft);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.record__dot {
+  margin: 0 var(--s2);
+  color: var(--ink-faint);
+}
+
+.record__meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  font-family: var(--face-slip);
+  font-size: var(--size-xs);
+  color: var(--ink-soft);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.plan-block {
+  border: var(--rule);
+  border-radius: var(--r-card);
+  padding: var(--s3) var(--s4) var(--s4);
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+  background: var(--slip-shade);
+}
+
+.plan-block legend {
+  padding: 0 var(--s2);
+}
+
+@media (max-width: 720px) {
+  .record {
+    flex-wrap: wrap;
+    padding-left: var(--s4);
+    background-image: none;
+  }
+  .record__meta {
+    align-items: flex-start;
+    text-align: left;
+  }
+}

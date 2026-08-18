@@ -1,0 +1,414 @@
+/* ===========================================================================
+   Chapter — components
+   =========================================================================== */
+
+/* --- Buttons -------------------------------------------------------------- */
+
+.btn {
+  font-family: var(--face-slip);
+  font-size: var(--size-xs);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: var(--s2) var(--s4);
+  border-radius: var(--r-control);
+  border: 1px solid transparent;
+  background: transparent;
+  cursor: pointer;
+  transition: background var(--fast) var(--ease), color var(--fast) var(--ease),
+    border-color var(--fast) var(--ease), transform var(--fast) var(--ease);
+  white-space: nowrap;
+}
+
+.btn:active {
+  transform: translateY(1px);
+}
+
+.btn--stamp {
+  background: var(--stamp);
+  color: #fff;
+  border-color: var(--stamp-deep);
+  box-shadow: var(--lift-1);
+}
+
+.btn--stamp:hover {
+  background: var(--stamp-deep);
+}
+
+.btn--ghost {
+  color: var(--ink-inverse-soft);
+  border-color: rgba(242, 239, 230, 0.22);
+}
+
+.btn--ghost:hover {
+  color: var(--ink-inverse);
+  border-color: rgba(242, 239, 230, 0.45);
+  background: rgba(242, 239, 230, 0.05);
+}
+
+.btn--quiet {
+  color: var(--ink-soft);
+  border-color: var(--slip-edge);
+  background: var(--slip);
+}
+
+.btn--quiet:hover {
+  color: var(--ink);
+  border-color: var(--ink-faint);
+}
+
+.btn--danger {
+  color: var(--overdue);
+  border-color: transparent;
+}
+
+.btn--danger:hover {
+  background: var(--overdue-wash);
+}
+
+.btn--sm {
+  padding: var(--s1) var(--s3);
+  font-size: 0.625rem;
+}
+
+/* --- Slip card ------------------------------------------------------------ */
+
+.slip {
+  background: var(--slip);
+  color: var(--ink);
+  border-radius: var(--r-card);
+  box-shadow: var(--lift-1);
+  /* the punched hole + ruled margin of a real circulation card */
+  background-image: linear-gradient(
+    to right,
+    transparent 0,
+    transparent 22px,
+    rgba(168, 50, 74, 0.14) 22px,
+    rgba(168, 50, 74, 0.14) 23px,
+    transparent 23px
+  );
+}
+
+.slip--plain {
+  background-image: none;
+}
+
+/* --- Fields --------------------------------------------------------------- */
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+}
+
+.field__label {
+  font-family: var(--face-slip);
+  font-size: var(--size-xs);
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.field__hint {
+  font-size: var(--size-xs);
+  color: var(--ink-faint);
+}
+
+.field__error {
+  font-size: var(--size-xs);
+  color: var(--overdue);
+}
+
+.input,
+.select,
+.textarea {
+  background: #fbfaf5;
+  border: 1px solid var(--slip-edge);
+  border-radius: var(--r-control);
+  padding: var(--s2) var(--s3);
+  color: var(--ink);
+  font-size: var(--size-base);
+  width: 100%;
+  transition: border-color var(--fast) var(--ease), box-shadow var(--fast) var(--ease);
+}
+
+.input:hover,
+.select:hover,
+.textarea:hover {
+  border-color: var(--ink-faint);
+}
+
+.input:focus,
+.select:focus,
+.textarea:focus {
+  outline: none;
+  border-color: var(--stamp);
+  box-shadow: 0 0 0 3px var(--stamp-wash);
+}
+
+.input[aria-invalid="true"] {
+  border-color: var(--overdue);
+}
+
+.textarea {
+  min-height: 5rem;
+  resize: vertical;
+  font-family: inherit;
+}
+
+.field-row {
+  display: grid;
+  gap: var(--s4);
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+
+/* --- Status chips --------------------------------------------------------- */
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  font-family: var(--face-slip);
+  font-size: 0.625rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 2px var(--s2);
+  border-radius: var(--r-control);
+  border: 1px solid currentColor;
+  white-space: nowrap;
+}
+
+.chip--planned {
+  color: var(--stamp);
+  background: var(--stamp-wash);
+}
+.chip--reading {
+  color: #8a5a12;
+  background: #f6ecd9;
+}
+.chip--finished {
+  color: var(--shelved);
+  background: var(--shelved-wash);
+}
+.chip--dnf {
+  color: var(--overdue);
+  background: var(--overdue-wash);
+}
+.chip--on-hold {
+  color: var(--ink-soft);
+  background: var(--slip-shade);
+}
+
+/* --- Cover ---------------------------------------------------------------- */
+
+.cover {
+  aspect-ratio: var(--cover-ratio);
+  background: var(--slip-shade);
+  border-radius: var(--r-cover);
+  overflow: hidden;
+  position: relative;
+  box-shadow: var(--lift-1), inset 0 0 0 1px rgba(25, 27, 24, 0.12);
+  flex: none;
+}
+
+.cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Fallback: a typeset spine, so a coverless book still reads as a book */
+.cover__spine {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 8%;
+  background: var(--fallback-bg, #2c3a34);
+  color: #f2efe6;
+}
+
+.cover__spine b {
+  font-family: var(--face-display);
+  font-variation-settings: var(--wonk-on);
+  font-weight: 500;
+  font-size: clamp(0.5rem, 14cqw, 0.95rem);
+  line-height: 1.1;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.cover__spine i {
+  font-family: var(--face-slip);
+  font-style: normal;
+  font-size: clamp(0.4rem, 9cqw, 0.6rem);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.72;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* --- Modal ---------------------------------------------------------------- */
+
+.modal {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: var(--s4);
+}
+
+.modal__scrim {
+  position: absolute;
+  inset: 0;
+  background: rgba(9, 16, 13, 0.62);
+  backdrop-filter: blur(2px);
+  animation: fade var(--med) var(--ease);
+}
+
+.modal__panel {
+  position: relative;
+  background: var(--slip);
+  color: var(--ink);
+  border-radius: var(--r-card);
+  box-shadow: var(--lift-3);
+  width: min(720px, 100%);
+  max-height: min(86vh, 900px);
+  display: flex;
+  flex-direction: column;
+  animation: rise var(--med) var(--ease);
+}
+
+.modal__panel--wide {
+  width: min(880px, 100%);
+}
+
+.modal__head {
+  padding: var(--s5) var(--s5) var(--s4);
+  border-bottom: var(--rule);
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--s4);
+}
+
+.modal__title {
+  font-size: var(--size-lg);
+}
+
+.modal__eyebrow {
+  font-family: var(--face-slip);
+  font-size: var(--size-xs);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin-bottom: var(--s1);
+}
+
+.modal__body {
+  padding: var(--s5);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s4);
+}
+
+.modal__foot {
+  padding: var(--s4) var(--s5);
+  border-top: var(--rule);
+  display: flex;
+  gap: var(--s2);
+  justify-content: flex-end;
+  background: var(--slip-shade);
+  border-radius: 0 0 var(--r-card) var(--r-card);
+}
+
+.modal__foot .spacer {
+  margin-right: auto;
+}
+
+.icon-btn {
+  background: none;
+  border: 0;
+  cursor: pointer;
+  color: var(--ink-faint);
+  font-size: 1.25rem;
+  line-height: 1;
+  padding: var(--s1) var(--s2);
+  border-radius: var(--r-control);
+}
+
+.icon-btn:hover {
+  color: var(--ink);
+  background: var(--slip-shade);
+}
+
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.99);
+  }
+}
+
+/* --- Empty state ---------------------------------------------------------- */
+
+.empty {
+  border: 1px dashed rgba(242, 239, 230, 0.24);
+  border-radius: var(--r-card);
+  padding: var(--s7) var(--s5);
+  text-align: center;
+  color: var(--ink-inverse-soft);
+}
+
+.empty h3 {
+  color: var(--ink-inverse);
+  font-size: var(--size-md);
+  margin-bottom: var(--s2);
+}
+
+.empty p {
+  font-size: var(--size-sm);
+  max-width: 42ch;
+  margin: 0 auto var(--s4);
+}
+
+/* --- Toast ---------------------------------------------------------------- */
+
+.toast-rail {
+  position: fixed;
+  left: 50%;
+  bottom: var(--s5);
+  transform: translateX(-50%);
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  pointer-events: none;
+}
+
+.toast {
+  background: var(--slip);
+  color: var(--ink);
+  border-radius: var(--r-control);
+  box-shadow: var(--lift-2);
+  padding: var(--s2) var(--s4);
+  font-size: var(--size-sm);
+  border-left: 3px solid var(--stamp);
+  animation: rise var(--med) var(--ease);
+}
+
+.toast--error {
+  border-left-color: var(--overdue);
+}

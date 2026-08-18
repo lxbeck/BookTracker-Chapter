@@ -235,6 +235,19 @@ export function applyStatusRules(book, todayKey = today()) {
     next.actual.startedAt ??= next.schedule.start ?? day;
   }
 
+  // The log is the source of truth for how far in you are. Enforcing it here
+  // rather than only on the store's write path means a book loaded from disk,
+  // imported, or migrated can never disagree with its own sessions. Deleting a
+  // session doesn't walk progress backwards — the page field stays editable
+  // for the rare case where that's actually wanted.
+  const furthestLogged = (next.sessions ?? []).reduce(
+    (max, session) => Math.max(max, session.pageTo ?? 0),
+    0
+  );
+  if (furthestLogged > next.progress.page) {
+    next.progress = { ...next.progress, page: furthestLogged, percent: 0 };
+  }
+
   // Derive whichever half of progress the user didn't supply.
   if (next.pageCount && next.status !== 'finished') {
     if (next.progress.page > 0) {

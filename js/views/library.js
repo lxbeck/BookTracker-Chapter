@@ -14,6 +14,7 @@ import { coverThumb } from './cover.js';
 import { openBookForm } from './bookForm.js';
 import { formatShort, relativeDay } from '../lib/dates.js';
 import { loadSampleLibrary } from '../data/seed.js';
+import { progressReport } from '../logic/pacing.js';
 
 /** Tabs are reading intents, not raw statuses — "To read" folds in on-hold. */
 const SHELVES = {
@@ -167,7 +168,15 @@ function statusLine(book, unit) {
     return el('p.shelf-card__meta', {}, `Finished ${formatShort(book.actual.finishedAt)}`);
   }
   if (book.status === 'reading' && book.pageCount) {
-    return el('p.shelf-card__meta', {}, `Page ${book.progress.page} of ${book.pageCount}`);
+    const report = progressReport(book);
+    const where = `${unit === 'minutes' ? 'Minute' : 'Page'} ${report.done} of ${report.total}`;
+    return el('div', {}, [
+      el('p.shelf-card__meta', {}, `${where} \u00b7 ${report.percent}%`),
+      report.projected
+        ? el('p.shelf-card__meta', { class: `is-${report.verdict?.tone ?? 'on-time'}` },
+            `Finishing ${formatShort(report.projected)}${report.timeLeft ? ` \u00b7 ${report.timeLeft} left` : ''}`)
+        : null,
+    ].filter(Boolean));
   }
   if (book.schedule.start) {
     return el('p.shelf-card__meta', {}, `Starts ${relativeDay(book.schedule.start)}`);

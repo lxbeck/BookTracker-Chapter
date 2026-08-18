@@ -217,3 +217,72 @@
     grid-template-columns: 1fr 1fr;
   }
 }
+
+/* --- Derived progress strip ----------------------------------------------- */
+
+.progress-strip {
+  border: var(--rule);
+  border-radius: var(--r-card);
+  background: var(--slip-shade);
+  padding: var(--s3) var(--s4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+}
+
+.progress-strip__head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s3);
+}
+
+.progress-strip__percent {
+  font-family: var(--face-display);
+  font-variation-settings: var(--wonk-on);
+  font-size: var(--size-xl);
+  line-height: 1;
+  color: var(--ink);
+}
+
+.progress-strip__where {
+  font-family: var(--face-slip);
+  font-size: var(--size-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.progress-strip .progress {
+  border-radius: 2px;
+}
+
+.progress-strip__facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: var(--s2) var(--s4);
+  margin: var(--s1) 0 0;
+}
+
+.progress-strip__fact dt {
+  font-family: var(--face-slip);
+  font-size: 0.5625rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.progress-strip__fact dd {
+  margin: 0;
+  font-size: var(--size-sm);
+  color: var(--ink);
+}
+
+.progress-strip__fact dd.is-early,
+.shelf-card__meta.is-early {
+  color: var(--shelved);
+}
+
+.progress-strip__fact dd.is-late,
+.shelf-card__meta.is-late {
+  color: var(--overdue);
+}

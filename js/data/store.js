@@ -227,9 +227,9 @@ export function rescheduleBook(id, newStart, { keepSpan = true } = {}) {
  *
  * Logging is also the most reliable signal that a book is being read, so it
  * moves a planned book to reading and stamps a real start date if there isn't
- * one. Progress follows the furthest page ever logged — sessions can be
- * entered out of order, and a backdated session shouldn't drag progress
- * backwards.
+ * one. Progress follows the furthest page ever logged (see normalizeBook) —
+ * sessions can be entered out of order, and a backdated session shouldn't drag
+ * progress backwards.
  *
  * @returns {{ok: true, session: object, book: object} | {ok: false, errors: object}}
  */
@@ -275,8 +275,6 @@ export function removeSession(bookId, sessionId) {
 /** Write a new session list and re-derive everything that follows from it. */
 function applySessions(book, sessions) {
   const dates = sessions.map((session) => session.date).sort();
-  const furthest = sessions.reduce((max, session) => Math.max(max, session.pageTo ?? 0), 0);
-
   const patch = { sessions };
 
   if (dates.length) {
@@ -285,13 +283,8 @@ function applySessions(book, sessions) {
     if (book.status === 'planned' || book.status === 'on-hold') patch.status = 'reading';
   }
 
-  if (furthest > 0) {
-    patch.progress = { page: Math.max(furthest, book.progress.page), percent: 0 };
-  } else if (!sessions.length) {
-    // Deleting the last session shouldn't silently keep a page count it set.
-    patch.progress = { page: book.progress.page, percent: 0 };
-  }
-
+  // Progress itself is derived in normalizeBook, so it stays correct whether a
+  // session arrives through here or through an import.
   return updateBook(book.id, patch);
 }
 

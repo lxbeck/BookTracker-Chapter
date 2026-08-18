@@ -10,7 +10,9 @@ import { el, $, toast } from '../lib/dom.js';
 import { showModal } from './modal.js';
 import { coverPicker } from './coverPicker.js';
 import { sessionLog } from './sessionLog.js';
+import { progressReport } from '../logic/pacing.js';
 import { STATUSES, STATUS_ORDER, FORMATS, blankBook } from '../data/schema.js';
+import { formatShort } from '../lib/dates.js';
 import { addBook, updateBook, removeBook, restoreBook } from '../data/store.js';
 
 /**
@@ -137,6 +139,7 @@ export function openBookForm({ book = null, defaultStart = null, onSaved } = {})
   });
 
   const body = [
+    isEdit ? progressStrip(draft) : null,
     el('div.field', {}, [
       el('span.field__label', { text: 'Cover' }),
       picker,
@@ -268,3 +271,47 @@ export function openBookForm({ book = null, defaultStart = null, onSaved } = {})
 
   return modal;
 }
+
+/**
+ * The derived picture, at the top of the record: how far in, how fast, and
+ * where that lands. Everything here is computed from the log rather than
+ * entered, so there is nothing to edit and no field to keep in sync.
+ */
+function progressStrip(book) {
+  const report = progressReport(book);
+  if (!report.ok || (!report.done && !report.sittings)) return null;
+
+  const unitWord = report.unit === 'minutes' ? 'minutes' : 'pages';
+
+  return el('div.progress-strip', {}, [
+    el('div.progress-strip__head', {}, [
+      el('span.progress-strip__percent', {}, `${report.percent}%`),
+      el('span.progress-strip__where', {}, `${report.done} of ${report.total} ${unitWord}`),
+    ]),
+    el(
+      'div.progress',
+      {
+        role: 'progressbar',
+        'aria-valuenow': String(report.percent),
+        'aria-valuemin': '0',
+        'aria-valuemax': '100',
+        'aria-label': 'Progress through this book',
+      },
+      el('span.progress__fill', { style: { width: `${report.percent}%` } })
+    ),
+    el('dl.progress-strip__facts', {}, [
+      report.rateLabel ? miniFact('Reading at', report.rateLabel) : null,
+      report.timeLeft ? miniFact('Time left', report.timeLeft) : null,
+      report.projected ? miniFact('Finishing', formatShort(report.projected)) : null,
+      report.verdict
+        ? miniFact('Against plan', report.verdict.text, `is-${report.verdict.tone}`)
+        : null,
+    ].filter(Boolean)),
+  ]);
+}
+
+const miniFact = (label, value, tone = '') =>
+  el('div.progress-strip__fact', {}, [
+    el('dt', {}, label),
+    el('dd', { class: tone }, value),
+  ]);

@@ -213,3 +213,80 @@ test('projected finish follows the pace actually being read', () => {
   // 100 pages in 10 days is 10 a day; 300 left means 30 more days.
   assert.equal(projectedFinish(slow, '2026-03-10'), '2026-04-09');
 });
+
+/* --- derived progress (step 6) -------------------------------------------- */
+
+test('projected finish uses the logged pace, not the planned one', async () => {
+  const { progressReport } = await import('../js/logic/pacing.js');
+  const { normalizeBook } = await import('../js/data/schema.js');
+
+  const slow = normalizeBook(
+    {
+      title: 'Slow going',
+      pageCount: 400,
+      status: 'reading',
+      schedule: { start: '2026-03-01', end: '2026-03-08' },
+      sessions: [
+        { date: '2026-03-01', minutes: 60, pageFrom: 0, pageTo: 50 },
+        { date: '2026-03-06', minutes: 60, pageFrom: 50, pageTo: 100 },
+      ],
+    },
+    '2026-03-10'
+  );
+
+  const report = progressReport(slow, '2026-03-10');
+  assert.equal(report.done, 100, 'progress follows the furthest logged page');
+  assert.equal(report.percent, 25);
+  assert.equal(report.rate, 10, '100 pages over 10 elapsed days');
+  // 300 pages left at 10 a day is 30 more days.
+  assert.equal(report.projected, '2026-04-09');
+  assert.equal(report.verdict.tone, 'late');
+  assert.match(report.verdict.text, /32 days past the plan/);
+});
+
+test('time left is derived from minutes actually spent per page', () => {
+  return import('../js/logic/pacing.js').then(async ({ progressReport }) => {
+    const { normalizeBook } = await import('../js/data/schema.js');
+    const book = normalizeBook(
+      {
+        title: 'Timed',
+        pageCount: 300,
+        status: 'reading',
+        schedule: { start: '2026-03-01', end: '2026-03-20' },
+        sessions: [{ date: '2026-03-01', minutes: 120, pageFrom: 0, pageTo: 100 }],
+      },
+      '2026-03-05'
+    );
+    const report = progressReport(book, '2026-03-05');
+    // 120 minutes for 100 pages is 1.2 a page; 200 left is 240 minutes.
+    assert.equal(report.timeLeft, '4h');
+  });
+});
+
+test('a book finishing on schedule reads as landing on plan', async () => {
+  const { progressReport } = await import('../js/logic/pacing.js');
+  const { normalizeBook } = await import('../js/data/schema.js');
+
+  const steady = normalizeBook(
+    {
+      title: 'Steady',
+      pageCount: 100,
+      status: 'reading',
+      schedule: { start: '2026-03-01', end: '2026-03-10' },
+      sessions: [{ date: '2026-03-01', minutes: 60, pageFrom: 0, pageTo: 50 }],
+    },
+    '2026-03-05'
+  );
+
+  const report = progressReport(steady, '2026-03-05');
+  // 50 pages in 5 elapsed days is 10 a day; 50 left is 5 more days -> Mar 10.
+  assert.equal(report.projected, '2026-03-10');
+  assert.equal(report.verdict.tone, 'on-time');
+});
+
+test('a book with no length reports no derived pace rather than guessing', async () => {
+  const { progressReport } = await import('../js/logic/pacing.js');
+  const { normalizeBook } = await import('../js/data/schema.js');
+  const vague = normalizeBook({ title: 'No length', status: 'reading' }, '2026-03-05');
+  assert.equal(progressReport(vague, '2026-03-05').ok, false);
+});

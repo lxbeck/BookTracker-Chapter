@@ -13,6 +13,7 @@
 
 import { today, spanLength, daysBetween, addDays } from '../lib/dates.js';
 import { FORMATS } from '../data/schema.js';
+import { observedPace, bookTotals, formatDuration } from './sessions.js';
 
 /**
  * @typedef {Object} Pace
@@ -128,17 +129,86 @@ export function paceStanding(book, todayKey = today()) {
 /**
  * Projected finish date from the pace actually being read, which is usually
  * not the pace that was planned.
+ *
+ * The rate comes from the session log when there is one and from the single
+ * progress marker when there isn't, so this works on day one and gets more
+ * honest as the log fills in.
+ *
  * @returns {string|null} day key
  */
 export function projectedFinish(book, todayKey = today()) {
-  const { pageCount, progress, actual, schedule } = book;
-  const startedAt = actual.startedAt ?? schedule.start;
-  if (!pageCount || !startedAt || !progress.page) return null;
+  const { pageCount, progress } = book;
+  if (!pageCount) return null;
 
-  const elapsed = Math.max(1, daysBetween(startedAt, todayKey) + 1);
-  const rate = progress.page / elapsed;
-  if (rate <= 0) return null;
+  const observed = observedPace(book, todayKey);
+  if (!observed.ok || observed.pagesPerDay <= 0) return null;
 
-  const daysNeeded = Math.ceil((pageCount - progress.page) / rate);
+  const done = Math.min(progress.page || 0, pageCount);
+  const daysNeeded = Math.ceil((pageCount - done) / observed.pagesPerDay);
   return addDays(todayKey, Math.max(0, daysNeeded));
+}
+
+/**
+ * The complete progress picture for one book: how far in, how fast, when it
+ * lands, and whether that beats the date you planned for.
+ *
+ * This is what the library card and the record header read from, so the same
+ * numbers appear everywhere rather than being recomputed slightly differently
+ * in three places.
+ *
+ * @returns {{ok: boolean, percent: number, done: number, total: number,
+ *   unit: string, remaining: number, rate: number, rateLabel: string,
+ *   timeLeft: string|null, projected: string|null, verdict: object|null}}
+ */
+export function progressReport(book, todayKey = today()) {
+  const unit = FORMATS[book.format]?.unit ?? 'pages';
+  const total = book.pageCount ?? 0;
+  const done = Math.min(book.progress.page || 0, total || Infinity) || 0;
+
+  if (!total) {
+    return { ok: false, percent: book.progress.percent || 0, done, total: 0, unit };
+  }
+
+  const observed = observedPace(book, todayKey);
+  const totals = bookTotals(book);
+  const remaining = Math.max(0, total - done);
+  const projected = projectedFinish(book, todayKey);
+
+  // How long the rest will take, in hours, when the log knows the pace per unit.
+  const timeLeft =
+    observed.ok && observed.minutesPerPage
+      ? formatDuration(remaining * observed.minutesPerPage)
+      : null;
+
+  return {
+    ok: true,
+    percent: Math.round((done / total) * 100),
+    done,
+    total,
+    unit,
+    remaining,
+    rate: observed.ok ? observed.pagesPerDay : 0,
+    rateLabel: observed.ok
+      ? `${Math.round(observed.pagesPerDay)} ${unit === 'minutes' ? 'min' : 'pages'} a day`
+      : null,
+    sittings: totals.sessions,
+    timeLeft,
+    projected,
+    verdict: projected ? finishVerdict(book, projected) : null,
+  };
+}
+
+/**
+ * Whether the projected finish beats the planned one. Phrased as days rather
+ * than a date because "four days early" is the thing you react to.
+ * @returns {{tone: 'early'|'late'|'on-time', text: string}|null}
+ */
+function finishVerdict(book, projected) {
+  const target = book.schedule.end;
+  if (!target) return { tone: 'on-time', text: `Finishes around ${projected}` };
+
+  const drift = daysBetween(target, projected);
+  if (drift <= -2) return { tone: 'early', text: `${Math.abs(drift)} days ahead of plan` };
+  if (drift >= 2) return { tone: 'late', text: `${drift} days past the plan` };
+  return { tone: 'on-time', text: 'Landing on plan' };
 }

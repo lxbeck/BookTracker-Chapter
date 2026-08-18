@@ -28,7 +28,12 @@ export function sampleBooks(from = today()) {
       series: { name: 'Barsoom', number: 1, total: 3 },
       cover: withCover('9780486436173'),
       schedule: { start: day(-6), end: day(4) },
-      progress: { page: 71 },
+      sessions: [
+        { date: day(-6), minutes: 55, pageFrom: 0, pageTo: 24 },
+        { date: day(-5), minutes: 40, pageFrom: 24, pageTo: 41 },
+        { date: day(-3), minutes: 70, pageFrom: 41, pageTo: 71 },
+        { date: day(-1), minutes: 35, pageFrom: 71, pageTo: 85 },
+      ],
     },
     {
       title: 'The Gods of Mars',
@@ -52,7 +57,10 @@ export function sampleBooks(from = today()) {
       status: 'reading',
       cover: withCover('9780486295060'),
       schedule: { start: day(-2), end: day(8) },
-      progress: { page: 41 },
+      sessions: [
+        { date: day(-2), minutes: 95, pageFrom: 0, pageTo: 18 },
+        { date: day(-1), minutes: 115, pageFrom: 18, pageTo: 41 },
+      ],
     },
     {
       title: 'The Time Machine',
@@ -87,6 +95,11 @@ export function sampleBooks(from = today()) {
       cover: withCover('9780486266886'),
       schedule: { start: day(-20), end: day(-12) },
       actual: { startedAt: day(-20), finishedAt: day(-11) },
+      sessions: [
+        { date: day(-20), minutes: 50, pageFrom: 0, pageTo: 35 },
+        { date: day(-16), minutes: 65, pageFrom: 35, pageTo: 83 },
+        { date: day(-11), minutes: 80, pageFrom: 83, pageTo: 141 },
+      ],
       rating: 5,
     },
     {

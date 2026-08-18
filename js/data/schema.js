@@ -14,7 +14,7 @@
 
 import { isValidKey, today } from '../lib/dates.js';
 
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
 
 /** @type {Record<string, {id: string, label: string, hint: string}>} */
 export const STATUSES = {
@@ -93,6 +93,53 @@ export function blankBook(overrides = {}) {
     updatedAt: now,
     ...overrides,
   };
+}
+
+/* --- Reading orders --------------------------------------------------------
+ *
+ * A named, ordered list of books: "Poe tales, in publication order",
+ * "manga backlog", "the Barsoom reread". Separate from shelves because a
+ * shelf is a set and this is a sequence — the whole point is position.
+ *
+ * A book can sit in any number of orders at once, so membership lives on the
+ * order rather than on the book. Putting a `readingOrders: []` array on each
+ * book instead would mean the position of book #7 is stored on book #7, and
+ * reordering a fifty-book list would touch fifty records on every drag.
+ * -------------------------------------------------------------------------- */
+
+export function blankOrder(overrides = {}) {
+  const now = new Date().toISOString();
+  return {
+    id: newId('ro'),
+    name: '',
+    description: '',
+    bookIds: [],
+    createdAt: now,
+    updatedAt: now,
+    ...overrides,
+  };
+}
+
+export function normalizeOrder(input = {}) {
+  const base = blankOrder();
+  return {
+    ...base,
+    ...input,
+    id: input.id || base.id,
+    name: String(input.name ?? '').trim().slice(0, 120),
+    description: String(input.description ?? '').trim().slice(0, 500),
+    // Duplicates would make "position in the list" ambiguous, and a book can
+    // only be in one place in a sequence.
+    bookIds: [...new Set((Array.isArray(input.bookIds) ? input.bookIds : []).map(String))],
+    createdAt: input.createdAt || base.createdAt,
+    updatedAt: input.updatedAt || new Date().toISOString(),
+  };
+}
+
+export function validateOrder(order) {
+  const errors = {};
+  if (!order.name?.trim()) errors.name = 'Give this list a name.';
+  return errors;
 }
 
 /* --- Reading sessions ------------------------------------------------------
@@ -328,4 +375,36 @@ export function validateBook(book) {
   }
 
   return errors;
+}
+
+/* --- Progress ---------------------------------------------------------------
+ *
+ * Progress can be given either way round: a page number, or a percentage for
+ * when you're reading something without page numbers, or just eyeballing the
+ * thickness of what's left. Both halves are stored, always consistent.
+ * -------------------------------------------------------------------------- */
+
+/**
+ * @param {object} book
+ * @param {{page?: number, percent?: number}} input - supply one; the other follows
+ * @returns {{page: number, percent: number}}
+ */
+export function resolveProgress(book, input) {
+  const total = book.pageCount ?? 0;
+
+  if (input.percent != null && input.percent !== '') {
+    const percent = Math.min(100, Math.max(0, Number(input.percent) || 0));
+    return {
+      percent,
+      // Without a length there is no page to derive, and inventing one would
+      // put a fictional number into every pacing figure downstream.
+      page: total ? Math.round((percent / 100) * total) : 0,
+    };
+  }
+
+  const page = Math.max(0, Number.parseInt(input.page, 10) || 0);
+  return {
+    page: total ? Math.min(page, total) : page,
+    percent: total ? Math.min(100, (page / total) * 100) : 0,
+  };
 }

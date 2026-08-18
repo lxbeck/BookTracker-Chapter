@@ -221,6 +221,18 @@ from the 11th. A plan you can't read off the record is not a plan.
 A rebased plan still totals exactly the page count; `tests/calendar.test.js`
 sums the daily targets and asserts it.
 
+## Recording progress by percentage
+
+Both the record and the reading log take a page number **or** a percentage —
+useful for comics, an ebook that only reports a location, or judging by the
+thickness of what's left. Switch units and whatever you've typed converts
+rather than being reinterpreted.
+
+Both halves are always stored consistently. One case is deliberately left
+alone: a percentage on a book with no page count records the percentage and no
+page, because a derived page number there would be fiction, and every pacing
+figure in the app is built on that number.
+
 ## Two pace numbers, which mean different things
 
 The record shows both, because one on its own is misleading:
@@ -295,6 +307,34 @@ recoverable for longer than a toast normally lives.
 Bulk scheduling lists the books **in the order you selected them**, with the
 dates each will get, and arrows to reorder before committing. The order was
 always the selection order; it just wasn't visible, which made it a guess.
+
+## Reading orders
+
+A shelf is a set; a reading order is a **sequence**. "Poe tales, in
+publication order" is not something tagging can express, and it's the whole
+reason the Orders tab exists.
+
+A book can sit in any number of lists at once — one for comics, one for manga,
+one for a series reread — so membership lives on the list rather than on the
+book. The alternative, an array on each book, would mean the position of book
+#7 is stored on book #7, and reordering a fifty-book list would rewrite fifty
+records on every drag.
+
+Reorder with the arrows or by dragging. The arrows come first because they work
+on a phone, with a keyboard, and with a screen reader, none of which is true of
+drag-and-drop alone.
+
+In the library, picking a list from the "Reading order" chips filters to it and
+shows it **in its own sequence**, with each book's position on the card. That
+overrides the sort, since sorting a sequence by title would throw away the only
+thing that makes it a sequence.
+
+Bulk "Add to list" appends in the order shown on screen — so sort by series
+first and a run of comics arrives already sequenced.
+
+When two devices edit the same list, the newer version wins whole rather than
+interleaving: two sequences merged item by item would produce an order neither
+person asked for.
 
 ## Filling in missing details
 

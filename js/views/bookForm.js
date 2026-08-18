@@ -12,7 +12,7 @@ import { coverPicker } from './coverPicker.js';
 import { sessionLog } from './sessionLog.js';
 import { progressReport, catchUpPreview, catchUpPatch } from '../logic/pacing.js';
 import { allBooks } from '../data/store.js';
-import { STATUSES, STATUS_ORDER, FORMATS, blankBook } from '../data/schema.js';
+import { STATUSES, STATUS_ORDER, FORMATS, blankBook, resolveProgress } from '../data/schema.js';
 import { formatShort } from '../lib/dates.js';
 import { addBook, updateBook, removeBook, restoreBook, getBook } from '../data/store.js';
 import { addDays } from '../lib/dates.js';
@@ -105,12 +105,60 @@ export function openBookForm({ book = null, defaultStart = null, onSaved } = {})
     placeholder: 'A few lines on what you thought.',
   }, draft.review ?? '');
 
+  // Progress can be given either way round. Percent matters for anything
+  // without page numbers — a comic, an ebook that only reports a location, a
+  // book you're judging by the thickness of what's left.
   const progressInput = input('progress.page', {
     type: 'number',
     min: '0',
+    step: 'any',
     value: draft.progress.page || '',
     placeholder: '79',
   });
+
+  const progressUnit = el('select.select.progress-unit', {
+    'aria-label': 'Progress measured in',
+    onChange: () => {
+      const total = Number.parseInt(pagesInput.value, 10);
+      const current = Number.parseFloat(progressInput.value);
+
+      // Convert what's already typed rather than leaving a page number sitting
+      // in a field now labelled "percent".
+      if (Number.isFinite(current) && total > 0) {
+        progressInput.value =
+          progressUnit.value === 'percent'
+            ? Math.round((current / total) * 100)
+            : Math.round((current / 100) * total);
+      }
+      progressInput.placeholder = progressUnit.value === 'percent' ? '18' : '79';
+      progressInput.max = progressUnit.value === 'percent' ? '100' : '';
+      refreshProgressNote();
+    },
+  }, [
+    el('option', { value: 'page' }, FORMATS[draft.format].unit === 'minutes' ? 'minutes in' : 'page'),
+    el('option', { value: 'percent' }, '% complete'),
+  ]);
+
+  const progressNote = el('span.field__hint');
+
+  function refreshProgressNote() {
+    const total = Number.parseInt(pagesInput.value, 10);
+    const value = Number.parseFloat(progressInput.value);
+
+    if (!Number.isFinite(value) || !total) {
+      progressNote.textContent = total
+        ? ''
+        : 'Add a length above and this will show a percentage too.';
+      return;
+    }
+    const page = progressUnit.value === 'percent' ? Math.round((value / 100) * total) : value;
+    const percent = Math.round((page / total) * 100);
+    progressNote.textContent = `${percent}% \u00b7 page ${Math.round(page)} of ${total}`;
+  }
+
+  progressInput.addEventListener('input', refreshProgressNote);
+  pagesInput.addEventListener('input', refreshProgressNote);
+  refreshProgressNote();
 
   const ratingControl = starRating(draft.rating, (value) => {
     draft.rating = value;
@@ -295,8 +343,11 @@ export function openBookForm({ book = null, defaultStart = null, onSaved } = {})
         field('actual.startedAt', 'Started on', startedInput),
         field('actual.finishedAt', 'Finished on', finishedInput),
       ]),
-      field('progress.page', 'Currently on page', progressInput,
-        'Set this directly when you just want to record where you are.'),
+      el('div.field', {}, [
+        el('span.field__label', {}, 'Currently at'),
+        el('div.progress-entry', {}, [progressInput, progressUnit]),
+        progressNote,
+      ]),
       el('p.field__hint', {}, 'Marking a book finished fills the finish date in for you.'),
       isEdit
         ? el('div.details-row', {}, [
@@ -393,7 +444,15 @@ export function openBookForm({ book = null, defaultStart = null, onSaved } = {})
         startedAt: startedInput.value || null,
         finishedAt: finishedInput.value || null,
       },
-      progress: { page: progressInput.value === '' ? 0 : progressInput.value, percent: 0 },
+      progress:
+        progressInput.value === ''
+          ? { page: 0, percent: 0 }
+          : resolveProgress(
+              { pageCount: Number.parseInt(pagesInput.value, 10) || null },
+              progressUnit.value === 'percent'
+                ? { percent: progressInput.value }
+                : { page: progressInput.value }
+            ),
     };
   }
 

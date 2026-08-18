@@ -14,7 +14,7 @@
  * Bump CACHE_VERSION to ship an update; old caches are dropped on activate.
  */
 
-const CACHE_VERSION = 'chapter-v3';
+const CACHE_VERSION = 'chapter-v4';
 const SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const IMAGE_CACHE = `${CACHE_VERSION}-images`;
 
@@ -43,6 +43,8 @@ const SHELL = [
   './js/data/merge.js',
   './js/data/sync.js',
   './js/data/goodreads.js',
+  './js/data/calibre.js',
+  './js/data/enrich.js',
   './js/lib/csv.js',
   './js/logic/schedule.js',
   './js/logic/pacing.js',
@@ -59,6 +61,7 @@ const SHELL = [
   './js/views/dayPopup.js',
   './js/views/day.js',
   './js/views/sessionLog.js',
+  './js/views/orders.js',
   './js/views/stats.js',
   './js/views/settings.js',
 ];

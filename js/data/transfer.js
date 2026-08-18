@@ -24,6 +24,7 @@ export function exportJson() {
       version: SCHEMA_VERSION,
       exportedAt: new Date().toISOString(),
       settings: state.settings,
+      readingOrders: state.readingOrders ?? [],
       books: state.books,
     },
     null,
@@ -135,7 +136,7 @@ export function importJson(text, { mode = 'merge' } = {}) {
   }
 
   if (mode === 'replace') {
-    replaceAll(books, { settings: parsed?.settings });
+    replaceAll(books, { settings: parsed?.settings, readingOrders: parsed?.readingOrders });
     return { ok: true, added: books.length, updated: 0, skipped: 0 };
   }
 

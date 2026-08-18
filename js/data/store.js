@@ -15,6 +15,9 @@ import {
   validateBook,
   normalizeSession,
   validateSession,
+  normalizeOrder,
+  validateOrder,
+  resolveProgress,
 } from './schema.js';
 import { addDays, daysBetween } from '../lib/dates.js';
 
@@ -28,6 +31,7 @@ let state = {
   // Deletions are recorded, not just applied. Without a tombstone, a device
   // that never saw the delete would push the book back on its next sync.
   deleted: [],
+  readingOrders: [],
   settingsUpdatedAt: undefined,
 };
 
@@ -75,6 +79,8 @@ function migrate(saved) {
     version: SCHEMA_VERSION,
     settings: { weekStartsOn: 0, ...saved?.settings },
     deleted: Array.isArray(saved?.deleted) ? saved.deleted : [],
+    // v4 -> v5 adds reading orders; older saves simply have none.
+    readingOrders: (Array.isArray(saved?.readingOrders) ? saved.readingOrders : []).map(normalizeOrder),
     settingsUpdatedAt: saved?.settingsUpdatedAt,
   };
 
@@ -348,6 +354,110 @@ function applySessions(book, sessions) {
   return updateBook(book.id, patch);
 }
 
+/* --- Reading orders ------------------------------------------------------- */
+
+export const allOrders = () => state.readingOrders;
+export const getOrder = (id) => state.readingOrders.find((order) => order.id === id) ?? null;
+
+/** Every order a given book appears in. */
+export const ordersContaining = (bookId) =>
+  state.readingOrders.filter((order) => order.bookIds.includes(bookId));
+
+/** Position of a book within an order, or Infinity when it isn't in it. */
+export function positionInOrder(orderId, bookId) {
+  const index = getOrder(orderId)?.bookIds.indexOf(bookId) ?? -1;
+  return index === -1 ? Infinity : index;
+}
+
+export function createOrder(input) {
+  const order = normalizeOrder(input);
+  const errors = validateOrder(order);
+  if (Object.keys(errors).length) return { ok: false, errors };
+
+  commit(() => {
+    state.readingOrders.push(order);
+  });
+  return { ok: true, order };
+}
+
+export function updateOrder(id, patch) {
+  const existing = getOrder(id);
+  if (!existing) return { ok: false, errors: { _: 'That list is gone.' } };
+
+  const merged = normalizeOrder({
+    ...existing,
+    ...patch,
+    id: existing.id,
+    createdAt: existing.createdAt,
+    updatedAt: new Date().toISOString(),
+  });
+
+  const errors = validateOrder(merged);
+  if (Object.keys(errors).length) return { ok: false, errors };
+
+  commit(() => {
+    state.readingOrders = state.readingOrders.map((order) => (order.id === id ? merged : order));
+  });
+  return { ok: true, order: merged };
+}
+
+export function removeOrder(id) {
+  const order = getOrder(id);
+  if (!order) return { ok: false };
+  commit(() => {
+    state.readingOrders = state.readingOrders.filter((entry) => entry.id !== id);
+    // Orders share the tombstone list with books; ids are prefixed, so they
+    // can never collide.
+    state.deleted = [
+      ...(state.deleted ?? []).filter((entry) => entry.id !== id),
+      { id, at: new Date().toISOString() },
+    ];
+  });
+  return { ok: true, order };
+}
+
+/** Append books, skipping any already in the list. */
+export function addToOrder(orderId, bookIds) {
+  const order = getOrder(orderId);
+  if (!order) return { ok: false };
+
+  const incoming = [].concat(bookIds).filter((id) => !order.bookIds.includes(id));
+  if (!incoming.length) return { ok: true, order, added: 0 };
+
+  const result = updateOrder(orderId, { bookIds: [...order.bookIds, ...incoming] });
+  return result.ok ? { ...result, added: incoming.length } : result;
+}
+
+export function removeFromOrder(orderId, bookId) {
+  const order = getOrder(orderId);
+  if (!order) return { ok: false };
+  return updateOrder(orderId, { bookIds: order.bookIds.filter((id) => id !== bookId) });
+}
+
+/**
+ * Move a book to a new index within its list.
+ * Clamped rather than rejected: dragging past the end means "put it last".
+ */
+export function moveInOrder(orderId, bookId, toIndex) {
+  const order = getOrder(orderId);
+  if (!order) return { ok: false };
+
+  const from = order.bookIds.indexOf(bookId);
+  if (from === -1) return { ok: false };
+
+  const next = [...order.bookIds];
+  next.splice(from, 1);
+  next.splice(Math.max(0, Math.min(toIndex, next.length)), 0, bookId);
+  return updateOrder(orderId, { bookIds: next });
+}
+
+/** Set progress from either a page or a percentage; both are kept in step. */
+export function setProgress(bookId, input) {
+  const book = getBook(bookId);
+  if (!book) return { ok: false };
+  return updateBook(bookId, { progress: resolveProgress(book, input) });
+}
+
 export function updateSettings(patch) {
   commit(() => {
     state.settings = { ...state.settings, ...patch };
@@ -367,6 +477,7 @@ export function updateSettings(patch) {
 export function applyRemote(next) {
   commit(() => {
     state.books = next.books ?? [];
+    state.readingOrders = next.readingOrders ?? state.readingOrders;
     state.settings = { ...state.settings, ...next.settings };
     state.settingsUpdatedAt = next.settingsUpdatedAt ?? state.settingsUpdatedAt;
     state.deleted = next.deleted ?? [];
@@ -374,9 +485,10 @@ export function applyRemote(next) {
 }
 
 /** Replace the whole library — used by seeding and, later, import. */
-export function replaceAll(books, { settings } = {}) {
+export function replaceAll(books, { settings, readingOrders } = {}) {
   commit(() => {
     state.books = books.map(normalizeBook);
     if (settings) state.settings = { ...state.settings, ...settings };
+    if (readingOrders) state.readingOrders = readingOrders.map(normalizeOrder);
   });
 }

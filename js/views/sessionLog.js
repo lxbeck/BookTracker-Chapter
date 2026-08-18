@@ -101,17 +101,43 @@ function entryForm(book, fixedDate, onSaved) {
   const toInput = el('input.input.session-form__primary', {
     type: 'number',
     min: '0',
+    step: 'any',
     max: book.pageCount ? String(book.pageCount) : null,
     placeholder: book.pageCount ? String(book.pageCount) : 'page',
     'aria-label': isAudio ? 'Ended at minute' : 'Ended on page',
   });
+
+  // Same choice as the record: say where you got to however you know it.
+  const toUnit = el('select.select.progress-unit', {
+    'aria-label': 'Ending position measured in',
+    disabled: !book.pageCount,
+    title: book.pageCount ? '' : 'Add a page count to log by percentage',
+    onChange: () => {
+      toInput.max = toUnit.value === 'percent' ? '100' : String(book.pageCount ?? '');
+      toInput.placeholder = toUnit.value === 'percent' ? '18' : String(book.pageCount ?? 'page');
+      refreshPreview();
+    },
+  }, [
+    el('option', { value: 'page' }, isAudio ? 'min' : 'page'),
+    el('option', { value: 'percent' }, '%'),
+  ]);
+
+  /** Whatever was typed, expressed as a page number. */
+  const endingPage = () => {
+    const value = Number.parseFloat(toInput.value);
+    if (!Number.isFinite(value)) return null;
+    if (toUnit.value === 'percent' && book.pageCount) {
+      return Math.round((Math.min(value, 100) / 100) * book.pageCount);
+    }
+    return Math.round(value);
+  };
 
   // A running read-out of what this entry will mean, so nobody has to work out
   // 79 of 440 in their head to check they typed the right number.
   const preview = el('p.session-form__preview');
 
   const refreshPreview = () => {
-    const to = Number.parseInt(toInput.value, 10);
+    const to = endingPage();
     if (!Number.isFinite(to) || !book.pageCount) {
       preview.textContent = '';
       return;
@@ -134,7 +160,7 @@ function entryForm(book, fixedDate, onSaved) {
       date: dateInput.value,
       minutes: minutesInput.value,
       pageFrom: fromInput.value,
-      pageTo: toInput.value,
+      pageTo: endingPage(),
     });
 
     if (!result.ok) {
@@ -157,7 +183,7 @@ function entryForm(book, fixedDate, onSaved) {
   const form = el('div.session-form', {}, [
     el('div.session-form__row', {}, [
       labelled('Date', dateInput),
-      labelled(isAudio ? 'Ended at minute' : 'Ended on page', toInput),
+      labelled(isAudio ? 'Ended at' : 'Ended on', el('div.progress-entry', {}, [toInput, toUnit])),
       labelled('Minutes read', minutesInput),
       labelled(isAudio ? 'Started at' : 'Started on page', fromInput),
     ]),

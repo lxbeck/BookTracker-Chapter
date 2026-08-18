@@ -9,7 +9,10 @@
 
 import { el, fill, toast } from '../lib/dom.js';
 import { showModal } from './modal.js';
-import { allBooks, updateBook, removeBook, restoreBook, getBook } from '../data/store.js';
+import {
+  allBooks, updateBook, removeBook, restoreBook, getBook,
+  allOrders, addToOrder, createOrder, positionInOrder,
+} from '../data/store.js';
 import { STATUSES, STATUS_ORDER, FORMATS } from '../data/schema.js';
 import { coverThumb } from './cover.js';
 import { openBookForm } from './bookForm.js';
@@ -36,6 +39,23 @@ const SORTS = {
   title: { label: 'Title', compare: (a, b) => a.title.localeCompare(b.title) },
   author: { label: 'Author', compare: (a, b) => (a.author || '~').localeCompare(b.author || '~') },
   length: { label: 'Length', compare: (a, b) => (b.pageCount ?? 0) - (a.pageCount ?? 0) },
+  series: {
+    label: 'Series',
+    // Books in a series first, in index order; standalones after, by title.
+    // Sorting standalones into the middle alphabetically would break up the
+    // runs, which are the only reason to sort by series at all.
+    compare: (a, b) => {
+      const an = a.series.name || '';
+      const bn = b.series.name || '';
+      if (an && !bn) return -1;
+      if (!an && bn) return 1;
+      return (
+        an.localeCompare(bn) ||
+        (a.series.number ?? Infinity) - (b.series.number ?? Infinity) ||
+        a.title.localeCompare(b.title)
+      );
+    },
+  },
   finished: {
     label: 'Date finished',
     // Unfinished books sort last rather than first: a list ordered by finish
@@ -65,7 +85,9 @@ const selection = new Set();
 /** The last box clicked, so shift-click knows where a range starts. */
 let anchorId = null;
 
-const filters = { shelf: 'reading', sort: 'planned', query: '', tag: null, format: null };
+const filters = {
+  shelf: 'reading', sort: 'planned', query: '', tag: null, format: null, order: null,
+};
 
 export function renderLibrary(mount) {
   const books = allBooks();
@@ -87,7 +109,14 @@ export function renderLibrary(mount) {
     .filter(matchesQuery(filters.query))
     .filter((book) => !filters.tag || book.shelves.includes(filters.tag))
     .filter((book) => !filters.format || book.format === filters.format)
-    .sort(SORTS[filters.sort].compare);
+    .filter((book) => !filters.order || positionInOrder(filters.order, book.id) !== Infinity)
+    // Picking a reading order overrides the sort: the whole point of the list
+    // is its sequence, and sorting it by title would discard that.
+    .sort(
+      filters.order
+        ? (a, b) => positionInOrder(filters.order, a.id) - positionInOrder(filters.order, b.id)
+        : SORTS[filters.sort].compare
+    );
 
   // Anything ticked but no longer on screen would be edited invisibly.
   const visibleIds = new Set(visible.map((book) => book.id));
@@ -105,6 +134,7 @@ export function renderLibrary(mount) {
 
     books.length ? toolbar(counts) : null,
     books.length ? formatBar(books) : null,
+    allOrders().length ? orderBar() : null,
     tags.length ? tagBar(tags) : null,
     selection.size ? bulkBar(visible) : null,
 
@@ -180,6 +210,14 @@ function toolbar(counts) {
   return el('div.shelf-bar', {}, [tabs, el('div.shelf-bar__tools', {}, [search, sort])]);
 }
 
+/** Where this book sits in the list currently being viewed. */
+function orderBadge(book) {
+  if (!filters.order) return null;
+  const position = positionInOrder(filters.order, book.id);
+  if (position === Infinity) return null;
+  return el('p.shelf-card__series', {}, `#${position + 1} in this list`);
+}
+
 function tagBar(tags) {
   const rerender = () => renderLibrary(document.querySelector('#view'));
   return el('div.tag-bar', {}, [
@@ -224,6 +262,28 @@ function selectRange(fromId, toId) {
 
 /** Ids in the order they are displayed, for range selection. */
 let lastVisibleOrder = [];
+
+function orderBar() {
+  const rerender = () => renderLibrary(document.querySelector('#view'));
+  const orders = allOrders();
+
+  return el('div.tag-bar', {}, [
+    el('span.tag-bar__label', {}, 'Reading order'),
+    ...orders.map((order) =>
+      el('button.tag', {
+        type: 'button',
+        'aria-pressed': String(filters.order === order.id),
+        onClick: () => {
+          filters.order = filters.order === order.id ? null : order.id;
+          rerender();
+        },
+      }, `${order.name} (${order.bookIds.length})`)
+    ),
+    filters.order
+      ? el('span.tag-bar__note', {}, 'showing this list in its own sequence')
+      : null,
+  ].filter(Boolean));
+}
 
 function formatBar(books) {
   const rerender = () => renderLibrary(document.querySelector('#view'));
@@ -309,6 +369,10 @@ function bulkBar(visible) {
     el('button.btn.btn--quiet.btn--sm', {
       type: 'button', onClick: () => openShelfDialog(chosen(), rerender),
     }, 'Shelve'),
+
+    el('button.btn.btn--quiet.btn--sm', {
+      type: 'button', onClick: () => openOrderDialog(chosen(), rerender),
+    }, 'Add to list'),
 
     el('button.btn.btn--quiet.btn--sm', {
       type: 'button', onClick: () => openDetailsDialog(chosen(), rerender),
@@ -484,6 +548,74 @@ const moveButton = (glyph, label, enabled, onClick) =>
  * donation-funded; four hundred parallel requests is both rude and the fastest
  * way to have all of them refused.
  */
+/**
+ * Append a selection to a reading order, in the order shown on screen.
+ *
+ * Selection order is what bulk scheduling uses, but here the on-screen
+ * sequence is more useful: sort by series, select a run of comics, and they
+ * arrive in the list already in the right order.
+ */
+function openOrderDialog(books, done) {
+  const orders = allOrders();
+  const select = el('select.select', { 'aria-label': 'Reading order' }, [
+    ...orders.map((order) => el('option', { value: order.id }, `${order.name} (${order.bookIds.length})`)),
+    el('option', { value: '__new' }, 'New list\u2026'),
+  ]);
+
+  const nameInput = el('input.input', {
+    placeholder: 'Poe, in order',
+    'aria-label': 'New list name',
+    hidden: orders.length > 0,
+  });
+
+  select.addEventListener('change', () => {
+    nameInput.hidden = select.value !== '__new';
+  });
+  if (!orders.length) select.value = '__new';
+
+  const ordered = books
+    .slice()
+    .sort((a, b) => lastVisibleOrder.indexOf(a.id) - lastVisibleOrder.indexOf(b.id));
+
+  const modal = showModal({
+    eyebrow: `${books.length} books`,
+    title: 'Add to a reading order',
+    body: [
+      orders.length ? el('label.field', {}, [el('span.field__label', {}, 'List'), select]) : select,
+      nameInput,
+      el('p.field__hint', {}, 'They will be appended in the order shown in the library, so sorting by series first gets a run of comics into sequence.'),
+      el('ol.schedule-preview', {}, ordered.map((book, index) =>
+        el('li.schedule-preview__row', {}, [
+          el('span.schedule-preview__n', {}, String(index + 1)),
+          el('span.schedule-preview__title', {}, book.title),
+        ]))),
+    ],
+    actions: [
+      el('button.btn.btn--quiet', { type: 'button', onClick: () => modal.close() }, 'Cancel'),
+      el('button.btn.btn--stamp', {
+        type: 'button',
+        onClick: () => {
+          let orderId = select.value;
+
+          if (orderId === '__new') {
+            const created = createOrder({ name: nameInput.value });
+            if (!created.ok) {
+              toast(Object.values(created.errors)[0], { variant: 'error' });
+              return;
+            }
+            orderId = created.order.id;
+          }
+
+          const result = addToOrder(orderId, ordered.map((book) => book.id));
+          modal.close();
+          toast(`${result.added ?? 0} books added to the list.`);
+          done();
+        },
+      }, 'Add to list'),
+    ],
+  });
+}
+
 function openDetailsDialog(books, done) {
   const gappy = books.filter((book) => needsDetails(book));
   const progress = el('p.settings__note', { 'aria-live': 'polite' },
@@ -584,6 +716,7 @@ function shelfCard(book) {
                 `${book.series.name}${book.series.number ? ` #${book.series.number}` : ''}${book.series.total ? ` of ${book.series.total}` : ''}`)
             : null,
           statusLine(book, unit),
+          orderBadge(book),
           book.rating ? el('p.shelf-card__rating', { 'aria-label': `${book.rating} out of 5` }, '\u2605'.repeat(book.rating)) : null,
           book.description
             ? el('p.shelf-card__blurb', {}, book.description)

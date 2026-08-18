@@ -9,7 +9,9 @@
 
 import { el } from '../lib/dom.js';
 import { spineColor } from '../data/schema.js';
-import { cachedCoverUrl, peekCachedCoverUrl, serverCoverUrl } from '../data/coverCache.js';
+import {
+  cachedCoverUrl, peekCachedCoverUrl, serverCoverUrl, isLocalCover,
+} from '../data/coverCache.js';
 
 /**
  * @param {object} book
@@ -48,8 +50,21 @@ export function coverThumb(book, { width = '100%', alt, fit = 'crop' } = {}) {
     const sources = [
       peekCachedCoverUrl(book.id),
       serverCoverUrl(book.id),
-      book.cover.url,
+      // The sentinel is a marker, not a URL — never hand it to an <img>.
+      isLocalCover(book.cover.url) ? null : book.cover.url,
     ].filter(Boolean);
+
+    if (!sources.length) {
+      // The art is in the image store but hasn't loaded yet; show the spine
+      // rather than a broken image, and swap it in when it arrives.
+      node.append(fallback());
+      cachedCoverUrl(book.id).then((url) => {
+        if (url && node.isConnected) {
+          node.replaceChildren(el('img', { src: url, alt: alt ?? `Cover of ${book.title}` }));
+        }
+      }).catch(() => null);
+      return node;
+    }
 
     let attempt = 0;
     const img = el('img', {

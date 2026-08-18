@@ -85,7 +85,7 @@ export const serverCoverUrl = (bookId) =>
  * @returns {Promise<boolean>}
  */
 export async function storeCoverOnServer(bookId, url) {
-  if (!serverAvailable || !url || url.startsWith('data:')) return false;
+  if (!serverAvailable || !url || url.startsWith('data:') || url === 'local:cover') return false;
   try {
     const response = await fetch(`api/covers/${encodeURIComponent(bookId)}`, {
       method: 'POST',
@@ -141,8 +141,8 @@ export async function warmCoverCache(bookIds) {
 export async function cacheCover(bookId, url) {
   if (!url) return false;
 
-  // Data URLs are already local — nothing to fetch, nothing to gain.
-  if (url.startsWith('data:')) return false;
+  // Data URLs and the local sentinel are already in the image store.
+  if (url.startsWith('data:') || url === 'local:cover') return false;
 
   try {
     const response = await fetch(url, { mode: 'cors', cache: 'force-cache' });
@@ -237,3 +237,92 @@ export async function cacheSize() {
     return null;
   }
 }
+
+/* --- Getting images out of localStorage -----------------------------------
+ *
+ * The quota error people hit is almost always this: an uploaded cover was
+ * stored as a base64 data URL *inside the library record*, which lives in
+ * localStorage. Base64 inflates bytes by a third, localStorage is around 5 MB
+ * for everything you own, and a handful of uploads eats it. Once it's full,
+ * every unrelated save fails — logging a page, renaming a book, anything.
+ *
+ * Images belong in IndexedDB, which is measured in hundreds of megabytes.
+ * `LOCAL_COVER` is the sentinel left behind in the record: a few bytes saying
+ * "the art is in the image store, under this book's id".
+ * -------------------------------------------------------------------------- */
+
+export const LOCAL_COVER = 'local:cover';
+
+export const isLocalCover = (url) => url === LOCAL_COVER;
+
+/** Turn a data URL into a blob without a network round trip. */
+function dataUrlToBlob(dataUrl) {
+  const [header, encoded] = dataUrl.split(',');
+  const type = header.match(/data:([^;]+)/)?.[1] ?? 'image/jpeg';
+  const binary = atob(encoded);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  return new Blob([bytes], { type });
+}
+
+/** Store an uploaded image and hand back the sentinel to save in the record. */
+export async function storeUploadedCover(bookId, dataUrl) {
+  const blob = dataUrlToBlob(dataUrl);
+  await tx('readwrite', (store) =>
+    store.put({ id: bookId, blob, url: LOCAL_COVER, cachedAt: new Date().toISOString() })
+  );
+  releaseUrl(bookId);
+  return LOCAL_COVER;
+}
+
+/**
+ * Move any data URLs already sitting in the library out of localStorage.
+ *
+ * Run once at startup. Someone whose storage is already full got that way
+ * before this code existed, and telling them to delete their own covers would
+ * be a poor answer when the bytes can simply be moved somewhere they fit.
+ *
+ * @param {object[]} books
+ * @returns {Promise<{moved: number, freedBytes: number, ids: string[]}>}
+ */
+export async function evacuateDataUrls(books) {
+  const offenders = books.filter((book) => book.cover?.url?.startsWith('data:'));
+  if (!offenders.length) return { moved: 0, freedBytes: 0, ids: [] };
+
+  let moved = 0;
+  let freedBytes = 0;
+  const ids = [];
+
+  for (const book of offenders) {
+    try {
+      await storeUploadedCover(book.id, book.cover.url);
+      freedBytes += book.cover.url.length;
+      ids.push(book.id);
+      moved += 1;
+    } catch {
+      // If IndexedDB is unavailable there is nowhere better to put it; leaving
+      // the data URL where it is beats losing the cover entirely.
+    }
+  }
+
+  return { moved, freedBytes, ids };
+}
+
+/** Ask the server to copy a cover in from a local path (Calibre imports). */
+export async function storeLocalCoverOnServer(bookId, path) {
+  if (!serverAvailable || !path) return false;
+  try {
+    const response = await fetch(`api/covers/${encodeURIComponent(bookId)}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ path }),
+    });
+    const body = await response.json();
+    return Boolean(body?.ok);
+  } catch {
+    return false;
+  }
+}
+
+/** Whether a sync server is answering, for features that depend on one. */
+export const hasServer = () => serverAvailable;

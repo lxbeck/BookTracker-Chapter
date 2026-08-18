@@ -9,12 +9,14 @@ behave differently.
 **Shared across your devices (recommended):**
 
 ```bash
-npm start        # node server.mjs
+npm start        # node server.mjs, port 8090
 ```
 
 It prints both a localhost address and a LAN address. Open the LAN one on your
-phone (`http://192.168.x.x:8080`) and you get the *same* library, syncing live
-in both directions. The library and cover art are stored in `./data` on the
+phone (`http://192.168.x.x:8090`) and you get the *same* library, syncing live
+in both directions.
+
+If 8090 is taken, pick another: `npm start -- --port 8091`. The library and cover art are stored in `./data` on the
 machine running the server.
 
 **Static, single browser:**
@@ -130,6 +132,19 @@ The rule that progress equals the furthest logged page is enforced in
 `normalizeBook`, not on the store's write path, so a record loaded from disk or
 imported from a backup can never disagree with its own sessions.
 
+## A warning about changing the address
+
+Browser storage is scoped to the exact origin — protocol, host *and* port. A
+library built at `localhost:8080` is invisible at `localhost:8090`. Same
+machine, same browser, same files; different storage.
+
+So before changing ports, open the old address, go to Settings, and Export
+JSON. Then import that file at the new one. Once you are running `npm start`,
+the library lives in `./data` on disk and this stops being a concern, since
+every device reads the same copy.
+
+The server says as much on first run when it finds no library.
+
 ## Using it on your phone
 
 `localStorage` is scoped to one browser on one device. Two devices opening the
@@ -190,6 +205,25 @@ Two separate mechanisms, because they solve different halves of the problem:
 Records themselves were always offline — they live in this browser's local
 storage. Clearing site data erases the library, so Settings has JSON export.
 
+## Catching up on a slipped plan
+
+Targets are cumulative from the plan's start, which means missing two days
+would otherwise leave those pages piled on top of every day that follows — a
+schedule that behaves like a debt. "Catch me up" rebases instead: from today,
+what's left is spread across the days that are left, and the finish date is
+extended if it has already gone.
+
+A rebased plan still totals exactly the page count; `tests/calendar.test.js`
+sums the daily targets and asserts it.
+
+## Why a finish estimate sometimes isn't shown
+
+A pace needs more than one data point. With a single logged day, projecting
+"finishes 20 August, five days past plan" is confident, specific and mostly
+noise. So a projection needs either two days of logged reading or four days
+elapsed with progress recorded; below that the record says so instead of
+guessing.
+
 ## Importing from Goodreads
 
 Goodreads: My Books, then Import and Export, then Export Library. Upload the
@@ -203,6 +237,51 @@ The parser handles Goodreads' quirks: ISBNs wrapped as `="9780486266848"` to
 stop spreadsheets eating leading zeros, reviews containing line breaks,
 US-formatted dates, and the byte-order mark Excel adds. StoryGraph exports
 mostly work too, since columns are matched by alias.
+
+## Importing from Calibre
+
+In Calibre: select your books, then Convert books, Create a catalogue, CSV.
+
+Everything arrives as an unscheduled **ebook**, since a Calibre catalogue
+records what you own rather than what you've read. Titles, authors, series and
+index, tags and ISBNs come across.
+
+**Calibre catalogues carry no page count**, so lengths arrive empty. That's
+deliberate rather than an oversight: pacing, progress and targets all derive
+from the length, and a guessed one would quietly corrupt every figure that
+depends on it. Add a length to any book you plan to schedule — an ISBN lookup
+on the record fetches it.
+
+Cover art is the part that works better here than anywhere else. Calibre's
+`cover` column is an absolute path on your machine, useless to a browser but
+perfectly readable by the sync server running on that same machine — so with
+`npm start` the covers are copied straight off disk, with no lookups and no
+rate limits, including for books that were never on Open Library.
+
+Reading local paths is a real capability, so it's fenced: the path must name an
+image, be a regular file of a sane size, and start with an actual image
+signature. Nothing else is ever read or served. `npm start -- --no-local-covers`
+disables it entirely.
+
+## Bulk actions
+
+Hover a book in the library and a checkbox appears. Once anything is ticked, a
+toolbar offers: set status, add to or remove from a shelf, schedule a run of
+books (staggered one after another, or all on the same dates), and remove.
+Bulk removal is undoable from the toast, because deleting forty books by
+mistake should be recoverable for longer than a toast normally lives.
+
+## If browser storage fills up
+
+The cause is almost always an uploaded cover stored as a base64 data URL inside
+the library record. Base64 costs a third more than the image, localStorage is
+around 5 MB shared across everything you own, and once it's full *every*
+save fails — logging a page, renaming a book, anything.
+
+Uploaded images now go to IndexedDB (measured in hundreds of megabytes) and the
+record keeps a short sentinel. Anything already stored the old way is moved
+automatically at startup, and Settings has a "Reclaim space" button that does
+the same on demand. Nothing is lost either way.
 
 ## Two decisions worth knowing about
 

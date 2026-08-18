@@ -10,11 +10,12 @@ import { el, fill, $, toast } from '../lib/dom.js';
 import { showModal } from './modal.js';
 import { coverPicker } from './coverPicker.js';
 import { sessionLog } from './sessionLog.js';
-import { progressReport } from '../logic/pacing.js';
+import { progressReport, catchUpPreview, catchUpPatch } from '../logic/pacing.js';
 import { allBooks } from '../data/store.js';
 import { STATUSES, STATUS_ORDER, FORMATS, blankBook } from '../data/schema.js';
 import { formatShort } from '../lib/dates.js';
 import { addBook, updateBook, removeBook, restoreBook } from '../data/store.js';
+import { addDays } from '../lib/dates.js';
 
 /**
  * @param {Object} [options]
@@ -103,6 +104,13 @@ export function openBookForm({ book = null, defaultStart = null, onSaved } = {})
     placeholder: 'A few lines on what you thought.',
   }, draft.review ?? '');
 
+  const progressInput = input('progress.page', {
+    type: 'number',
+    min: '0',
+    value: draft.progress.page || '',
+    placeholder: '79',
+  });
+
   const ratingControl = starRating(draft.rating, (value) => {
     draft.rating = value;
   });
@@ -160,6 +168,16 @@ export function openBookForm({ book = null, defaultStart = null, onSaved } = {})
   [startInput, endInput, pagesInput, formatSelect].forEach((node) =>
     node.addEventListener('input', refreshPaceNote)
   );
+
+  // Picking a start date almost always means "and about a week". Filling the
+  // finish date in saves the second date picker, and it stays editable, so the
+  // guess costs nothing when it's wrong.
+  startInput.addEventListener('change', () => {
+    if (!startInput.value || endInput.value) return;
+    endInput.value = addDays(startInput.value, 6);
+    refreshPaceNote();
+  });
+
   refreshPaceNote();
 
   // Cover art. A lookup can autofill the fields the user hasn't filled in
@@ -231,6 +249,8 @@ export function openBookForm({ book = null, defaultStart = null, onSaved } = {})
         field('actual.startedAt', 'Started on', startedInput),
         field('actual.finishedAt', 'Finished on', finishedInput),
       ]),
+      field('progress.page', 'Currently on page', progressInput,
+        'Set this directly when you just want to record where you are.'),
       el('p.field__hint', {}, 'Marking a book finished fills the finish date in for you.'),
     ]),
     el('fieldset.plan-block', {}, [
@@ -300,6 +320,7 @@ export function openBookForm({ book = null, defaultStart = null, onSaved } = {})
         startedAt: startedInput.value || null,
         finishedAt: finishedInput.value || null,
       },
+      progress: { page: progressInput.value === '' ? 0 : progressInput.value, percent: 0 },
     };
   }
 
@@ -378,7 +399,10 @@ function progressStrip(book) {
     el('div.progress-strip__head', {}, [
       el('span.progress-strip__percent', {}, `${report.percent}%`),
       el('span.progress-strip__where', {}, `${report.done} of ${report.total} ${unitWord}`),
-    ]),
+      report.remaining
+        ? el('span.progress-strip__left', {}, `${report.remaining} to go`)
+        : null,
+    ].filter(Boolean)),
     el(
       'div.progress',
       {
@@ -398,6 +422,27 @@ function progressStrip(book) {
         ? miniFact('Against plan', report.verdict.text, `is-${report.verdict.tone}`)
         : null,
     ].filter(Boolean)),
+    report.projectionNote ? el('p.progress-strip__note', {}, report.projectionNote) : null,
+    catchUpRow(book),
+  ].filter(Boolean));
+}
+
+/** Offered only when the plan has actually slipped. */
+function catchUpRow(book) {
+  const preview = catchUpPreview(book);
+  if (!preview.ok || preview.behind > -5) return null;
+
+  return el('div.progress-strip__catchup', {}, [
+    el('p', {}, preview.needsExtension
+      ? `The finish date has passed with ${preview.remaining} ${preview.unit} left.`
+      : `Behind by ${Math.abs(preview.behind)} ${preview.unit}. Spreading what's left over the ${preview.days} days remaining is ${preview.perDay} a day.`),
+    el('button.btn.btn--stamp.btn--sm', {
+      type: 'button',
+      onClick: () => {
+        updateBook(book.id, catchUpPatch(book));
+        toast(`Replanned: ${preview.perDay} ${preview.unit} a day through ${preview.to}.`);
+      },
+    }, 'Catch me up'),
   ]);
 }
 

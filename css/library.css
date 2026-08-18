@@ -248,3 +248,85 @@
   height: 100%;
   background: var(--stamp);
 }
+
+/* --- Bulk selection ------------------------------------------------------- */
+
+.shelf-card__pick {
+  position: absolute;
+  top: var(--s2);
+  left: var(--s2);
+  z-index: 2;
+  padding: var(--s1);
+  background: rgba(243, 240, 232, 0.86);
+  border-radius: var(--r-control);
+  line-height: 0;
+  opacity: 0;
+  transition: opacity var(--fast) var(--ease);
+}
+
+.shelf-card:hover .shelf-card__pick,
+.shelf-card.is-selected .shelf-card__pick,
+.shelf-card__pick:focus-within {
+  opacity: 1;
+}
+
+.shelf-card__pick input {
+  width: 17px;
+  height: 17px;
+  accent-color: var(--stamp);
+  cursor: pointer;
+}
+
+.shelf-card.is-selected {
+  box-shadow: 0 0 0 2px var(--stamp-bright), var(--lift-2);
+}
+
+.bulk-bar {
+  position: sticky;
+  top: 68px;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  flex-wrap: wrap;
+  padding: var(--s2) var(--s3);
+  margin-bottom: var(--s4);
+  background: var(--bookcloth-lift);
+  border: 1px solid rgba(157, 180, 247, 0.45);
+  border-radius: var(--r-card);
+  box-shadow: var(--lift-2);
+}
+
+.bulk-bar__count {
+  font-family: var(--face-slip);
+  font-size: var(--size-xs);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--stamp-bright);
+  margin-right: var(--s2);
+}
+
+.bulk-bar__divider {
+  width: 1px;
+  align-self: stretch;
+  background: rgba(241, 244, 247, 0.16);
+  margin: 0 var(--s1);
+}
+
+.bulk-bar__select {
+  width: auto;
+  font-size: var(--size-sm);
+  padding: var(--s1) var(--s2);
+}
+
+.bulk-check {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  font-size: var(--size-sm);
+  color: var(--ink-soft);
+}
+
+.bulk-check input {
+  accent-color: var(--stamp);
+}

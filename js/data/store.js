@@ -93,7 +93,7 @@ function persist() {
     console.error('[chapter] Could not save the library.', error);
     notifyError(
       error?.name === 'QuotaExceededError'
-        ? 'Storage is full. Remove an uploaded cover or two, then try again.'
+        ? 'Browser storage is full. Open Settings and use "Reclaim space" — uploaded covers are usually the cause, and they can be moved out of the way without losing them.'
         : 'Changes are not being saved. Check that this browser allows site storage.'
     );
   }

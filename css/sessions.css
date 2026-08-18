@@ -286,3 +286,53 @@
 .shelf-card__meta.is-late {
   color: var(--overdue);
 }
+
+.session-form__primary {
+  border-color: var(--stamp);
+  box-shadow: 0 0 0 2px var(--stamp-wash);
+}
+
+.session-form__preview {
+  font-family: var(--face-slip);
+  font-size: var(--size-xs);
+  color: var(--stamp-deep);
+  min-height: 1.2em;
+}
+
+.session-corrections {
+  display: flex;
+  gap: var(--s2);
+  flex-wrap: wrap;
+  margin-top: var(--s3);
+  padding-top: var(--s3);
+  border-top: 1px dotted var(--slip-edge);
+}
+
+.progress-strip__left {
+  font-family: var(--face-slip);
+  font-size: var(--size-xs);
+  color: var(--ink-faint);
+  margin-left: auto;
+}
+
+.progress-strip__note {
+  font-size: var(--size-xs);
+  color: var(--ink-faint);
+}
+
+.progress-strip__catchup {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  flex-wrap: wrap;
+  margin-top: var(--s2);
+  padding-top: var(--s3);
+  border-top: 1px dotted var(--slip-edge);
+}
+
+.progress-strip__catchup p {
+  flex: 1;
+  min-width: 200px;
+  font-size: var(--size-sm);
+  color: var(--ink-soft);
+}

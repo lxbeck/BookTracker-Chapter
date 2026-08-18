@@ -12,10 +12,14 @@ import {
   storageStatus, requestPersistentStorage,
 } from '../data/store.js';
 import { exportJson, exportCsv, exportSessionsCsv, importJson, download, backupFilename } from '../data/transfer.js';
-import { cacheAll, cachedIds, cacheSize } from '../data/coverCache.js';
+import { cacheAll, cachedIds, cacheSize, evacuateDataUrls } from '../data/coverCache.js';
+import { updateBook } from '../data/store.js';
 import { goalProgress } from '../logic/stats.js';
 import { sampleBooks } from '../data/seed.js';
 import { parseGoodreadsCsv } from '../data/goodreads.js';
+import { parseCalibreCsv } from '../data/calibre.js';
+import { storeLocalCoverOnServer, storeCoverOnServer, hasServer } from '../data/coverCache.js';
+import { coverUrlForIsbn } from '../data/covers.js';
 import { syncStatus } from '../data/sync.js';
 import { addBook } from '../data/store.js';
 
@@ -168,6 +172,7 @@ function dataSection(books, redraw) {
     el('p.settings__note', {}, 'Importing merges by title and author, so restoring a backup updates books rather than duplicating them.'),
 
     goodreadsRow(redraw),
+    calibreRow(redraw),
 
     !books.length
       ? el('div.settings__row', {}, [
@@ -258,6 +263,7 @@ function storageSection(redraw) {
     el('p.settings__hint', {},
       'To check it yourself: open developer tools, go to Application, then Local Storage. Or close the browser entirely, reopen it, and see that your books are still here \u2014 that is the same test that matters.'),
     el('div.settings__row', {}, [
+      reclaimButton(redraw),
       el('button.btn.btn--quiet.btn--sm', {
         type: 'button',
         onClick: async () => {
@@ -271,6 +277,42 @@ function storageSection(redraw) {
     ]),
     persistNote,
   ]);
+}
+
+/**
+ * The fix for a full browser store.
+ *
+ * An uploaded cover kept as base64 inside the library record costs roughly a
+ * third more than the image itself and counts against a ~5 MB budget shared
+ * with every book you own. Moving those images to the image store is almost
+ * always the whole problem.
+ */
+function reclaimButton(redraw) {
+  const button = el('button.btn.btn--stamp.btn--sm', {
+    type: 'button',
+    onClick: async () => {
+      button.disabled = true;
+      const books = allBooks();
+      const heavy = books.filter((book) => book.cover?.url?.startsWith('data:')).length;
+
+      const { moved, freedBytes, ids } = await evacuateDataUrls(books);
+      for (const id of ids) {
+        updateBook(id, { cover: { url: 'local:cover', source: 'upload' } });
+      }
+      button.disabled = false;
+
+      toast(
+        moved
+          ? `Moved ${moved} ${moved === 1 ? 'cover' : 'covers'} out of browser storage, freeing about ${Math.round(freedBytes / 1024)} KB. Nothing was lost.`
+          : heavy
+            ? 'Those covers could not be moved — this browser is blocking its image store.'
+            : 'Nothing to reclaim; no images are being kept in browser storage.'
+      );
+      redraw();
+    },
+  }, 'Reclaim space');
+
+  return button;
 }
 
 const storageFact = (label, value) =>
@@ -315,6 +357,118 @@ function goodreadsRow(redraw) {
     ]),
     summary,
   ]);
+}
+
+/* --- Calibre --------------------------------------------------------------- */
+
+function calibreRow(redraw) {
+  const summary = el('p.settings__note', { 'aria-live': 'polite' });
+
+  const fileInput = el('input', {
+    type: 'file', accept: '.csv,text/csv', class: 'visually-hidden',
+    onChange: async (event) => {
+      const file = event.target.files?.[0];
+      event.target.value = '';
+      if (!file) return;
+
+      summary.textContent = 'Reading that catalogue\u2026';
+      const parsed = parseCalibreCsv(await file.text());
+
+      if (!parsed.ok) {
+        summary.textContent = parsed.error;
+        toast(parsed.error, { variant: 'error' });
+        return;
+      }
+      confirmCalibre(parsed, summary, redraw);
+    },
+  });
+
+  return el('div', {}, [
+    el('h4.settings__subhead', {}, 'From Calibre'),
+    el('p.settings__hint', {},
+      'In Calibre: select your books, then Convert books \u2192 Create a catalogue, and choose CSV. Everything arrives as an unscheduled ebook, since a Calibre catalogue records what you own rather than what you have read.'),
+    el('p.settings__hint', {},
+      hasServer()
+        ? 'The sync server is running, so cover art will be copied straight from the paths in the catalogue \u2014 no lookups needed.'
+        : 'Covers will be looked up by ISBN. Run the app with "npm start" instead and they can be copied directly from the paths in the catalogue.'),
+    el('div.settings__row', {}, [
+      el('button.btn.btn--quiet.btn--sm', { type: 'button', onClick: () => fileInput.click() },
+        'Import Calibre CSV'),
+      fileInput,
+    ]),
+    summary,
+  ]);
+}
+
+function confirmCalibre(parsed, summary, redraw) {
+  const { books, paths, skipped, withCovers, withIsbn } = parsed;
+
+  const existing = new Set(
+    allBooks().map((book) => `${book.title.toLowerCase()}|${book.author.toLowerCase()}`)
+  );
+  const duplicates = books.filter((book) =>
+    existing.has(`${book.title.toLowerCase()}|${book.author.toLowerCase()}`)
+  ).length;
+
+  const series = new Set(books.map((book) => book.series.name).filter(Boolean)).size;
+
+  const modal = showModal({
+    eyebrow: 'Calibre catalogue',
+    title: `${books.length} books found`,
+    body: [
+      el('p', {}, `All will be added as ebooks. ${series} series detected, ${withIsbn} with an ISBN, ${withCovers} with a cover on disk.`),
+      el('p.settings__note', {},
+        'Calibre catalogues carry no page count, so lengths arrive empty. Pacing and progress need a length, so add one to any book you plan to schedule \u2014 an ISBN lookup on the record will fetch it.'),
+      duplicates
+        ? el('p', {}, `${duplicates} are already in your library and will be skipped.`)
+        : null,
+      skipped ? el('p.settings__note', {}, `${skipped} rows had no title and will be ignored.`) : null,
+    ].filter(Boolean),
+    actions: [
+      el('button.btn.btn--quiet', { type: 'button', onClick: () => modal.close() }, 'Cancel'),
+      el('button.btn.btn--stamp', {
+        type: 'button',
+        onClick: async () => {
+          modal.close();
+          let added = 0;
+          const queued = [];
+
+          for (const book of books) {
+            const key = `${book.title.toLowerCase()}|${book.author.toLowerCase()}`;
+            if (existing.has(key)) continue;
+
+            // An ISBN gives a usable cover URL without a lookup round trip.
+            const coverUrl = book.isbn ? coverUrlForIsbn(book.isbn, 'L') : null;
+            const result = addBook(coverUrl ? { ...book, cover: { url: coverUrl, source: 'openlibrary' } } : book);
+
+            if (result.ok) {
+              existing.add(key);
+              added += 1;
+              queued.push({ id: result.book.id, path: paths.get(book.id), url: coverUrl });
+            }
+          }
+
+          summary.textContent = `Imported ${added} books. Fetching covers\u2026`;
+          redraw();
+
+          // Covers are stored one at a time after the books land, so a slow
+          // disk or a rate-limited lookup never blocks the import itself.
+          let stored = 0;
+          for (const entry of queued) {
+            const ok = entry.path
+              ? await storeLocalCoverOnServer(entry.id, entry.path)
+              : false;
+            const fallback = ok ? false : await storeCoverOnServer(entry.id, entry.url);
+            if (ok || fallback) stored += 1;
+          }
+
+          summary.textContent = `Imported ${added} books${stored ? `, ${stored} covers stored` : ''}.`;
+          toast(`${added} books imported from Calibre.`);
+          redraw();
+        },
+      }, `Import ${books.length - duplicates} books`),
+    ],
+  });
 }
 
 function confirmImport(parsed, summary, redraw) {

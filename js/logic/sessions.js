@@ -111,9 +111,23 @@ export function observedPace(book, todayKey = today()) {
 
   if (source === 'none') return { ok: false, source };
 
+  // How much evidence is behind the number. A single reading day tells you
+  // almost nothing about how fast a 440-page book will go.
+  const readingDays = totals.days;
+  const confidence =
+    source === 'sessions' && readingDays >= 3
+      ? 'good'
+      : source === 'sessions' && readingDays >= 2
+        ? 'ok'
+        : elapsed >= 4 && pages > 0
+          ? 'ok'
+          : 'low';
+
   return {
     ok: true,
     source,
+    confidence,
+    readingDays,
     elapsed,
     pagesPerDay: pages / elapsed,
     minutesPerDay: totals.minutes / elapsed,

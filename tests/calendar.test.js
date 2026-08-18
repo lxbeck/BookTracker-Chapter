@@ -311,3 +311,113 @@ test('every row plan accounts for exactly the tiles given', async () => {
     assert.ok(rowPlan(n).length <= 2, `plan for ${n} needs more than two rows`);
   }
 });
+
+/* --- catching up ---------------------------------------------------------- */
+
+test('catching up spreads what is left over the days that are left', async () => {
+  const { catchUpPreview, catchUpPatch, paceFor } = await import('../js/logic/pacing.js');
+  const { normalizeBook } = await import('../js/data/schema.js');
+
+  // The reported case: 440 pages planned 9-15 Aug, nothing read on the 9th or
+  // 10th, sitting on page 79 on the 11th.
+  const book = normalizeBook(
+    {
+      title: 'A Princess of Mars',
+      pageCount: 440,
+      status: 'reading',
+      schedule: { start: '2026-08-09', end: '2026-08-15' },
+      progress: { page: 79 },
+    },
+    '2026-08-11'
+  );
+
+  const preview = catchUpPreview(book, '2026-08-11');
+  assert.ok(preview.ok, preview.reason);
+  assert.equal(preview.remaining, 361);
+  assert.equal(preview.days, 5, '11th to 15th inclusive');
+  assert.equal(preview.perDay, 73, '361 over 5 days');
+  assert.ok(!preview.needsExtension);
+
+  const caught = normalizeBook({ ...book, ...catchUpPatch(book, '2026-08-11') }, '2026-08-11');
+  const pace = paceFor(caught, '2026-08-11', '2026-08-11');
+  assert.equal(pace.days, 5);
+  assert.equal(pace.todayTarget, 72, 'first rebased day');
+  assert.equal(pace.cumulative, 151, 'page 79 plus the first day of the new pace');
+});
+
+test('a rebased plan still lands exactly on the last page', async () => {
+  const { catchUpPatch, paceFor } = await import('../js/logic/pacing.js');
+  const { normalizeBook } = await import('../js/data/schema.js');
+
+  const book = normalizeBook(
+    {
+      title: 'A Princess of Mars', pageCount: 440, status: 'reading',
+      schedule: { start: '2026-08-09', end: '2026-08-15' }, progress: { page: 79 },
+    },
+    '2026-08-11'
+  );
+  const caught = normalizeBook({ ...book, ...catchUpPatch(book, '2026-08-11') }, '2026-08-11');
+
+  let sum = 79;
+  for (const day of ['2026-08-11','2026-08-12','2026-08-13','2026-08-14','2026-08-15']) {
+    sum += paceFor(caught, day, '2026-08-11').todayTarget;
+  }
+  assert.equal(sum, 440, 'the rebased targets must still total the book');
+});
+
+test('catching up past the finish date extends it at the old pace', async () => {
+  const { catchUpPreview } = await import('../js/logic/pacing.js');
+  const { normalizeBook } = await import('../js/data/schema.js');
+
+  const book = normalizeBook(
+    {
+      title: 'Overdue', pageCount: 300, status: 'reading',
+      schedule: { start: '2026-08-01', end: '2026-08-07' }, progress: { page: 100 },
+    },
+    '2026-08-20'
+  );
+  const preview = catchUpPreview(book, '2026-08-20');
+  assert.ok(preview.needsExtension, 'should notice the date has passed');
+  assert.ok(preview.to > '2026-08-20', 'new finish date must be in the future');
+});
+
+test('a single logged day is not enough to project a finish date', async () => {
+  const { progressReport } = await import('../js/logic/pacing.js');
+  const { normalizeBook } = await import('../js/data/schema.js');
+
+  const barely = normalizeBook(
+    {
+      title: 'Just started', pageCount: 440, status: 'reading',
+      schedule: { start: '2026-08-09', end: '2026-08-15' },
+      sessions: [{ date: '2026-08-11', minutes: 40, pageFrom: 0, pageTo: 79 }],
+    },
+    '2026-08-11'
+  );
+
+  const report = progressReport(barely, '2026-08-11');
+  assert.equal(report.percent, 18);
+  assert.equal(report.projected, null, 'one day should not yield a finish date');
+  assert.match(report.projectionNote, /couple more days/);
+});
+
+test('three logged days do produce a projection', async () => {
+  const { progressReport } = await import('../js/logic/pacing.js');
+  const { normalizeBook } = await import('../js/data/schema.js');
+
+  const steady = normalizeBook(
+    {
+      title: 'Getting going', pageCount: 440, status: 'reading',
+      schedule: { start: '2026-08-09', end: '2026-08-20' },
+      sessions: [
+        { date: '2026-08-09', minutes: 40, pageFrom: 0, pageTo: 40 },
+        { date: '2026-08-10', minutes: 40, pageFrom: 40, pageTo: 80 },
+        { date: '2026-08-11', minutes: 40, pageFrom: 80, pageTo: 120 },
+      ],
+    },
+    '2026-08-11'
+  );
+
+  const report = progressReport(steady, '2026-08-11');
+  assert.ok(report.projected, 'three days is enough evidence');
+  assert.equal(report.rate, 40);
+});

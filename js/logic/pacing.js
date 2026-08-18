@@ -50,14 +50,22 @@ export function paceFor(book, dayKey = today(), todayKey = today()) {
   if (!pageCount) return EMPTY(`No length recorded, so there's no daily target`);
 
   const end = schedule.end ?? schedule.start;
-  const days = spanLength(schedule.start, end);
-  const dayIndex = daysBetween(schedule.start, dayKey) + 1;
+
+  // A rebased plan measures from the day you caught up, not from the original
+  // start — otherwise the targets keep asking you to make up days that have
+  // already gone, which is the thing that makes a schedule feel like a debt.
+  const rebase = schedule.rebase && dayKey >= schedule.rebase.at ? schedule.rebase : null;
+  const from = rebase ? rebase.at : schedule.start;
+  const base = rebase ? Math.min(rebase.page, pageCount) : 0;
+
+  const days = spanLength(from, end);
+  const dayIndex = daysBetween(from, dayKey) + 1;
 
   // Asking about a day outside the plan is a legitimate question with a boring
   // answer, so return the shape rather than an error.
   const inPlan = dayIndex >= 1 && dayIndex <= days;
 
-  const at = (index) => Math.round((pageCount * clamp(index, 0, days)) / days);
+  const at = (index) => base + Math.round(((pageCount - base) * clamp(index, 0, days)) / days);
   const cumulative = at(dayIndex);
   const todayTarget = inPlan ? cumulative - at(dayIndex - 1) : 0;
 
@@ -71,7 +79,9 @@ export function paceFor(book, dayKey = today(), todayKey = today()) {
     total: pageCount,
     unit,
     days,
-    perDay: Math.round(pageCount / days),
+    perDay: Math.round((pageCount - base) / days),
+    rebased: Boolean(rebase),
+    from,
     dayIndex,
     inPlan,
     todayTarget,
@@ -79,7 +89,7 @@ export function paceFor(book, dayKey = today(), todayKey = today()) {
     remaining,
     daysLeft,
     adjusted: Math.ceil(remaining / daysLeft),
-    delta: done - at(daysBetween(schedule.start, todayKey) + 1),
+    delta: done - at(daysBetween(from, todayKey) + 1),
     overdue: todayKey > end && remaining > 0,
   };
 }
@@ -142,6 +152,9 @@ export function projectedFinish(book, todayKey = today()) {
 
   const observed = observedPace(book, todayKey);
   if (!observed.ok || observed.pagesPerDay <= 0) return null;
+  // One data point is not a reading pace. Projecting from it produces a
+  // confident, specific, wrong date — worse than saying nothing yet.
+  if (observed.confidence === 'low') return null;
 
   const done = Math.min(progress.page || 0, pageCount);
   const daysNeeded = Math.ceil((pageCount - done) / observed.pagesPerDay);
@@ -188,6 +201,7 @@ export function progressReport(book, todayKey = today()) {
     unit,
     remaining,
     rate: observed.ok ? observed.pagesPerDay : 0,
+    confidence: observed.confidence ?? 'none',
     rateLabel: observed.ok
       ? `${Math.round(observed.pagesPerDay)} ${unit === 'minutes' ? 'min' : 'pages'} a day`
       : null,
@@ -195,6 +209,11 @@ export function progressReport(book, todayKey = today()) {
     timeLeft,
     projected,
     verdict: projected ? finishVerdict(book, projected) : null,
+    // Said plainly, so the absence of a projection doesn't read as a bug.
+    projectionNote:
+      !projected && observed.ok && observed.confidence === 'low'
+        ? 'Log a couple more days and a finish estimate will appear.'
+        : null,
   };
 }
 
@@ -211,4 +230,83 @@ function finishVerdict(book, projected) {
   if (drift <= -2) return { tone: 'early', text: `${Math.abs(drift)} days ahead of plan` };
   if (drift >= 2) return { tone: 'late', text: `${drift} days past the plan` };
   return { tone: 'on-time', text: 'Landing on plan' };
+}
+
+/* --- Catching up ----------------------------------------------------------
+ *
+ * Missing two days of a week-long plan doesn't mean the plan is dead; it means
+ * the remaining pages belong to the remaining days. Targets are cumulative
+ * from the plan's start, so simply carrying on would keep asking you to make
+ * up the missed days on top of today's share — the reason a slipped schedule
+ * feels like a debt rather than a plan.
+ *
+ * Catching up rebases: from today, spread what's left over what's left.
+ * -------------------------------------------------------------------------- */
+
+/**
+ * What catching up would look like, without doing it.
+ *
+ * @returns {{ok: boolean, reason?: string, remaining: number, days: number,
+ *   perDay: number, from: string, to: string, wasPerDay: number,
+ *   needsExtension: boolean, suggestedEnd: string, unit: string}}
+ */
+export function catchUpPreview(book, todayKey = today()) {
+  const { schedule, pageCount, progress } = book;
+  const unit = FORMATS[book.format]?.unit ?? 'pages';
+
+  if (!schedule.start) return { ok: false, reason: 'This book has no plan to catch up on.' };
+  if (!pageCount) return { ok: false, reason: 'Add a page count first, or there is nothing to spread.' };
+
+  const end = schedule.end ?? schedule.start;
+  const done = Math.min(progress.page || 0, pageCount);
+  const remaining = pageCount - done;
+
+  if (remaining <= 0) return { ok: false, reason: 'This book is already finished.' };
+
+  // Catching up from before the plan starts would compress it for no reason.
+  const from = todayKey > schedule.start ? todayKey : schedule.start;
+  const needsExtension = from > end;
+
+  const current = paceFor(book, todayKey, todayKey);
+  const wasPerDay = current.ok ? current.perDay : 0;
+
+  // If the finish date has already passed, keeping the original daily pace is
+  // a kinder default than demanding the whole remainder today.
+  const suggestedEnd = needsExtension
+    ? addDays(from, Math.max(0, Math.ceil(remaining / Math.max(wasPerDay, 1)) - 1))
+    : end;
+
+  const to = needsExtension ? suggestedEnd : end;
+  const days = spanLength(from, to);
+
+  return {
+    ok: true,
+    remaining,
+    days,
+    perDay: Math.ceil(remaining / days),
+    from,
+    to,
+    wasPerDay,
+    needsExtension,
+    suggestedEnd,
+    unit,
+    behind: current.ok ? current.delta : 0,
+  };
+}
+
+/**
+ * The patch that applies a catch-up. Kept separate from the store so the
+ * preview and the change can never disagree about what will happen.
+ */
+export function catchUpPatch(book, todayKey = today()) {
+  const preview = catchUpPreview(book, todayKey);
+  if (!preview.ok) return null;
+
+  return {
+    schedule: {
+      start: book.schedule.start,
+      end: preview.to,
+      rebase: { at: preview.from, page: Math.min(book.progress.page || 0, book.pageCount) },
+    },
+  };
 }

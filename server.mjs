@@ -12,8 +12,8 @@
  * package.json full of middleware would be a strange thing to inflict on a
  * project whose whole premise is that it has no build step.
  *
- *   node server.mjs            # port 8080
- *   node server.mjs --port 3000
+ *   npm start                     # port 8090
+ *   npm start -- --port 3000      # anything else
  *
  * Data lives in ./data — library.json plus one file per cached cover.
  */
@@ -32,7 +32,15 @@ const DATA_DIR = join(ROOT, 'data');
 const COVER_DIR = join(DATA_DIR, 'covers');
 const LIBRARY_FILE = join(DATA_DIR, 'library.json');
 
-const PORT = Number(argValue('--port') ?? process.env.PORT ?? 8080);
+// 8090 rather than 8080: 8080 is the default for half the tooling on a
+// developer's machine, and a port clash on first run is a bad first minute.
+const DEFAULT_PORT = 8090;
+const PORT = Number(argValue('--port') ?? process.env.PORT ?? DEFAULT_PORT);
+
+// Calibre stores cover.jpg next to each book; importing them means reading
+// those paths. On by default because it is the point of the feature, and off
+// with one flag for anyone who would rather it weren't possible.
+const ALLOW_LOCAL_COVERS = !process.argv.includes('--no-local-covers');
 const MAX_BODY = 12 * 1024 * 1024;
 
 function argValue(flag) {
@@ -57,8 +65,18 @@ async function loadLibrary() {
     library.settings ??= {};
     revision = libraryRevision(library);
     console.log(`  loaded ${library.books.length} books from data/library.json`);
+    return true;
   } catch (error) {
-    if (error.code !== 'ENOENT') console.error('  could not read library.json:', error.message);
+    if (error.code !== 'ENOENT') {
+      console.error('  could not read library.json:', error.message);
+      // Refuse to start on a corrupt file rather than overwriting it with an
+      // empty library the moment the first device syncs.
+      if (error instanceof SyntaxError) {
+        console.error('  data/library.json is not valid JSON. Move it aside and restart.');
+        process.exit(1);
+      }
+    }
+    return false;
   }
 }
 
@@ -109,6 +127,42 @@ const EXT_BY_TYPE = {
  * gets the image from us afterwards — including offline ones, and including
  * the phone that never had the original URL work in the first place.
  */
+/**
+ * Copy a cover straight off the local disk — how Calibre imports get their art.
+ *
+ * Reading an arbitrary path on request is a real capability, so it is fenced:
+ * the path must name an image, must be a regular file, and the bytes must
+ * actually start with an image signature. A caller cannot use this to read a
+ * text file, and nothing is ever served back that did not pass those checks.
+ * Start the server with --no-local-covers to switch it off entirely.
+ */
+const IMAGE_MAGIC = [
+  { bytes: [0xff, 0xd8, 0xff], ext: '.jpg', type: 'image/jpeg' },
+  { bytes: [0x89, 0x50, 0x4e, 0x47], ext: '.png', type: 'image/png' },
+  { bytes: [0x47, 0x49, 0x46, 0x38], ext: '.gif', type: 'image/gif' },
+  { bytes: [0x52, 0x49, 0x46, 0x46], ext: '.webp', type: 'image/webp' },
+];
+
+async function storeLocalCover(bookId, path) {
+  if (!ALLOW_LOCAL_COVERS) throw new Error('Local cover reading is disabled on this server.');
+  if (!/\.(jpe?g|png|webp|gif)$/i.test(path)) throw new Error('Not an image path.');
+
+  const info = await stat(path).catch(() => null);
+  if (!info?.isFile()) throw new Error('No file at that path on the server.');
+  if (info.size < 1024) throw new Error('That file is too small to be a cover.');
+  if (info.size > 20 * 1024 * 1024) throw new Error('That file is too large to be a cover.');
+
+  const buffer = await readFile(path);
+  const signature = IMAGE_MAGIC.find((candidate) =>
+    candidate.bytes.every((byte, index) => buffer[index] === byte)
+  );
+  if (!signature) throw new Error('That file is not an image.');
+
+  await mkdir(COVER_DIR, { recursive: true });
+  await writeFile(join(COVER_DIR, safeId(bookId) + signature.ext), buffer);
+  return { bytes: buffer.byteLength, type: signature.type };
+}
+
 async function storeCover(bookId, url) {
   if (!/^https?:\/\//.test(url)) throw new Error('Only http(s) cover URLs can be stored.');
 
@@ -222,6 +276,7 @@ async function handleApi(request, response, url) {
       revision,
       books: library.books.length,
       storage: 'server',
+      localCovers: ALLOW_LOCAL_COVERS,
     });
     return;
   }
@@ -281,9 +336,11 @@ async function handleApi(request, response, url) {
     const bookId = decodeURIComponent(coverMatch[1]);
 
     if (request.method === 'POST') {
-      const { url: source } = JSON.parse(await readBody(request));
+      const { url: source, path: localPath } = JSON.parse(await readBody(request));
       try {
-        const result = await storeCover(bookId, source);
+        const result = localPath
+          ? await storeLocalCover(bookId, localPath)
+          : await storeCover(bookId, source);
         json(response, 200, { ok: true, ...result });
       } catch (error) {
         json(response, 200, { ok: false, error: error.message });
@@ -358,7 +415,34 @@ function localAddresses() {
     .map((entry) => entry.address);
 }
 
-await loadLibrary();
+const hadLibrary = await loadLibrary();
+
+/**
+ * A port clash is the single most likely thing to go wrong on first run, and
+ * an unhandled 'error' event turns it into a twenty-line stack trace that
+ * buries the one sentence that matters.
+ */
+server.on('error', (error) => {
+  if (error.code === 'EADDRINUSE') {
+    console.error(`\n  Port ${PORT} is already being used by something else.\n`);
+    console.error('  Either start Chapter on another port:');
+    console.error(`      npm start -- --port ${PORT + 1}\n`);
+    console.error('  Or stop whatever is holding it:');
+    console.error(`      lsof -ti:${PORT} | xargs kill      (macOS, Linux)`);
+    console.error(`      npx kill-port ${PORT}               (any platform)\n`);
+    process.exit(1);
+  }
+
+  if (error.code === 'EACCES') {
+    console.error(`\n  Not allowed to listen on port ${PORT}. Ports below 1024 need`);
+    console.error('  elevated privileges; pick a higher one:\n');
+    console.error(`      npm start -- --port ${DEFAULT_PORT}\n`);
+    process.exit(1);
+  }
+
+  console.error(`\n  The server could not start: ${error.message}\n`);
+  process.exit(1);
+});
 
 server.listen(PORT, '0.0.0.0', () => {
   console.log('\n  Chapter is running.\n');
@@ -366,5 +450,32 @@ server.listen(PORT, '0.0.0.0', () => {
   for (const address of localAddresses()) {
     console.log(`  Other devices: http://${address}:${PORT}`);
   }
-  console.log('\n  Library and covers are stored in ./data\n');
+  console.log('\n  Library and covers are stored in ./data');
+
+  if (!hadLibrary) {
+    // A library that lived in a browser at a different address is invisible
+    // here — same machine, different origin, different storage. Saying so
+    // beats letting someone conclude their books are gone.
+    console.log('\n  No library yet. If you were using Chapter at another address,');
+    console.log('  open it there, then Settings > Export JSON, and import the file');
+    console.log('  in Settings here. Browser storage does not follow a port change.');
+  }
+  console.log('');
 });
+
+// Ctrl-C should close cleanly rather than leaving the port held.
+for (const signal of ['SIGINT', 'SIGTERM']) {
+  process.on(signal, () => {
+    console.log('\n  Stopping Chapter.\n');
+    for (const listener of listeners) {
+      try {
+        listener.end();
+      } catch {
+        /* already gone */
+      }
+    }
+    server.close(() => process.exit(0));
+    // Don't hang forever on a wedged keep-alive connection.
+    setTimeout(() => process.exit(0), 1500).unref();
+  });
+}

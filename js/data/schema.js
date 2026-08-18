@@ -14,7 +14,7 @@
 
 import { isValidKey, today } from '../lib/dates.js';
 
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 /** @type {Record<string, {id: string, label: string, hint: string}>} */
 export const STATUSES = {
@@ -64,7 +64,9 @@ export function blankBook(overrides = {}) {
     status: 'planned',
     series: { name: '', number: null, total: null },
     cover: { url: null, source: null },
-    schedule: { start: null, end: null },
+    // `rebase` is what "catch me up" writes: from that day, the remaining
+    // pages are spread over the remaining days instead of the original plan.
+    schedule: { start: null, end: null, rebase: null },
     actual: { startedAt: null, finishedAt: null },
     progress: { page: 0, percent: 0 },
     sessions: [],
@@ -153,6 +155,14 @@ const toInt = (value) => {
 
 const cleanKey = (value) => (isValidKey(value) ? value : null);
 
+/** A rebase is only meaningful with both a day and a page to start from. */
+function cleanRebase(rebase) {
+  const at = cleanKey(rebase?.at);
+  const page = Number.parseInt(rebase?.page, 10);
+  if (!at || !Number.isFinite(page) || page < 0) return null;
+  return { at, page };
+}
+
 /**
  * Coerce arbitrary input (form values, imported JSON, an older record) into a
  * valid Book. Never throws — anything unusable becomes a sane default, so a
@@ -195,7 +205,7 @@ export function normalizeBook(input = {}, todayKey = today()) {
       url: input.cover?.url || null,
       source: input.cover?.source || null,
     },
-    schedule: { start, end },
+    schedule: { start, end, rebase: cleanRebase(input.schedule?.rebase) },
     actual: {
       startedAt: cleanKey(input.actual?.startedAt),
       finishedAt: cleanKey(input.actual?.finishedAt),

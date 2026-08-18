@@ -8,10 +8,14 @@
  * The form stays open after saving. Logging is repetitive by nature — you sit
  * down on Sunday and enter three days you forgot about — and a form that
  * closes after each entry turns that into three round trips.
+ *
+ * "Ended on page" leads, because that is the thing people actually know when
+ * they put a book down. The starting page is filled in from where you already
+ * were and can be ignored entirely.
  */
 
 import { el, fill, toast } from '../lib/dom.js';
-import { addSession, updateSession, removeSession, getBook } from '../data/store.js';
+import { addSession, updateSession, removeSession, getBook, updateBook } from '../data/store.js';
 import { FORMATS } from '../data/schema.js';
 import { formatShort, today } from '../lib/dates.js';
 import { bookTotals, formatDuration } from '../logic/sessions.js';
@@ -94,12 +98,34 @@ function entryForm(book, fixedDate, onSaved) {
     'aria-label': isAudio ? 'Started at minute' : 'Started at page',
   });
 
-  const toInput = el('input.input', {
+  const toInput = el('input.input.session-form__primary', {
     type: 'number',
     min: '0',
-    placeholder: 'to',
-    'aria-label': isAudio ? 'Reached minute' : 'Reached page',
+    max: book.pageCount ? String(book.pageCount) : null,
+    placeholder: book.pageCount ? String(book.pageCount) : 'page',
+    'aria-label': isAudio ? 'Ended at minute' : 'Ended on page',
   });
+
+  // A running read-out of what this entry will mean, so nobody has to work out
+  // 79 of 440 in their head to check they typed the right number.
+  const preview = el('p.session-form__preview');
+
+  const refreshPreview = () => {
+    const to = Number.parseInt(toInput.value, 10);
+    if (!Number.isFinite(to) || !book.pageCount) {
+      preview.textContent = '';
+      return;
+    }
+    const percent = Math.round((Math.min(to, book.pageCount) / book.pageCount) * 100);
+    const from = Number.parseInt(fromInput.value, 10);
+    const covered = Number.isFinite(from) && to > from ? to - from : null;
+    preview.textContent =
+      `${percent}% \u00b7 ${to} of ${book.pageCount} ${unit}` +
+      (covered ? ` \u00b7 ${covered} ${unit} this sitting` : '');
+  };
+
+  toInput.addEventListener('input', refreshPreview);
+  fromInput.addEventListener('input', refreshPreview);
 
   const error = el('p.field__error', { hidden: true });
 
@@ -124,16 +150,18 @@ function entryForm(book, fixedDate, onSaved) {
     );
     minutesInput.value = '';
     toInput.value = '';
+    preview.textContent = '';
     onSaved();
   };
 
   const form = el('div.session-form', {}, [
     el('div.session-form__row', {}, [
       labelled('Date', dateInput),
-      labelled('Minutes', minutesInput),
-      labelled(isAudio ? 'From minute' : 'From page', fromInput),
-      labelled(isAudio ? 'To minute' : 'To page', toInput),
+      labelled(isAudio ? 'Ended at minute' : 'Ended on page', toInput),
+      labelled('Minutes read', minutesInput),
+      labelled(isAudio ? 'Started at' : 'Started on page', fromInput),
     ]),
+    preview,
     el('div.session-form__actions', {}, [
       error,
       el('button.btn.btn--stamp.btn--sm', { type: 'button', onClick: save }, 'Log it'),
@@ -158,16 +186,66 @@ const labelled = (label, control) =>
 function historyList(book, compact, onChange) {
   const sessions = [...book.sessions].reverse();
   if (!sessions.length) {
-    return el('p.session-empty', {}, 'No sittings logged for this book yet.');
+    return el('div', {}, [
+      el('p.session-empty', {}, 'No sittings logged for this book yet.'),
+      correctionRow(book, onChange),
+    ]);
   }
 
   const shown = compact ? sessions.slice(0, 3) : sessions;
   const unit = FORMATS[book.format].unit;
 
-  return el('ul.session-list', {}, [
-    ...shown.map((session) => sessionRow(book, session, unit, onChange)),
-    compact && sessions.length > shown.length
-      ? el('li.session-list__more', {}, `${sessions.length - shown.length} earlier sittings`)
+  return el('div', {}, [
+    el('ul.session-list', {}, [
+      ...shown.map((session) => sessionRow(book, session, unit, onChange)),
+      compact && sessions.length > shown.length
+        ? el('li.session-list__more', {}, `${sessions.length - shown.length} earlier sittings`)
+        : null,
+    ].filter(Boolean)),
+    compact ? null : correctionRow(book, onChange),
+  ].filter(Boolean));
+}
+
+/**
+ * Undoing mistakes.
+ *
+ * Mis-typing a page number is easy and, until now, permanent-ish. Both of
+ * these are destructive, so both say exactly what they will remove and ask
+ * once — but they exist, because a tracker you can't correct stops being
+ * trusted the first time it's wrong.
+ */
+function correctionRow(book, onChange) {
+  const hasLog = book.sessions.length > 0;
+  const hasRecord = Boolean(book.actual.startedAt || book.actual.finishedAt || book.progress.page);
+
+  if (!hasLog && !hasRecord) return null;
+
+  return el('div.session-corrections', {}, [
+    hasLog
+      ? el('button.btn.btn--danger.btn--sm', {
+          type: 'button',
+          onClick: () => {
+            if (!confirm(`Delete all ${book.sessions.length} logged sittings for ${book.title}? The book itself stays.`)) return;
+            updateBook(book.id, { sessions: [] });
+            toast('Reading log cleared.');
+            onChange();
+          },
+        }, `Clear the log (${book.sessions.length})`)
+      : null,
+    hasRecord
+      ? el('button.btn.btn--danger.btn--sm', {
+          type: 'button',
+          onClick: () => {
+            if (!confirm(`Reset progress and the start and finish dates for ${book.title}? The plan and the reading log stay.`)) return;
+            updateBook(book.id, {
+              actual: { startedAt: null, finishedAt: null },
+              progress: { page: 0, percent: 0 },
+              status: book.status === 'finished' ? 'reading' : book.status,
+            });
+            toast('Progress and dates reset.');
+            onChange();
+          },
+        }, 'Reset progress and dates')
       : null,
   ].filter(Boolean));
 }

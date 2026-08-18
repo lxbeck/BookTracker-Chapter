@@ -10,7 +10,7 @@
 import { $, el, fill, toast } from './lib/dom.js';
 import * as store from './data/store.js';
 import { initSync, onSyncChange, syncStatus } from './data/sync.js';
-import { warmCoverCache, setServerCovers } from './data/coverCache.js';
+import { warmCoverCache, setServerCovers, evacuateDataUrls } from './data/coverCache.js';
 import { renderLibrary } from './views/library.js';
 import { renderCalendar } from './views/calendar.js';
 import { renderDay } from './views/day.js';
@@ -109,6 +109,17 @@ async function start() {
 
   // Covers come from storage before anything is requested over the network,
   // which is what makes them appear when there is no network at all.
+  // Anyone whose storage filled up got there by keeping base64 images in the
+  // library record. Move them somewhere they fit before anything else fails.
+  evacuateDataUrls(store.allBooks()).then(({ moved, freedBytes, ids }) => {
+    if (!moved) return;
+    for (const id of ids) {
+      const book = store.getBook(id);
+      if (book) store.updateBook(id, { cover: { url: 'local:cover', source: 'upload' } });
+    }
+    toast(`Moved ${moved} uploaded ${moved === 1 ? 'cover' : 'covers'} out of browser storage, freeing ${Math.round(freedBytes / 1024)} KB.`);
+  }).catch(() => null);
+
   warmCoverCache(store.allBooks().map((book) => book.id)).then(render);
 
   await initSync();

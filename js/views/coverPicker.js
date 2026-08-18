@@ -10,7 +10,9 @@
 import { el, fill, toast } from '../lib/dom.js';
 import { coverThumb } from './cover.js';
 import { lookupByIsbn, searchByText, fileToCoverDataUrl } from '../data/covers.js';
-import { cacheCover, storeCoverOnServer } from '../data/coverCache.js';
+import {
+  cacheCover, storeCoverOnServer, storeUploadedCover, LOCAL_COVER,
+} from '../data/coverCache.js';
 
 const SOURCE_LABEL = {
   openlibrary: 'Open Library',
@@ -144,7 +146,17 @@ export function coverPicker({ draft, readForm, onPick }) {
     setBusy(true, 'Processing that image\u2026');
     try {
       const dataUrl = await fileToCoverDataUrl(file);
-      setCover({ url: dataUrl, source: 'upload' });
+
+      // The image goes to the image store; the record keeps a short sentinel.
+      // Putting base64 in the record is what fills localStorage and makes
+      // every later save fail.
+      try {
+        await storeUploadedCover(draft.id, dataUrl);
+        setCover({ url: LOCAL_COVER, source: 'upload' });
+      } catch {
+        // No IndexedDB: fall back to the old behaviour rather than losing it.
+        setCover({ url: dataUrl, source: 'upload' });
+      }
       setBusy(false, 'Using your image.');
     } catch (error) {
       setBusy(false, error.message);

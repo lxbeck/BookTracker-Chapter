@@ -178,16 +178,35 @@ export function barChart(data, { height = 190, label = 'Bar chart', format = (v)
  * A cumulative line — pages read over time. Area fill under it, because the
  * total is the point, not the individual readings.
  */
-export function lineChart(data, { height = 190, label = 'Line chart', format = (v) => v } = {}) {
+export function lineChart(
+  data,
+  {
+    height = 190,
+    label = 'Line chart',
+    format = (v) => v,
+    // The axis gets its own formatter, and a bare number by default.
+    // The hover readout says "1,000 pages" because it has room to; the axis
+    // was using the same string, and a right-anchored "1,000 pages" at a
+    // fixed 40px inset simply ran off the left edge of the chart.
+    axisFormat = (v) => v.toLocaleString(),
+  } = {}
+) {
   const width = 640;
-  const padding = { top: 16, right: 10, bottom: 30, left: 40 };
-  const plotW = width - padding.left - padding.right;
-  const plotH = height - padding.top - padding.bottom;
 
   const svg = frame(width, height, `${label}. Ends at ${format(data.at(-1)?.value ?? 0)}.`);
   if (data.length < 2) return svg;
 
   const max = niceMax(Math.max(...data.map((d) => d.value)));
+
+  // Measured from the widest label rather than assumed, so the gutter grows
+  // with the numbers instead of clipping them. ~6.2px per character at the
+  // axis size, which is monospaced.
+  const axisLabels = [0, 0.5, 1].map((fraction) => axisFormat(Math.round(max * fraction)));
+  const gutter = Math.max(...axisLabels.map((text) => text.length)) * 6.2 + 12;
+
+  const padding = { top: 16, right: 10, bottom: 30, left: Math.max(40, Math.ceil(gutter)) };
+  const plotW = width - padding.left - padding.right;
+  const plotH = height - padding.top - padding.bottom;
   const x = (i) => padding.left + (plotW * i) / (data.length - 1);
   const y = (v) => padding.top + plotH - (max ? (v / max) * plotH : 0);
 
@@ -196,7 +215,7 @@ export function lineChart(data, { height = 190, label = 'Line chart', format = (
     svg.append(
       svgEl('line', { x1: padding.left, x2: width - padding.right, y1: gy, y2: gy, class: 'chart__grid' }),
       svgEl('text', { x: padding.left - 6, y: gy + 4, class: 'chart__axis', 'text-anchor': 'end' },
-        format(Math.round(max * fraction)))
+        axisFormat(Math.round(max * fraction)))
     );
   }
 
@@ -260,18 +279,41 @@ export function rankChart(data, { label = 'Breakdown', format = (v) => v, max: c
 
   rows.forEach((row, index) => {
     const y = index * rowH + 4;
-    const barW = ((width - labelW - 60) * row.value) / max;
+    const barW = Math.max(((width - labelW - 60) * row.value) / max, 2);
+
+    // Every bar the same solid colour says only "which of these is biggest",
+    // which you can already see from the order. Shading the finished portion
+    // answers the question actually being asked of a shelf or a kind: how much
+    // of this have I read?
+    const done = Math.min(row.done ?? 0, row.value);
+    const doneW = row.value ? (barW * done) / row.value : 0;
 
     const bar = svgEl('rect', {
-      x: labelW, y: y + 3, width: Math.max(barW, 2), height: 14, rx: 1, class: 'chart__bar',
+      x: labelW, y: y + 3, width: barW, height: 14, rx: 1,
+      class: done ? 'chart__bar chart__bar--part' : 'chart__bar',
     });
-    attachReadout(bar, { label: row.label, value: format(row.value) });
+
+    const readout = row.done == null
+      ? { label: row.label, value: format(row.value) }
+      : { label: row.label, value: `${format(row.value)} \u00b7 ${done} finished` };
+
+    attachReadout(bar, readout);
+
+    const finished = doneW > 0
+      ? svgEl('rect', {
+          x: labelW, y: y + 3, width: Math.max(doneW, 2), height: 14, rx: 1,
+          class: 'chart__bar chart__bar--done',
+        })
+      : null;
+    if (finished) attachReadout(finished, readout);
 
     svg.append(
       svgEl('text', { x: 0, y: y + 14, class: 'chart__row-label' },
         row.label.length > 24 ? `${row.label.slice(0, 23)}\u2026` : row.label),
       bar,
-      svgEl('text', { x: labelW + Math.max(barW, 2) + 8, y: y + 14, class: 'chart__axis' }, format(row.value))
+      ...(finished ? [finished] : []),
+      svgEl('text', { x: labelW + barW + 8, y: y + 14, class: 'chart__axis' },
+        row.done ? `${format(row.value)} (${done})` : format(row.value))
     );
   });
 

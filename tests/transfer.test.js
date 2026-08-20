@@ -54,11 +54,27 @@ test('average days per book uses the real start and finish dates', () => {
 
 test('breakdowns rank by count and handle multi-valued fields', () => {
   const byAuthor = breakdown(LIBRARY, (b) => b.author);
-  assert.deepEqual(byAuthor[0], { label: 'Edgar Rice Burroughs', value: 2 });
+  assert.equal(byAuthor[0].label, 'Edgar Rice Burroughs');
+  assert.equal(byAuthor[0].value, 2);
 
   const byShelf = breakdown(LIBRARY, (b) => b.shelves);
   assert.equal(byShelf.find((row) => row.label === '2026 goal').value, 2);
   assert.equal(byShelf.find((row) => row.label === 'series reads').value, 2);
+});
+
+test('a breakdown counts how many of each row are finished', () => {
+  // "You own 40 comics" and "you have read 6 of them" are different facts,
+  // and the bars are only interesting because of the second.
+  const byAuthor = breakdown(LIBRARY, (b) => b.author);
+  for (const row of byAuthor) {
+    assert.ok(row.done <= row.value, 'finished can never exceed the total');
+  }
+
+  const finished = LIBRARY.filter((b) => b.status === 'finished').length;
+  assert.equal(
+    byAuthor.reduce((sum, row) => sum + row.done, 0),
+    finished
+  );
 });
 
 test('books finished by month lands them in the right buckets', () => {

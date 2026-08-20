@@ -10,13 +10,14 @@
 import { el, fill, toast } from '../lib/dom.js';
 import { showModal } from './modal.js';
 import {
-  allBooks, updateBook, removeBook, restoreBook, getBook,
+  allBooks, updateBook, removeBook, restoreBook, getBook, getSettings,
   allOrders, addToOrder, createOrder, positionInOrder,
 } from '../data/store.js';
 import {
-  STATUSES, STATUS_ORDER, FORMATS, CATEGORIES, CATEGORY_ORDER,
+  STATUSES, STATUS_ORDER, FORMATS,
   formatUnit, hasFormat, formatLabel, FORMAT_PRIORITY,
 } from '../data/schema.js';
+import { allKinds, kindLabel, kindsPresent } from '../data/kinds.js';
 import { coverThumb } from './cover.js';
 import { acceptCoverDrop } from './coverDrop.js';
 import { setCoverFromFile, setCoverFromUrl } from '../data/coverActions.js';
@@ -64,6 +65,15 @@ const SORTS = {
   },
   added: { label: 'Recently added', compare: (a, b) => b.createdAt.localeCompare(a.createdAt) },
   title: { label: 'Title', compare: (a, b) => a.title.localeCompare(b.title) },
+  notes: {
+    label: 'Has notes',
+    // Books you have written something about, longest note first, then
+    // everything else in title order. Sorting by a field most books leave
+    // empty is really a way of surfacing the ones that are not empty.
+    compare: (a, b) =>
+      (b.notes?.trim().length ?? 0) - (a.notes?.trim().length ?? 0) ||
+      a.title.localeCompare(b.title),
+  },
   author: { label: 'Author', compare: (a, b) => (a.author || '~').localeCompare(b.author || '~') },
   length: { label: 'Length', compare: (a, b) => (b.pageCount ?? 0) - (a.pageCount ?? 0) },
   series: {
@@ -113,7 +123,7 @@ let anchorId = null;
 
 const filters = {
   shelf: 'reading', sort: 'planned', query: '', tag: null,
-  format: null, order: null, category: null, need: null,
+  format: null, order: null, category: null, need: null, genre: null,
 };
 
 export function renderLibrary(mount) {
@@ -139,6 +149,7 @@ export function renderLibrary(mount) {
     // filters, because it is genuinely both.
     .filter((book) => !filters.format || hasFormat(book, filters.format))
     .filter((book) => !filters.category || book.category === filters.category)
+    .filter((book) => !filters.genre || book.genre?.trim().toLowerCase() === filters.genre)
     .filter((book) => !filters.need || NEEDS[filters.need].match(book))
     .filter((book) => !filters.order || positionInOrder(filters.order, book.id) !== Infinity)
     // Picking a reading order overrides the sort: the whole point of the list
@@ -157,7 +168,7 @@ export function renderLibrary(mount) {
   fill(mount, [
     el('div.view-head', {}, [
       el('div', {}, [
-        el('h2.view-title', {}, 'The library'),
+        el('h2.view-title', {}, getSettings().libraryName?.trim() || 'The library'),
         el('p.view-sub', {}, `${books.length} record${books.length === 1 ? '' : 's'} catalogued`),
       ]),
       el('button.btn.btn--stamp', { type: 'button', onClick: () => openBookForm() }, 'Add a book'),
@@ -166,6 +177,7 @@ export function renderLibrary(mount) {
     books.length ? toolbar(counts) : null,
     books.length ? formatBar(books) : null,
     books.length ? categoryBar(books) : null,
+    books.length ? genreBar(books) : null,
     books.length ? needsBar(books) : null,
     allOrders().length ? orderBar() : null,
     tags.length ? tagBar(tags) : null,
@@ -359,29 +371,93 @@ let lastVisibleOrder = [];
 
 function categoryBar(books) {
   const rerender = () => renderLibrary(document.querySelector('#view'));
-  const present = CATEGORY_ORDER.filter((id) => books.some((book) => book.category === id));
+  const present = kindsPresent(books);
   if (present.length < 2) return null;
 
   return el('div.tag-bar', {}, [
     el('span.tag-bar__label', {}, 'Kind'),
-    ...present.map((id) =>
+    ...present.map((kind) =>
       el('button.tag', {
         type: 'button',
-        'aria-pressed': String(filters.category === id),
+        'aria-pressed': String(filters.category === kind.id),
         onClick: () => {
-          filters.category = filters.category === id ? null : id;
+          filters.category = filters.category === kind.id ? null : kind.id;
           rerender();
         },
-      }, `${CATEGORIES[id].label} (${books.filter((book) => book.category === id).length})`)
+      }, `${kind.label} (${kind.count})`)
     ),
   ]);
+}
+
+/**
+ * Filter by genre.
+ *
+ * Sits under Kind because it answers the finer question: kind is what the
+ * object is — a book, a comic, a research paper — and genre is what it is
+ * about. Both are worth filtering by and neither substitutes for the other.
+ *
+ * Hidden entirely when no book has a genre, rather than shown empty. A filter
+ * bar with nothing in it is a promise the library cannot keep, and genre is
+ * the field most likely to be blank in a hand-built catalogue.
+ */
+function genreBar(books) {
+  const rerender = () => renderLibrary(document.querySelector('#view'));
+
+  const counts = new Map();
+  for (const book of books) {
+    const genre = book.genre?.trim();
+    if (!genre) continue;
+    // Case-folded so "Science fiction" and "science fiction" are one genre,
+    // keeping whichever spelling was seen first as the label.
+    const key = genre.toLowerCase();
+    const entry = counts.get(key) ?? { label: genre, count: 0 };
+    entry.count += 1;
+    counts.set(key, entry);
+  }
+
+  if (!counts.size) return null;
+
+  const present = [...counts.entries()]
+    .sort((a, b) => b[1].count - a[1].count || a[1].label.localeCompare(b[1].label))
+    // A long tail of one-off genres is a word cloud, not a filter.
+    .slice(0, 12);
+
+  return el('div.tag-bar', {}, [
+    el('span.tag-bar__label', {}, 'Genre'),
+    ...present.map(([key, entry]) =>
+      el('button.tag', {
+        type: 'button',
+        'aria-pressed': String(filters.genre === key),
+        onClick: () => {
+          filters.genre = filters.genre === key ? null : key;
+          rerender();
+        },
+      }, `${entry.label} (${entry.count})`)
+    ),
+    filters.genre
+      ? el('button.link-btn.tag-bar__clear', {
+          type: 'button',
+          onClick: () => {
+            filters.genre = null;
+            rerender();
+          },
+        }, 'Clear')
+      : null,
+  ].filter(Boolean));
 }
 
 /** Only shows the gaps that actually exist, so it stays short. */
 function needsBar(books) {
   const rerender = () => renderLibrary(document.querySelector('#view'));
 
+  // Gaps you have decided not to care about stop being gaps. A library of
+  // comics has no ISBNs and never will, and a row permanently announcing
+  // "No ISBN (312)" is not a prompt, it is furniture.
+  const hidden = getSettings().hiddenNeeds ?? [];
+  if (hidden.includes('all')) return null;
+
   const present = Object.entries(NEEDS)
+    .filter(([id]) => !hidden.includes(id))
     .map(([id, need]) => [id, need, books.filter(need.match).length])
     .filter(([, , count]) => count > 0);
 
@@ -544,12 +620,12 @@ function bulkBar(visible) {
         const category = event.target.value;
         if (!category) return;
         for (const book of chosen()) updateBook(book.id, { category });
-        toast(`${count} books set to ${CATEGORIES[category].label.toLowerCase()}.`);
+        toast(`${count} books set to ${kindLabel(category).toLowerCase()}.`);
         rerender();
       },
     }, [
       el('option', { value: '' }, 'Set kind\u2026'),
-      ...CATEGORY_ORDER.map((id) => el('option', { value: id }, CATEGORIES[id].label)),
+      ...allKinds().map((kind) => el('option', { value: kind.id }, kind.label)),
     ]),
 
     el('button.btn.btn--quiet.btn--sm', {

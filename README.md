@@ -296,6 +296,61 @@ one line of that work to the top level of either file and it becomes
 `undefined` at import time and a blank screen naming neither module usefully.
 The shared state now lives in `dayCursor.js`, a leaf both can import.
 
+## Making it yours
+
+**Appearance.** Seven colour schemes, and every colour in them editable. The
+palette has always lived in CSS custom properties, so changing it is a handful
+of `setProperty` calls at boot — the interesting decision is which colours to
+expose. Seven, not the twenty-five `tokens.css` defines: chrome, card stock,
+text, accent, reading, finished, behind. Every variation — the wash behind a
+selected row, the hairline between cards, the accent as it appears on the dark
+chrome — is *computed* from those seven, so changing the accent moves its whole
+family and nothing is left mismatched. Text on the chrome flips between light
+and dark automatically, because a scheme with cream chrome and cream text on it
+is not a scheme.
+
+Switching preset drops any custom colours: they were adjustments to a different
+scheme, and carrying an accent chosen against cream paper onto a black one is
+how a theme picker produces something unreadable.
+
+**A name.** The library is called "The library" until you call it something
+else, at which point the heading, the wordmark and the browser tab follow.
+
+**Kinds of book.** Six built-in kinds is a guess at what a library holds, and
+every guess of that shape is wrong for somebody — research papers, cookbooks,
+rulebooks and art books are all real shelves being told they are "Books". Add
+your own in Settings. Built-ins can only be renamed, not deleted, since every
+record refers to them by id. A record naming a kind this device has not heard
+of yet is kept as it is rather than reclassified, because the setting and the
+book arrive over sync separately.
+
+**The "needs work" row.** Hideable entirely or one prompt at a time. A gap you
+have decided not to care about stops being a gap: a library of comics has no
+ISBNs and never will, and a row permanently announcing "No ISBN (312)" is not a
+prompt, it is furniture — and it teaches you to ignore the row that would have
+told you something useful.
+
+**Shelves and lists.** A shelf has no record of its own; it exists because
+books carry its name, which made it free to create and impossible to delete.
+Renaming or deleting one now rewrites the tag on every book that has it, and
+renaming onto an existing shelf merges the two. Reading lists can be deleted
+from Settings as well as from the Orders page.
+
+## Loose files in the covers folder
+
+Files belonging to no book accumulate: a book deleted on another device, a
+library restored onto a server that kept its old folder. Settings lists them
+with the two things that are actually knowable — the filename, which is the
+book's title, and when the file was last written. Between them they usually
+settle which is which: a run modified on the same old date is a leftover
+folder, a single recent one is a deletion elsewhere.
+
+Deleting them is a two-step endpoint. The client sends the ids of every book it
+still has, and the server removes only files no book claims; the list is
+fetched with a dry run first, so opening it can never delete anything. Nothing
+is removed on a bare request, because pruning against a library that has not
+finished syncing is how a lag becomes lost cover art.
+
 ## Which covers do you actually have
 
 A cover on screen is not a cover you have. It might be a file in the covers

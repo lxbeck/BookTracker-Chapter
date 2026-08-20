@@ -493,8 +493,65 @@ async function handleApi(request, response, url) {
     return;
   }
 
+  /**
+   * Delete cover files that belong to no book.
+   *
+   * The client sends the ids it knows about, because the server's copy of the
+   * library may be behind — and deleting files based on a stale library is how
+   * a sync lag turns into lost cover art. Nothing is removed unless the client
+   * has explicitly listed what to keep.
+   */
+  if (url.pathname === '/api/covers/prune' && request.method === 'POST') {
+    const { bookIds, dryRun } = JSON.parse(await readBody(request));
+
+    if (!Array.isArray(bookIds)) {
+      json(response, 400, { error: 'Send the ids of every book you still have.' });
+      return;
+    }
+
+    const keep = new Set(bookIds.map(String));
+    const files = await readdir(COVER_DIR).catch(() => []);
+    const claimed = new Map(
+      Object.entries(coverIndex).filter(([bookId]) => keep.has(bookId)).map(([, file]) => [file, true])
+    );
+
+    const orphans = [];
+    for (const file of files) {
+      if (claimed.has(file)) continue;
+      const owner = Object.entries(coverIndex).find(([, name]) => name === file)?.[0] ?? null;
+      const info = await stat(join(COVER_DIR, file)).catch(() => null);
+      orphans.push({
+        file,
+        bookId: owner,
+        bytes: info?.size ?? 0,
+        // When the file was last written, which is the only clue on disk about
+        // whether it came from a deletion last week or a restore last year.
+        modified: info?.mtime?.toISOString() ?? null,
+      });
+    }
+
+    if (!dryRun) {
+      for (const orphan of orphans) {
+        await rm(join(COVER_DIR, orphan.file), { force: true }).catch(() => null);
+        if (orphan.bookId) delete coverIndex[orphan.bookId];
+      }
+      if (orphans.length) await saveCoverIndex();
+    }
+
+    json(response, 200, {
+      ok: true,
+      removed: dryRun ? 0 : orphans.length,
+      orphans,
+      bytes: orphans.reduce((sum, orphan) => sum + orphan.bytes, 0),
+    });
+    return;
+  }
+
+  // Anything after /api/covers/ is a book id — except the reserved words
+  // handled above. Ordering alone kept this correct once and would not have
+  // kept it correct twice.
   const coverMatch = url.pathname.match(/^\/api\/covers\/([^/]+)$/);
-  if (coverMatch) {
+  if (coverMatch && coverMatch[1] !== 'prune') {
     const bookId = decodeURIComponent(coverMatch[1]);
 
     if (request.method === 'POST') {

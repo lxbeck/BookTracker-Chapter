@@ -44,8 +44,19 @@ test('a finished book keeps its status without dates', () => {
 
 test('a book is a book unless told otherwise', () => {
   assert.equal(book({}).category, 'book');
-  assert.equal(book({ category: 'nonsense' }).category, 'book', 'unknown kinds fall back');
   assert.equal(book({ category: 'manga' }).category, 'manga');
+});
+
+test('a kind this device has not heard of is kept, not reclassified', () => {
+  // Kinds are extensible in Settings. A record naming one added on another
+  // device arrives here before the setting does, and silently turning it into
+  // a book would lose the classification for good.
+  assert.equal(book({ category: 'researchPaper' }).category, 'researchPaper');
+});
+
+test('a kind id can never carry anything unsafe into a class name', () => {
+  assert.equal(book({ category: '<script>' }).category, 'script');
+  assert.equal(book({ category: '   ' }).category, 'book');
 });
 
 test('category and format are independent', () => {

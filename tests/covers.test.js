@@ -415,3 +415,90 @@ test('searching is case-insensitive across every field', () => {
   const book = shelfBook({ description: 'A DEVIL HUNTER.' });
   assert.ok(matches(book, 'devil'));
 });
+
+/* --- Themes ---------------------------------------------------------------- */
+
+import {
+  THEMES, THEME_COLOURS, normalizeTheme, resolveTheme, isDark, mix, isColour,
+} from '../js/data/theme.js';
+
+test('every preset states every colour that can be changed', () => {
+  // A preset missing one would leave that colour behind from the last scheme,
+  // which is how a theme picker produces something nobody chose.
+  for (const theme of THEMES) {
+    for (const colour of THEME_COLOURS) {
+      assert.ok(isColour(theme.colours[colour.id]), `${theme.label} is missing ${colour.id}`);
+    }
+  }
+});
+
+test('a scheme resolves every derived colour it is asked for', () => {
+  const resolved = resolveTheme({ preset: 'nightfall' });
+  for (const token of ['--slip-shade', '--ink-soft', '--stamp-wash', '--bookcloth-lift']) {
+    assert.ok(resolved[token], `${token} was not derived`);
+  }
+});
+
+test('changing one colour moves its whole family', () => {
+  const green = resolveTheme({ preset: 'slip', overrides: { '--stamp': '#2f5d43' } });
+  assert.equal(green['--stamp'], '#2f5d43');
+  assert.notEqual(green['--stamp-wash'], resolveTheme({ preset: 'slip' })['--stamp-wash']);
+});
+
+test('text on the chrome flips with the chrome', () => {
+  // A scheme with cream chrome and cream text on it is not a scheme.
+  assert.ok(isDark(resolveTheme({ preset: 'nightfall' })['--bookcloth']));
+  assert.ok(!isDark(resolveTheme({ preset: 'nightfall' })['--ink-inverse']));
+  assert.ok(isDark(resolveTheme({ preset: 'daylight' })['--ink-inverse']));
+});
+
+test('a setting arriving from another device is never trusted unread', () => {
+  // This ends up in style.setProperty.
+  const cleaned = normalizeTheme({
+    preset: 'no-such-theme',
+    overrides: { '--stamp': 'javascript:alert(1)', '--not-a-token': '#ffffff' },
+  });
+
+  assert.equal(cleaned.preset, 'slip');
+  assert.deepEqual(cleaned.overrides, {});
+});
+
+test('mixing colours stays inside the range', () => {
+  assert.equal(mix('#000000', '#ffffff', 0.5), '#808080');
+  assert.equal(mix('#ff0000', '#0000ff', 0), '#ff0000');
+});
+
+/* --- Kinds ----------------------------------------------------------------- */
+
+import { configureKinds, allKinds, kindLabel, idFromLabel, kindsPresent } from '../js/data/kinds.js';
+
+test('a kind you invent joins the built-in ones', () => {
+  configureKinds([{ label: 'Research Paper' }]);
+  assert.ok(allKinds().some((kind) => kind.label === 'Research Paper'));
+  assert.equal(kindLabel('researchPaper'), 'Research Paper');
+  configureKinds([]);
+});
+
+test('a kind id is derived once and then fixed', () => {
+  // The id is what every record stores; renaming the label must not orphan
+  // every book already filed under it.
+  assert.equal(idFromLabel('Research Paper'), 'researchPaper');
+  assert.equal(idFromLabel('RPG rulebook'), 'rpgRulebook');
+  assert.equal(idFromLabel('!!!'), '');
+});
+
+test('a custom kind cannot shadow a built-in one', () => {
+  configureKinds([{ id: 'book', label: 'Not a book' }]);
+  assert.equal(kindLabel('book'), 'Book');
+  configureKinds([]);
+});
+
+test('a kind with books in it is listed even when the setting is gone', () => {
+  // A record naming a kind added on another device arrives before the setting
+  // does; hiding the kind would hide the books.
+  const present = kindsPresent([
+    { category: 'book' }, { category: 'researchPaper' }, { category: 'researchPaper' },
+  ]);
+
+  assert.equal(present.find((kind) => kind.id === 'researchPaper')?.count, 2);
+});

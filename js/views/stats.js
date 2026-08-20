@@ -13,7 +13,7 @@ import {
   cumulativePages, dailyMinutes, breakdown, finishedByCategory,
 } from '../logic/stats.js';
 import { formatDuration } from '../logic/sessions.js';
-import { CATEGORIES } from '../data/schema.js';
+import { kindLabel, kindPlural } from '../data/kinds.js';
 import { barChart, lineChart, rankChart, heatGrid } from '../lib/charts.js';
 import { openBookForm } from './bookForm.js';
 
@@ -97,6 +97,9 @@ export function renderStats(mount) {
       lineChart(cumulativePages(books), {
         label: 'Cumulative pages read',
         format: (value) => `${value.toLocaleString()} pages`,
+        // The axis says 1,000; the hover readout says 1,000 pages. The axis
+        // has a gutter to fit in and the readout does not.
+        axisFormat: (value) => value.toLocaleString(),
       }),
       'Hover a point for the date and running total.'
     ),
@@ -113,11 +116,13 @@ export function renderStats(mount) {
     ]),
 
     panel('By kind',
-      rankChart(breakdown(books, (b) => CATEGORIES[b.category]?.label ?? 'Book'),
-        { label: 'Books by kind' })),
+      rankChart(breakdown(books, (b) => kindLabel(b.category)), { label: 'Books by kind' }),
+      'The darker part of each bar is what you have finished.'),
 
     breakdown(books, (b) => b.shelves).length
-      ? panel('By shelf', rankChart(breakdown(books, (b) => b.shelves), { label: 'Books by shelf' }))
+      ? panel('By shelf',
+          rankChart(breakdown(books, (b) => b.shelves), { label: 'Books by shelf' }),
+          'The darker part of each bar is what you have finished.')
       : null,
   ].filter(Boolean));
 }
@@ -138,7 +143,7 @@ function categoryPanel(stats) {
       el('span.category-bar__part', {
         class: `is-${row.category}`,
         style: { width: `${(row.count / total) * 100}%` },
-        title: `${row.count} ${CATEGORIES[row.category]?.plural ?? row.category}`,
+        title: `${row.count} ${kindPlural(row.category)}`,
       })));
 
   return el('section.stat-panel.slip.slip--plain', {}, [
@@ -146,14 +151,14 @@ function categoryPanel(stats) {
     bar,
     el('dl.category-legend', {},
       stats.byCategory.flatMap((row) => [
-        el('dt', { class: `is-${row.category}` }, CATEGORIES[row.category]?.label ?? row.category),
+        el('dt', { class: `is-${row.category}` }, kindLabel(row.category)),
         el('dd', {},
           `${row.count} \u00b7 ${row.pages.toLocaleString()} pages`),
       ])),
     stats.byCategoryThisYear.length
       ? el('p.stat-panel__note', {},
           `In ${year}: ${stats.byCategoryThisYear
-            .map((row) => `${row.count} ${row.count === 1 ? (CATEGORIES[row.category]?.label ?? row.category).toLowerCase() : (CATEGORIES[row.category]?.plural ?? row.category)}`)
+            .map((row) => `${row.count} ${row.count === 1 ? kindLabel(row.category).toLowerCase() : kindPlural(row.category)}`)
             .join(', ')}.`)
       : null,
   ].filter(Boolean));

@@ -1135,3 +1135,16 @@
 .chart__dot.is-on {
   opacity: 1;
 }
+
+
+/* The unread portion of a bar, so the finished part can sit over it. A bar
+   that is all one colour only tells you which row is biggest, which the
+   ordering already did. */
+.chart__bar--part {
+  opacity: 0.32;
+}
+
+.chart__bar--done {
+  fill: var(--shelved);
+  opacity: 1;
+}

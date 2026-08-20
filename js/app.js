@@ -12,6 +12,8 @@ import * as store from './data/store.js';
 import { initSync, onSyncChange, syncStatus } from './data/sync.js';
 import { warmCoverCache, setServerCovers, evacuateDataUrls } from './data/coverCache.js';
 import { configureSources } from './data/covers.js';
+import { applyTheme } from './data/theme.js';
+import { configureKinds } from './data/kinds.js';
 import { guardStrayDrops } from './views/coverDrop.js';
 import { renderLibrary } from './views/library.js';
 import { renderCalendar } from './views/calendar.js';
@@ -101,14 +103,34 @@ function paintSaveStatus() {
   ]);
 }
 
+/**
+ * Everything a setting changes outside the view being rendered.
+ *
+ * Applied on every store change rather than only at boot, because settings
+ * arrive from other devices through sync as well as from this one's Settings
+ * page — and a colour scheme that only takes effect after a reload is a colour
+ * scheme that looks broken.
+ */
+function applySettings(settings) {
+  configureSources(settings.sources);
+  configureKinds(settings.kinds);
+  applyTheme(settings.theme);
+
+  const name = String(settings.libraryName ?? '').trim();
+  document.title = name ? `${name} \u2014 Chapter` : 'Chapter \u2014 reading tracker';
+
+  const wordmark = document.querySelector('.wordmark span');
+  if (wordmark) wordmark.textContent = name || 'Reading log';
+}
+
 async function start() {
   store.onPersistError((message) => toast(message, { variant: 'error' }));
   store.init();
-  // Lookups need to know which catalogues to ask before the first search, and
-  // the setting can arrive later from another device, so it is applied on
-  // every change rather than only at boot.
-  configureSources(store.getSettings().sources);
-  store.subscribe(() => configureSources(store.getSettings().sources));
+  // Lookups, kinds and colours all come from settings, and the setting can
+  // arrive later from another device, so they are applied on every change
+  // rather than only at boot.
+  applySettings(store.getSettings());
+  store.subscribe(() => applySettings(store.getSettings()));
   store.subscribe(render);
 
   // An image dropped next to a book rather than on it should do nothing, not

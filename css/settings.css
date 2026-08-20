@@ -85,3 +85,148 @@
   font-size: var(--size-xs);
   white-space: nowrap;
 }
+
+/* --- Appearance -----------------------------------------------------------
+   Each swatch is a miniature of the app rather than a row of colour chips:
+   chrome behind, a card on top, a line of text and a stamp. What a scheme
+   looks like matters more than what its seven values are.
+   ------------------------------------------------------------------------- */
+
+.theme-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: var(--s3);
+  margin-top: var(--s3);
+}
+
+.theme-card {
+  display: grid;
+  gap: var(--s1);
+  padding: var(--s2);
+  border: var(--rule);
+  border-radius: var(--r-control);
+  background: var(--slip);
+  text-align: left;
+  cursor: pointer;
+}
+
+.theme-card.is-current {
+  border-color: var(--stamp);
+  box-shadow: inset 0 0 0 1px var(--stamp);
+}
+
+.theme-card__preview {
+  position: relative;
+  display: block;
+  height: 52px;
+  border-radius: 2px;
+  padding: var(--s2);
+  overflow: hidden;
+}
+
+.theme-card__slip {
+  display: block;
+  height: 100%;
+  border-radius: 1px;
+  padding: 6px;
+}
+
+.theme-card__line {
+  display: block;
+  height: 3px;
+  width: 70%;
+  border-radius: 2px;
+  margin-bottom: 4px;
+}
+
+.theme-card__line.is-short { width: 45%; }
+
+.theme-card__stamp {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+}
+
+.theme-card__label {
+  font-size: var(--size-sm);
+  font-weight: 600;
+}
+
+.theme-card__hint {
+  font-size: var(--size-xs);
+  color: var(--ink-faint);
+  line-height: 1.35;
+}
+
+.colour-list {
+  display: grid;
+  gap: var(--s2);
+  margin: var(--s3) 0;
+}
+
+.colour-row {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+}
+
+.colour-input {
+  width: 38px;
+  height: 28px;
+  padding: 0;
+  border: var(--rule);
+  border-radius: var(--r-control);
+  background: none;
+  cursor: pointer;
+  flex: none;
+}
+
+.colour-row__text { flex: 1; min-width: 0; }
+.colour-row__label { display: block; font-size: var(--size-sm); }
+.colour-row__hint { display: block; font-size: var(--size-xs); color: var(--ink-faint); }
+
+/* A colour changed away from its scheme, so "reset" has something to point at. */
+.colour-row.is-custom .colour-row__label::after {
+  content: " · custom";
+  color: var(--stamp);
+  font-size: var(--size-xs);
+}
+
+.settings__block {
+  margin-top: var(--s5);
+  padding-top: var(--s4);
+  border-top: var(--rule);
+}
+
+.settings__subtitle {
+  font-family: var(--face-slip);
+  font-size: var(--size-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-faint);
+  margin: 0 0 var(--s2);
+}
+
+.settings__details summary {
+  cursor: pointer;
+  font-size: var(--size-sm);
+  padding: var(--s2) 0;
+}
+
+.needs-toggles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: var(--s2);
+  margin-top: var(--s2);
+}
+
+.plain-list__aside {
+  display: inline-flex;
+  gap: var(--s3);
+  align-items: center;
+}
+
+.link-btn.is-danger { color: var(--overdue); }

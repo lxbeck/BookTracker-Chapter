@@ -327,11 +327,30 @@ export function sessionPages(session) {
  * from it would silently fall back to pages anyway.
  */
 function cleanFormats(input = {}) {
-  const raw = Array.isArray(input.formats) ? input.formats : [];
-  const all = [...raw, input.format].filter((id) => FORMATS[id]);
-  const unique = FORMAT_PRIORITY.filter((id) => all.includes(id));
+  const listed = Array.isArray(input.formats)
+    ? input.formats.filter((id) => FORMATS[id])
+    : null;
+
+  // The list wins outright when there is one. Merging `format` into it — which
+  // is what this used to do — made unticking a box impossible: a save carrying
+  // formats ['ebook'] was patched over a record whose stale `format` still
+  // said 'physical', the two were combined, and the book came back with both
+  // boxes ticked again. The primary is *derived* from the list, so it can
+  // never be evidence about the list.
+  const list = listed?.length
+    ? listed
+    : FORMATS[input.format] ? [input.format] : [];
+
+  const unique = FORMAT_PRIORITY.filter((id) => list.includes(id));
   return unique.length ? unique : ['physical'];
 }
+
+/** A kind id: safe to put in a class name, a filter and a settings list. */
+export const cleanCategory = (value) =>
+  String(value ?? '')
+    .trim()
+    .replace(/[^A-Za-z0-9_-]/g, '')
+    .slice(0, 40);
 
 const toInt = (value) => {
   const n = Number.parseInt(value, 10);
@@ -399,7 +418,11 @@ export function normalizeBook(input = {}, todayKey = today()) {
     // Kept in step with `formats` rather than stored independently: two fields
     // that can disagree about the same fact will eventually disagree.
     format: primaryFormat({ formats: cleanFormats(input), format: input.format }),
-    category: CATEGORIES[input.category] ? input.category : base.category,
+    // Not checked against the built-in list any more: kinds are extensible in
+    // Settings, and a record naming a kind this device has not heard of yet
+    // (added on another device, arriving by sync) must keep it rather than be
+    // silently reclassified as a book.
+    category: cleanCategory(input.category) || base.category,
     status,
     series: {
       name: String(input.series?.name ?? '').trim(),

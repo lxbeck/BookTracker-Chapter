@@ -9,6 +9,7 @@ import { el, fill, toast } from '../lib/dom.js';
 import { showModal } from './modal.js';
 import {
   allBooks, getSettings, updateSettings, replaceAll, mergeBooks,
+  allOrders, removeOrder,
   storageStatus, requestPersistentStorage,
 } from '../data/store.js';
 import {
@@ -24,6 +25,10 @@ import { parseCalibreCsv } from '../data/calibre.js';
 import { fillMissing, matchExisting } from '../data/fill.js';
 import { auditCovers, VERDICTS, VERDICT_ORDER } from '../data/coverAudit.js';
 import { findDuplicates, mergePlan } from '../data/duplicates.js';
+import {
+  THEMES, THEME_COLOURS, normalizeTheme, resolveTheme, applyTheme, isColour,
+} from '../data/theme.js';
+import { allKinds, customKinds, normalizeKinds, idFromLabel } from '../data/kinds.js';
 import { buildSnapshot } from '../data/snapshot.js';
 import {
   storeLocalCoverOnServer, storeCoverOnServer, storeUploadedCoverOnServer,
@@ -47,6 +52,8 @@ export function renderSettings(mount) {
       ]),
     ]),
 
+    appearanceSection(settings, redraw),
+    librarySection(settings, books, redraw),
     syncSection(),
     sourcesSection(settings, redraw),
     storageSection(redraw),
@@ -100,6 +107,376 @@ function goalSection(books, settings, redraw) {
       : null,
   ].filter(Boolean));
 }
+
+/* --- Appearance ------------------------------------------------------------ */
+
+/**
+ * Colour schemes, and the colours inside them.
+ *
+ * The palette has always lived in CSS custom properties, so this is only a
+ * handful of `setProperty` calls — but the reason it is worth having is that a
+ * reading log is somewhere people spend evenings, and "somewhere you spend
+ * evenings" is exactly the sort of thing that should look how you want.
+ *
+ * Seven colours rather than the twenty-five the stylesheet defines. Every
+ * variation — the wash behind a selected row, the accent as it appears on the
+ * dark chrome, the hairline between cards — is computed from those seven, so
+ * changing one moves its whole family and nothing ends up mismatched.
+ */
+function appearanceSection(settings, redraw) {
+  const theme = normalizeTheme(settings.theme);
+
+  const save = (next) => {
+    updateSettings({ theme: next });
+    // Painted immediately rather than on the next render, because the whole
+    // point of the control is seeing the answer.
+    applyTheme(next);
+    redraw();
+  };
+
+  const swatches = el('div.theme-grid', {}, THEMES.map((preset) => {
+    const colours = resolveTheme({ preset: preset.id });
+
+    return el('button.theme-card', {
+      type: 'button',
+      class: preset.id === theme.preset ? 'is-current' : '',
+      'aria-pressed': String(preset.id === theme.preset),
+      // Switching preset drops the overrides: they were adjustments to a
+      // different scheme, and carrying an accent chosen against cream paper
+      // onto a black one is how a theme picker produces something unreadable.
+      onClick: () => save({ preset: preset.id, overrides: {} }),
+    }, [
+      el('span.theme-card__preview', {
+        style: { background: colours['--bookcloth'] },
+      }, [
+        el('span.theme-card__slip', { style: { background: colours['--slip'] } }, [
+          el('span.theme-card__line', { style: { background: colours['--ink'] } }),
+          el('span.theme-card__line.is-short', { style: { background: colours['--ink-faint'] } }),
+        ]),
+        el('span.theme-card__stamp', { style: { background: colours['--stamp-bright'] } }),
+      ]),
+      el('span.theme-card__label', {}, preset.label),
+      el('span.theme-card__hint', {}, preset.hint),
+    ]);
+  }));
+
+  const pickers = THEME_COLOURS.map((colour) => {
+    const current = resolveTheme(theme)[colour.id];
+    const overridden = Boolean(theme.overrides[colour.id]);
+
+    const input = el('input.colour-input', {
+      type: 'color',
+      value: isColour(current) ? current : '#000000',
+      'aria-label': colour.label,
+      onChange: (event) =>
+        save({ ...theme, overrides: { ...theme.overrides, [colour.id]: event.target.value } }),
+    });
+
+    return el('div.colour-row', { class: overridden ? 'is-custom' : '' }, [
+      input,
+      el('div.colour-row__text', {}, [
+        el('span.colour-row__label', {}, colour.label),
+        el('span.colour-row__hint', {}, colour.hint),
+      ]),
+      overridden
+        ? el('button.link-btn', {
+            type: 'button',
+            onClick: () => {
+              const { [colour.id]: _dropped, ...rest } = theme.overrides;
+              save({ ...theme, overrides: rest });
+            },
+          }, 'Reset')
+        : null,
+    ].filter(Boolean));
+  });
+
+  const customCount = Object.keys(theme.overrides).length;
+
+  return section('Appearance', [
+    el('p.settings__hint', {}, 'Pick a scheme, then change any colour in it. Everything else \u2014 washes, hairlines, the accent as it appears on the dark chrome \u2014 is worked out from these, so nothing ends up mismatched.'),
+    swatches,
+    el('details.settings__details', {}, [
+      el('summary', {}, customCount ? `Individual colours (${customCount} changed)` : 'Individual colours'),
+      el('div.colour-list', {}, pickers),
+      customCount
+        ? el('button.btn.btn--quiet.btn--sm', {
+            type: 'button',
+            onClick: () => save({ preset: theme.preset, overrides: {} }),
+          }, 'Reset all to the scheme')
+        : null,
+    ].filter(Boolean)),
+  ]);
+}
+
+/* --- This library ----------------------------------------------------------- */
+
+/**
+ * The things that make a library yours rather than an app's: what it is
+ * called, what kinds of thing are in it, and which gaps you have decided not
+ * to be nagged about.
+ */
+function librarySection(settings, books, redraw) {
+  const nameInput = el('input.input', {
+    type: 'text',
+    value: settings.libraryName ?? '',
+    placeholder: 'The library',
+    maxlength: '60',
+    'aria-label': 'Library name',
+  });
+
+  const saveName = () => {
+    updateSettings({ libraryName: nameInput.value.trim().slice(0, 60) });
+    toast(nameInput.value.trim() ? 'Library renamed.' : 'Name cleared.');
+    redraw();
+  };
+
+  return section('This library', [
+    el('p.settings__hint', {}, 'What the shelves are called, at the top of the library and in the browser tab.'),
+    el('div.settings__row', {}, [
+      nameInput,
+      el('button.btn.btn--stamp.btn--sm', { type: 'button', onClick: saveName }, 'Save name'),
+    ]),
+    kindsBlock(books, redraw),
+    shelvesBlock(books, redraw),
+    listsBlock(redraw),
+    hiddenNeedsBlock(settings, redraw),
+  ]);
+}
+
+/**
+ * Shelves, which are tags, which is why they were hard to get rid of.
+ *
+ * A shelf has no record of its own: it exists because books carry its name.
+ * That makes it free to create and, until now, impossible to delete — the
+ * bulk bar could take a shelf off the books you had selected, but a shelf you
+ * had stopped using lingered in the filter row forever, and clearing it meant
+ * finding every book still carrying it.
+ *
+ * Renaming and deleting therefore mean rewriting the tag on every book that
+ * has it, which is exactly what they do.
+ */
+function shelvesBlock(books, redraw) {
+  const counts = new Map();
+  for (const book of books) {
+    for (const shelf of book.shelves) counts.set(shelf, (counts.get(shelf) ?? 0) + 1);
+  }
+
+  const shelves = [...counts.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+
+  const rewrite = (from, to) => {
+    let touched = 0;
+    for (const book of allBooks()) {
+      if (!book.shelves.includes(from)) continue;
+      const shelves = book.shelves.filter((shelf) => shelf !== from);
+      // A rename onto an existing shelf merges the two, which is the only
+      // sensible reading of it and saves a separate merge action.
+      if (to && !shelves.includes(to)) shelves.push(to);
+      updateBook(book.id, { shelves });
+      touched += 1;
+    }
+    return touched;
+  };
+
+  return el('div.settings__block', {}, [
+    el('h4.settings__subtitle', {}, 'Shelves'),
+    el('p.settings__hint', {}, 'A shelf is a tag on the books that carry it, so renaming or deleting one rewrites those books. The books themselves are never removed.'),
+    shelves.length
+      ? el('ul.plain-list', {}, shelves.map(([shelf, count]) =>
+          el('li.plain-list__row', {}, [
+            el('span', {}, shelf),
+            el('span.plain-list__aside', {}, [
+              `${count} ${count === 1 ? 'book' : 'books'}`,
+              el('button.link-btn', {
+                type: 'button',
+                onClick: () => {
+                  const next = prompt(`Rename the shelf "${shelf}" to:`, shelf)?.trim();
+                  if (!next || next === shelf) return;
+                  const touched = rewrite(shelf, next);
+                  toast(`${touched} ${touched === 1 ? 'book' : 'books'} moved to ${next}.`);
+                  redraw();
+                },
+              }, 'Rename'),
+              el('button.link-btn.is-danger', {
+                type: 'button',
+                onClick: () => {
+                  if (!confirm(
+                    `Delete the shelf "${shelf}"? It will be taken off ${count} ` +
+                    `${count === 1 ? 'book' : 'books'}. The books stay in your library.`
+                  )) return;
+                  const touched = rewrite(shelf, null);
+                  toast(`Shelf deleted from ${touched} ${touched === 1 ? 'book' : 'books'}.`);
+                  redraw();
+                },
+              }, 'Delete'),
+            ]),
+          ])))
+      : el('p.settings__note', {}, 'No shelves yet. Add one from a book\u2019s Shelves field, or from the bulk bar in the library.'),
+  ]);
+}
+
+/**
+ * Reading lists, deletable from here as well as from the Orders page.
+ *
+ * A list that has served its purpose is tidied up in the same place as
+ * everything else being tidied up, rather than only where it was made.
+ */
+function listsBlock(redraw) {
+  const lists = allOrders();
+
+  return el('div.settings__block', {}, [
+    el('h4.settings__subtitle', {}, 'Reading lists'),
+    lists.length
+      ? el('ul.plain-list', {}, lists.map((order) =>
+          el('li.plain-list__row', {}, [
+            el('span', {}, order.name),
+            el('span.plain-list__aside', {}, [
+              `${order.bookIds.length} ${order.bookIds.length === 1 ? 'book' : 'books'}`,
+              el('button.link-btn.is-danger', {
+                type: 'button',
+                onClick: () => {
+                  if (!confirm(`Delete the list "${order.name}"? The books themselves stay in your library.`)) return;
+                  removeOrder(order.id);
+                  toast('List deleted.');
+                  redraw();
+                },
+              }, 'Delete'),
+            ]),
+          ])))
+      : el('p.settings__note', {}, 'No reading lists yet. Make one from the Orders page.'),
+  ]);
+}
+
+/**
+ * Kinds of book you invent yourself.
+ *
+ * Six built-in kinds is a guess at what a library holds, and every guess of
+ * that shape is wrong for somebody: research papers, cookbooks, RPG rulebooks,
+ * art books and light novels are all real shelves being told they are "Books".
+ *
+ * Built-ins can't be deleted, only added to. They are referenced by id in every
+ * record and by the calendar's kind groups, so removing one strands books
+ * rather than freeing them.
+ */
+function kindsBlock(books, redraw) {
+  const input = el('input.input', {
+    type: 'text',
+    placeholder: 'Research paper',
+    maxlength: '40',
+    'aria-label': 'New kind of book',
+  });
+
+  const add = () => {
+    const label = input.value.trim();
+    if (!label) return;
+
+    const id = idFromLabel(label);
+    if (!id) {
+      toast('That name has no letters or numbers in it.', { variant: 'error' });
+      return;
+    }
+    if (allKinds().some((kind) => kind.id === id)) {
+      toast(`There is already a kind called ${label}.`, { variant: 'error' });
+      return;
+    }
+
+    updateSettings({ kinds: [...customKinds(), { id, label }] });
+    input.value = '';
+    toast(`${label} added.`);
+    redraw();
+  };
+
+  const remove = (kind) => {
+    const inUse = books.filter((book) => book.category === kind.id).length;
+    if (inUse && !confirm(
+      `${inUse} ${inUse === 1 ? 'book is' : 'books are'} filed as ${kind.label}. ` +
+      'Removing the kind leaves them filed under a name this library no longer lists. Continue?'
+    )) return;
+
+    updateSettings({ kinds: customKinds().filter((entry) => entry.id !== kind.id) });
+    toast(`${kind.label} removed.`);
+    redraw();
+  };
+
+  const mine = customKinds();
+
+  return el('div.settings__block', {}, [
+    el('h4.settings__subtitle', {}, 'Kinds of book'),
+    el('p.settings__hint', {}, 'Books, comics and manga are built in. Add your own for anything else you shelve \u2014 research papers, cookbooks, rulebooks.'),
+    el('p.settings__note', {},
+      `Built in: ${allKinds().filter((kind) => !mine.some((entry) => entry.id === kind.id)).map((kind) => kind.label).join(', ')}.`),
+    mine.length
+      ? el('ul.plain-list', {}, mine.map((kind) => {
+          const count = books.filter((book) => book.category === kind.id).length;
+          return el('li.plain-list__row', {}, [
+            el('span', {}, kind.label),
+            el('span.plain-list__aside', {}, [
+              `${count} ${count === 1 ? 'book' : 'books'}`,
+              el('button.link-btn', { type: 'button', onClick: () => remove(kind) }, 'Remove'),
+            ]),
+          ]);
+        }))
+      : null,
+    el('div.settings__row', {}, [
+      input,
+      el('button.btn.btn--quiet.btn--sm', { type: 'button', onClick: add }, 'Add kind'),
+    ]),
+  ].filter(Boolean));
+}
+
+/**
+ * Which "needs work" prompts to show.
+ *
+ * A gap you have decided not to care about stops being a gap. A library of
+ * comics has no ISBNs and never will, and a row permanently announcing "No
+ * ISBN (312)" is not a prompt — it is furniture, and it teaches you to ignore
+ * the row that would have told you something useful.
+ */
+function hiddenNeedsBlock(settings, redraw) {
+  const hidden = settings.hiddenNeeds ?? [];
+  const allHidden = hidden.includes('all');
+
+  const toggle = (id, on) => {
+    const next = on ? hidden.filter((entry) => entry !== id) : [...new Set([...hidden, id])];
+    updateSettings({ hiddenNeeds: next });
+    redraw();
+  };
+
+  return el('div.settings__block', {}, [
+    el('h4.settings__subtitle', {}, 'The "needs work" row'),
+    el('p.settings__hint', {}, 'The prompts above the shelves, listing books missing a length, a cover, an ISBN and so on.'),
+    el('label.bulk-check', {}, [
+      el('input', {
+        type: 'checkbox',
+        checked: allHidden,
+        onChange: (event) => toggle('all', !event.target.checked),
+      }),
+      el('span', {}, 'Hide the row entirely'),
+    ]),
+    allHidden
+      ? null
+      : el('div.needs-toggles', {}, NEED_LABELS.map(([id, label]) =>
+          el('label.bulk-check', {}, [
+            el('input', {
+              type: 'checkbox',
+              checked: !hidden.includes(id),
+              onChange: (event) => toggle(id, event.target.checked),
+            }),
+            el('span', {}, label),
+          ]))),
+  ].filter(Boolean));
+}
+
+/** Kept in step with `NEEDS` in the library view. */
+const NEED_LABELS = [
+  ['noPages', 'No length'],
+  ['unscheduled', 'Not scheduled'],
+  ['noCover', 'No cover'],
+  ['noDescription', 'No description'],
+  ['noAuthor', 'No author'],
+  ['noIsbn', 'No ISBN'],
+  ['unrated', 'Finished, unrated'],
+  ['stalled', 'Started, no log'],
+];
 
 /* --- Where lookups go ------------------------------------------------------ */
 
@@ -230,8 +607,14 @@ function coverStorageSection(books, redraw) {
       }).filter(Boolean)),
 
       audit.orphans.length
-        ? el('p.settings__note', {},
-            `${audit.orphans.length} files in the folder belong to no book in this library \u2014 left behind by a book deleted elsewhere, or by a library restored onto a server that kept its old folder.`)
+        ? el('div', {}, [
+            el('p.settings__note', {},
+              `${audit.orphans.length} files in the folder belong to no book in this library.`),
+            el('button.btn.btn--quiet.btn--sm', {
+              type: 'button',
+              onClick: () => showOrphans(redraw),
+            }, 'Show the loose files'),
+          ])
         : null,
     ].filter(Boolean));
 
@@ -334,6 +717,80 @@ const blobToDataUrl = (blob) => new Promise((resolve) => {
   reader.onerror = () => resolve(null);
   reader.readAsDataURL(blob);
 });
+
+/**
+ * The cover files that belong to no book.
+ *
+ * "Which are they" is answered from what is actually knowable: the filename,
+ * which is the book's title, and the modification date, which says when the
+ * file was last written. Between them they usually settle the question the
+ * count raises — a batch all modified on the same day months ago is a library
+ * restored onto a server that kept its old folder, while one file modified
+ * last week is a book deleted on another device.
+ *
+ * The list is fetched with `dryRun`, so opening it never deletes anything.
+ */
+async function showOrphans(redraw) {
+  let found;
+  try {
+    const response = await fetch('api/covers/prune', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ bookIds: allBooks().map((book) => book.id), dryRun: true }),
+    });
+    found = await response.json();
+  } catch {
+    toast('The covers folder could not be read.', { variant: 'error' });
+    return;
+  }
+
+  const orphans = found?.orphans ?? [];
+  if (!orphans.length) {
+    toast('Nothing loose in the covers folder.');
+    return;
+  }
+
+  const modal = showModal({
+    eyebrow: 'Covers folder',
+    title: `${orphans.length} files with no book`,
+    body: [
+      el('p.settings__note', {},
+        'Each is named after the book it was made for, so the filename usually says what it was. A run of files last written on the same old date is a folder left over from a previous library; a single recent one is a book deleted on another device.'),
+      el('ul.plain-list', {}, orphans.slice(0, 200).map((orphan) =>
+        el('li.plain-list__row', {}, [
+          el('code', {}, orphan.file),
+          el('span.plain-list__aside', {},
+            [
+              `${(orphan.bytes / 1024).toFixed(0)} KB`,
+              orphan.modified ? new Date(orphan.modified).toLocaleDateString() : null,
+            ].filter(Boolean).join(' \u00b7 ')),
+        ]))),
+      el('p.settings__note', {},
+        `Deleting them frees about ${(found.bytes / 1048576).toFixed(1)} MB. Books in this library are never touched \u2014 only files no book claims.`),
+    ],
+    actions: [
+      el('button.btn.btn--quiet', { type: 'button', onClick: () => modal.close() }, 'Leave them'),
+      el('button.btn.btn--danger', {
+        type: 'button',
+        onClick: async () => {
+          modal.close();
+          try {
+            const response = await fetch('api/covers/prune', {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ bookIds: allBooks().map((book) => book.id) }),
+            });
+            const result = await response.json();
+            toast(`${result.removed} loose ${result.removed === 1 ? 'file' : 'files'} deleted.`);
+          } catch {
+            toast('Those files could not be deleted.', { variant: 'error' });
+          }
+          redraw();
+        },
+      }, `Delete all ${orphans.length}`),
+    ],
+  });
+}
 
 /* --- The same book twice --------------------------------------------------- */
 

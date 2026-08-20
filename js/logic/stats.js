@@ -120,12 +120,18 @@ export function breakdown(books, read, { onlyFinished = false } = {}) {
     if (onlyFinished && book.status !== 'finished') continue;
     const value = read(book);
     for (const key of [].concat(value).filter(Boolean)) {
-      counts.set(key, (counts.get(key) ?? 0) + 1);
+      const entry = counts.get(key) ?? { value: 0, done: 0 };
+      entry.value += 1;
+      // Carried alongside the total so a bar can show how much of a shelf is
+      // actually read. "You own 40 comics" and "you have read 6 of them" are
+      // different facts, and the second is the interesting one.
+      if (book.status === 'finished') entry.done += 1;
+      counts.set(key, entry);
     }
   }
 
   return [...counts.entries()]
-    .map(([label, value]) => ({ label, value }))
+    .map(([label, entry]) => ({ label, value: entry.value, done: entry.done }))
     .sort((a, b) => b.value - a.value || a.label.localeCompare(b.label));
 }
 

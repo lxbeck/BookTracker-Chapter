@@ -15,9 +15,10 @@ import {
 } from '../logic/pacing.js';
 import { allBooks } from '../data/store.js';
 import {
-  STATUSES, STATUS_ORDER, FORMATS, FORMAT_PRIORITY, CATEGORIES, CATEGORY_ORDER,
+  STATUSES, STATUS_ORDER, FORMATS, FORMAT_PRIORITY,
   blankBook, resolveProgress, formatUnit, hasFormat,
 } from '../data/schema.js';
+import { allKinds } from '../data/kinds.js';
 import { formatShort } from '../lib/dates.js';
 import { addBook, updateBook, removeBook, restoreBook, getBook } from '../data/store.js';
 import { addDays } from '../lib/dates.js';
@@ -241,8 +242,8 @@ export function openBookForm({ book = null, defaultStart = null, onSaved } = {})
   const categorySelect = el(
     'select.select',
     { id: 'f-category', name: 'category' },
-    CATEGORY_ORDER.map((id) =>
-      el('option', { value: id, selected: draft.category === id }, CATEGORIES[id].label)
+    allKinds().map((kind) =>
+      el('option', { value: kind.id, selected: draft.category === kind.id }, kind.label)
     )
   );
 

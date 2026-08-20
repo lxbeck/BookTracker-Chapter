@@ -373,8 +373,22 @@ function filterRowsBlock(settings, redraw) {
     redraw();
   };
 
+  const badges = el('input', {
+    type: 'checkbox',
+    checked: !settings.hideStatusBadges,
+    onChange: (event) => {
+      updateSettings({ hideStatusBadges: !event.target.checked });
+      redraw();
+    },
+  });
+
   return el('div.settings__block', {}, [
-    el('h4.settings__subtitle', {}, 'Filter rows'),
+    el('h4.settings__subtitle', {}, 'On the shelves'),
+    el('p.settings__hint', {},
+      'The status badge sits in the corner of a book\u2019s cover, which is often exactly where the title is. Switching it off loses nothing \u2014 the status is still on the line below and in every filter.'),
+    el('label.bulk-check', {}, [badges, el('span', {}, 'Status badge on covers')]),
+
+    el('h4.settings__subtitle', { style: { marginTop: 'var(--s4)' } }, 'Filter rows'),
     el('p.settings__hint', {}, 'The rows of buttons above the shelves. Hide the ones you do not use.'),
     el('div.needs-toggles', {}, FILTER_ROWS.map(([id, label]) =>
       el('label.bulk-check', {}, [
@@ -894,7 +908,12 @@ async function showOrphans(redraw) {
     return;
   }
 
-  const orphans = found?.orphans ?? [];
+  // Belt and braces: an older server build listed the kind folders themselves
+  // as loose files and offered to delete them. Anything without an image
+  // extension is not a cover whatever the server says it is.
+  const orphans = (found?.orphans ?? []).filter((orphan) =>
+    /\.(jpe?g|png|webp|gif)$/i.test(orphan.file ?? '')
+  );
   if (!orphans.length) {
     toast('Nothing loose in the covers folder.');
     return;

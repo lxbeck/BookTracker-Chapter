@@ -277,6 +277,9 @@ const SEARCHED = [
  * rows also clear their own filter, so a row cannot be switched off while
  * still silently narrowing what is on screen.
  */
+/** Whether the status badge is drawn over cover art. */
+const showsStatusBadge = () => !getSettings().hideStatusBadges;
+
 function showsRow(id) {
   const hidden = getSettings().hiddenRows ?? [];
   if (!hidden.includes(id)) return true;
@@ -1159,7 +1162,13 @@ function shelfCard(book) {
         ].filter(Boolean)),
       ]
     ),
-    el('span', { class: `chip chip--${book.status} shelf-card__chip` }, STATUSES[book.status].label),
+    // The status badge sits on top of the cover, which is exactly where a
+    // cover's title often is — so it can be switched off in Settings without
+    // losing the status, which is still on the row below and in every filter.
+    showsStatusBadge()
+      ? el('span', { class: `chip chip--${book.status} shelf-card__chip` },
+          STATUSES[book.status].label)
+      : null,
     book.status === 'reading' && book.progress.percent > 0 ? progressBar(book) : null,
     el('span.shelf-card__droptip', { 'aria-hidden': 'true' }, 'Drop to set cover'),
   ]);

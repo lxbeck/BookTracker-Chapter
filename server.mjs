@@ -19,7 +19,7 @@
  */
 
 import { createServer } from 'node:http';
-import { readFile, writeFile, mkdir, readdir, stat, rm, rename } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, readdir, stat, rm, rmdir, rename } from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
 import { join, extname, dirname, normalize, resolve } from 'node:path';
 import { networkInterfaces } from 'node:os';
@@ -322,16 +322,35 @@ async function forgetCover(bookId) {
  * since been retitled. Both are done by renaming rather than refetching — the
  * bytes are already correct, and a rename costs nothing.
  */
-/** Every cover file, as paths relative to the covers directory. */
+/**
+ * Every cover file, as paths relative to the covers directory.
+ *
+ * Directories are descended into, never returned. Covers are filed by kind now,
+ * so the folder listing is `book/`, `comic/`, `manga/` and so on — and a
+ * listing that returned those alongside the files reported six folders as six
+ * covers belonging to no book, and offered to delete them.
+ *
+ * Only real image files come back. Anything else in there — a `.DS_Store`, a
+ * stray text file, a folder — is somebody else's business and certainly not
+ * something to offer to delete.
+ */
 async function coverFiles() {
   const entries = await readdir(COVER_DIR, { withFileTypes: true }).catch(() => []);
   const found = [];
 
+  const isCover = (name) =>
+    !name.startsWith('.') && COVER_EXTENSIONS.includes(extname(name).toLowerCase());
+
   for (const entry of entries) {
     if (entry.isDirectory()) {
-      const inner = await readdir(join(COVER_DIR, entry.name)).catch(() => []);
-      found.push(...inner.map((name) => `${entry.name}/${name}`));
-    } else if (entry.isFile()) {
+      const inner = await readdir(join(COVER_DIR, entry.name), { withFileTypes: true })
+        .catch(() => []);
+      found.push(
+        ...inner
+          .filter((file) => file.isFile() && isCover(file.name))
+          .map((file) => `${entry.name}/${file.name}`)
+      );
+    } else if (entry.isFile() && isCover(entry.name)) {
       // Pre-folder covers, still in the root. Adopted on the next reconcile.
       found.push(entry.name);
     }
@@ -571,6 +590,14 @@ async function handleApi(request, response, url) {
         if (orphan.bookId) delete coverIndex[orphan.bookId];
       }
       if (orphans.length) await saveCoverIndex();
+
+      // A kind folder with nothing left in it is clutter of our own making.
+      // `rmdir` refuses a non-empty directory, which is the check we want.
+      for (const entry of await readdir(COVER_DIR, { withFileTypes: true }).catch(() => [])) {
+        if (entry.isDirectory()) {
+          await rmdir(join(COVER_DIR, entry.name)).catch(() => null);
+        }
+      }
     }
 
     json(response, 200, {

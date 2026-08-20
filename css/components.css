@@ -180,13 +180,26 @@
   white-space: nowrap;
 }
 
+/* Every status gets its own colour, and every one of them comes from the
+   theme. Backlog had no rule at all, so it fell through to a bare outline —
+   which as a badge in the corner of a cover is very nearly invisible — and
+   Reading was two hardcoded browns that belonged to the original scheme and
+   nothing else. */
 .chip--planned {
   color: var(--stamp);
   background: var(--stamp-wash);
 }
 .chip--reading {
-  color: #8a5a12;
-  background: #f6ecd9;
+  color: var(--inprogress);
+  background: var(--inprogress-wash);
+}
+.chip--backlog {
+  color: var(--backlog, var(--ink-soft));
+  background: var(--backlog-wash, var(--slip-shade));
+}
+.chip--on-hold {
+  color: var(--onhold, var(--ink-soft));
+  background: var(--onhold-wash, var(--slip-shade));
 }
 .chip--finished {
   color: var(--shelved);
@@ -195,10 +208,6 @@
 .chip--dnf {
   color: var(--overdue);
   background: var(--overdue-wash);
-}
-.chip--on-hold {
-  color: var(--ink-soft);
-  background: var(--slip-shade);
 }
 
 /* --- Cover ---------------------------------------------------------------- */

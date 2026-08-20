@@ -9,6 +9,8 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 import {
   slugifyTitle, coverFileName, nameMatchesTitle, COVER_EXTENSIONS,
@@ -539,4 +541,42 @@ test('two of the same kind and title still disambiguate', () => {
   index['bk-2'] = coverPath(index, 'bk-2', 'Dune', '.jpg', 'book');
 
   assert.deepEqual(Object.values(index), ['book/dune.jpg', 'book/dune-2.jpg']);
+});
+
+/* --- Every status is visible, on every scheme ------------------------------ */
+
+import { STATUS_ORDER } from '../js/data/schema.js';
+
+test('every status has a colour of its own', () => {
+  // Backlog had no rule at all and fell through to a bare outline, which as a
+  // badge in the corner of a cover is very nearly invisible.
+  const css = readFileSync(
+    fileURLToPath(new URL('../css/components.css', import.meta.url)),
+    'utf8'
+  );
+
+  for (const status of STATUS_ORDER) {
+    assert.ok(css.includes(`.chip--${status} {`), `no colour for ${status}`);
+  }
+});
+
+test('no status colour is hardcoded to one scheme', () => {
+  // Reading was two literal browns that belonged to the original palette and
+  // looked wrong everywhere else.
+  const css = readFileSync(
+    fileURLToPath(new URL('../css/components.css', import.meta.url)),
+    'utf8'
+  );
+
+  const block = css.slice(css.indexOf('.chip--planned'), css.indexOf('/* --- Cover'));
+  assert.ok(!/#[0-9a-f]{3,6}/i.test(block), 'status colours should come from theme tokens');
+});
+
+test('the statuses that had no colour now derive one', () => {
+  for (const theme of THEMES) {
+    const colours = resolveTheme({ preset: theme.id });
+    for (const token of ['--backlog', '--backlog-wash', '--onhold', '--onhold-wash']) {
+      assert.ok(isColour(colours[token]), `${theme.label} has no ${token}`);
+    }
+  }
 });

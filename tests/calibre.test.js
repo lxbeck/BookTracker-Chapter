@@ -77,8 +77,17 @@ test('multiple authors keep the first and note the rest', () => {
 });
 
 test('an audio format column is detected', () => {
-  assert.equal(rowToBook({ title: 'Listened', formats: 'M4B' }).format, 'audio');
-  assert.equal(rowToBook({ title: 'Read', formats: 'EPUB, MOBI' }).format, 'ebook');
+  assert.deepEqual(rowToBook({ title: 'Listened', formats: 'M4B' }).formats, ['audio']);
+  assert.deepEqual(rowToBook({ title: 'Read', formats: 'EPUB, MOBI' }).formats, ['ebook']);
+});
+
+test('a Calibre record holding both an ebook and an audiobook keeps both', () => {
+  // One entry with an EPUB and an M4B beside it is the same book in two
+  // forms, not a choice between them.
+  assert.deepEqual(
+    rowToBook({ title: 'Both', formats: 'EPUB, M4B' }).formats,
+    ['ebook', 'audio']
+  );
 });
 
 test('a file that is not a Calibre catalogue is rejected with a reason', () => {

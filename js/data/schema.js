@@ -14,7 +14,7 @@
 
 import { isValidKey, today } from '../lib/dates.js';
 
-export const SCHEMA_VERSION = 7;
+export const SCHEMA_VERSION = 8;
 
 /** @type {Record<string, {id: string, label: string, hint: string}>} */
 export const STATUSES = {
@@ -92,6 +92,44 @@ export const FORMATS = {
 };
 
 /**
+ * Books have formats, plural.
+ *
+ * Reading the paperback with the audiobook playing is one book being read one
+ * time, not two books — the same story, the same progress, the same finish
+ * date. Two records for it would double every count, split the reading log in
+ * half, and need the schedule kept in step by hand.
+ *
+ * (A comic and its audio drama are a different matter and should stay two
+ * records: different scripts, different lengths, different things.)
+ */
+export const FORMAT_PRIORITY = ['physical', 'ebook', 'audio'];
+
+/**
+ * The format that decides how this book is measured.
+ *
+ * Pages beat minutes. A book being read on paper while its audiobook plays has
+ * a page count that means something and a running time that is a property of
+ * one recording, and progress you can check against the object in your hands
+ * is the one worth tracking.
+ */
+export const primaryFormat = (book) =>
+  FORMAT_PRIORITY.find((id) => book?.formats?.includes(id)) ?? book?.format ?? 'physical';
+
+/** Pages or minutes, for every label and every pacing figure. */
+export const formatUnit = (book) => FORMATS[primaryFormat(book)]?.unit ?? 'pages';
+
+export const hasFormat = (book, id) =>
+  Array.isArray(book?.formats) ? book.formats.includes(id) : book?.format === id;
+
+/** "Physical and audiobook", for a card that has room for one line. */
+export const formatLabel = (book) => {
+  const ids = book?.formats?.length ? book.formats : [book?.format].filter(Boolean);
+  const labels = FORMAT_PRIORITY.filter((id) => ids.includes(id)).map((id) => FORMATS[id].label);
+  if (labels.length <= 1) return labels[0] ?? '';
+  return `${labels.slice(0, -1).join(', ')} and ${labels[labels.length - 1].toLowerCase()}`;
+};
+
+/**
  * Spine colours for the coverless fallback — deterministic per title, so a
  * book keeps the same spine every time you see it.
  *
@@ -133,6 +171,7 @@ export function blankBook(overrides = {}) {
     genre: '',
     description: '',
     format: 'physical',
+    formats: ['physical'],
     category: 'book',
     status: 'planned',
     series: { name: '', number: null, total: null },
@@ -215,6 +254,7 @@ export function validateOrder(order) {
 export function blankSession(overrides = {}) {
   return {
     id: newId('se'),
+    via: null,
     date: null,
     minutes: null,
     pageFrom: null,
@@ -245,6 +285,10 @@ export function normalizeSession(input = {}) {
     pageFrom: pageFrom != null && pageFrom >= 0 ? pageFrom : null,
     pageTo: pageTo != null && pageTo >= 0 ? pageTo : null,
     note: String(input.note ?? '').trim(),
+    // How this sitting happened, when the book is more than one thing. Null
+    // means "not stated", which is every session logged before the field
+    // existed and every book that only comes in one form.
+    via: FORMATS[input.via] ? input.via : null,
     createdAt: input.createdAt || base.createdAt,
   };
 }
@@ -262,7 +306,7 @@ export function validateSession(session, book = null) {
     errors.minutes = 'That is more than a day of reading.';
   }
   if (book?.pageCount && session.pageTo != null && session.pageTo > book.pageCount) {
-    errors.pageTo = `This book only has ${book.pageCount} ${FORMATS[book.format].unit}.`;
+    errors.pageTo = `This book only has ${book.pageCount} ${formatUnit(book)}.`;
   }
   return errors;
 }
@@ -272,6 +316,21 @@ export function sessionPages(session) {
   if (session.pageTo == null) return 0;
   if (session.pageFrom == null) return 0;
   return Math.max(0, session.pageTo - session.pageFrom);
+}
+
+/**
+ * The formats a record claims, as a clean list.
+ *
+ * Accepts either shape, because a book saved before formats were plural has
+ * only `format`, and an import may carry either. An empty list is impossible:
+ * a book with no format at all has no unit, and every pacing figure derived
+ * from it would silently fall back to pages anyway.
+ */
+function cleanFormats(input = {}) {
+  const raw = Array.isArray(input.formats) ? input.formats : [];
+  const all = [...raw, input.format].filter((id) => FORMATS[id]);
+  const unique = FORMAT_PRIORITY.filter((id) => all.includes(id));
+  return unique.length ? unique : ['physical'];
 }
 
 const toInt = (value) => {
@@ -336,7 +395,10 @@ export function normalizeBook(input = {}, todayKey = today()) {
     pageCount: pageCount && pageCount > 0 ? pageCount : null,
     genre: String(input.genre ?? '').trim(),
     description: String(input.description ?? '').trim().slice(0, 2000),
-    format: FORMATS[input.format] ? input.format : base.format,
+    formats: cleanFormats(input),
+    // Kept in step with `formats` rather than stored independently: two fields
+    // that can disagree about the same fact will eventually disagree.
+    format: primaryFormat({ formats: cleanFormats(input), format: input.format }),
     category: CATEGORIES[input.category] ? input.category : base.category,
     status,
     series: {

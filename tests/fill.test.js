@@ -260,3 +260,61 @@ test('a volume with no clue in its own title inherits the series it belongs to',
   const nemo = books.filter((entry) => entry.series.name === 'Little Nemo');
   assert.ok(nemo.every((entry) => entry.category === 'comic'));
 });
+
+/* --- One book, more than one form ------------------------------------------ */
+
+import { formatUnit, primaryFormat, formatLabel, hasFormat, normalizeSession } from '../js/data/schema.js';
+
+test('a book can be read and listened to at once', () => {
+  // Gideon the Ninth in print with the audiobook playing is one book being
+  // read one time — same progress, same finish date — not two records.
+  const both = book({ formats: ['physical', 'audio'] });
+
+  assert.deepEqual(both.formats, ['physical', 'audio']);
+  assert.ok(hasFormat(both, 'physical') && hasFormat(both, 'audio'));
+  assert.equal(formatLabel(both), 'Physical and audiobook');
+});
+
+test('pages beat minutes when a book is both', () => {
+  // A page count is a property of the book; a running time is a property of
+  // one recording. Progress you can check against the object in your hands is
+  // the one worth tracking.
+  assert.equal(formatUnit(book({ formats: ['physical', 'audio'] })), 'pages');
+  assert.equal(formatUnit(book({ formats: ['ebook', 'audio'] })), 'pages');
+  assert.equal(formatUnit(book({ formats: ['audio'] })), 'minutes');
+});
+
+test('formats are stored in a stable order however they arrive', () => {
+  assert.deepEqual(book({ formats: ['audio', 'physical'] }).formats, ['physical', 'audio']);
+  assert.deepEqual(book({ formats: ['audio', 'ebook'] }).formats, ['ebook', 'audio']);
+});
+
+test('a book saved before formats were plural still works', () => {
+  // Everything catalogued up to now has `format` and no `formats`.
+  const old = book({ format: 'audio' });
+  assert.deepEqual(old.formats, ['audio']);
+  assert.equal(formatUnit(old), 'minutes');
+  assert.equal(primaryFormat(old), 'audio');
+});
+
+test('a book always has at least one format', () => {
+  // No format means no unit, and every pacing figure silently falling back to
+  // pages while the record claims otherwise.
+  assert.deepEqual(book({ formats: [] }).formats, ['physical']);
+  assert.deepEqual(book({ formats: ['nonsense'] }).formats, ['physical']);
+});
+
+test('the primary format is kept in step with the list', () => {
+  // Two fields that can disagree about the same fact eventually will.
+  const both = book({ formats: ['audio', 'physical'], format: 'audio' });
+  assert.equal(both.format, 'physical', 'the primary follows the list, not the other way round');
+});
+
+test('a sitting can record which way it happened', () => {
+  const session = normalizeSession({ date: '2026-08-19', minutes: 45, via: 'audio' });
+  assert.equal(session.via, 'audio');
+  // Not stated is the honest default: every session logged before the field
+  // existed, and every book that only comes in one form.
+  assert.equal(normalizeSession({ date: '2026-08-19', minutes: 45 }).via, null);
+  assert.equal(normalizeSession({ date: '2026-08-19', minutes: 45, via: 'papyrus' }).via, null);
+});

@@ -13,7 +13,10 @@ import {
   allBooks, updateBook, removeBook, restoreBook, getBook,
   allOrders, addToOrder, createOrder, positionInOrder,
 } from '../data/store.js';
-import { STATUSES, STATUS_ORDER, FORMATS, CATEGORIES, CATEGORY_ORDER } from '../data/schema.js';
+import {
+  STATUSES, STATUS_ORDER, FORMATS, CATEGORIES, CATEGORY_ORDER,
+  formatUnit, hasFormat, formatLabel, FORMAT_PRIORITY,
+} from '../data/schema.js';
 import { coverThumb } from './cover.js';
 import { acceptCoverDrop } from './coverDrop.js';
 import { setCoverFromFile, setCoverFromUrl } from '../data/coverActions.js';
@@ -93,12 +96,11 @@ const SORTS = {
     // Group by format, then read alphabetically within each group — a format
     // sort that scatters titles randomly inside each group is half a sort.
     compare: (a, b) =>
-      FORMAT_ORDER.indexOf(a.format) - FORMAT_ORDER.indexOf(b.format) ||
+      FORMAT_PRIORITY.indexOf(a.format) - FORMAT_PRIORITY.indexOf(b.format) ||
       a.title.localeCompare(b.title),
   },
 };
 
-const FORMAT_ORDER = ['physical', 'ebook', 'audio'];
 
 /**
  * Books currently ticked. A Set of ids, so a re-render can't stale them — and
@@ -133,7 +135,9 @@ export function renderLibrary(mount) {
     .filter(SHELVES[filters.shelf].match)
     .filter(matchesQuery(filters.query))
     .filter((book) => !filters.tag || book.shelves.includes(filters.tag))
-    .filter((book) => !filters.format || book.format === filters.format)
+    // A book read on paper with the audiobook playing answers to both
+    // filters, because it is genuinely both.
+    .filter((book) => !filters.format || hasFormat(book, filters.format))
     .filter((book) => !filters.category || book.category === filters.category)
     .filter((book) => !filters.need || NEEDS[filters.need].match(book))
     .filter((book) => !filters.order || positionInOrder(filters.order, book.id) !== Infinity)
@@ -434,7 +438,7 @@ function orderBar() {
 
 function formatBar(books) {
   const rerender = () => renderLibrary(document.querySelector('#view'));
-  const present = FORMAT_ORDER.filter((id) => books.some((book) => book.format === id));
+  const present = FORMAT_PRIORITY.filter((id) => books.some((book) => hasFormat(book, id)));
   if (present.length < 2) return null;
 
   return el('div.tag-bar', {}, [
@@ -447,7 +451,7 @@ function formatBar(books) {
           filters.format = filters.format === id ? null : id;
           rerender();
         },
-      }, `${FORMATS[id].label} (${books.filter((book) => book.format === id).length})`)
+      }, `${FORMATS[id].label} (${books.filter((book) => hasFormat(book, id)).length})`)
     ),
   ]);
 }
@@ -502,15 +506,32 @@ function bulkBar(visible) {
     el('select.select.bulk-bar__select', {
       'aria-label': 'Set format for selected books',
       onChange: (event) => {
-        const format = event.target.value;
+        const [action, format] = event.target.value.split(':');
         if (!format) return;
-        for (const book of chosen()) updateBook(book.id, { format });
-        toast(`${count} books set to ${FORMATS[format].label.toLowerCase()}.`);
+
+        for (const book of chosen()) {
+          const formats =
+            action === 'add'
+              ? [...new Set([...book.formats, format])]
+              : [format];
+          updateBook(book.id, { formats });
+        }
+        toast(
+          action === 'add'
+            ? `${FORMATS[format].label} added to ${count} books.`
+            : `${count} books set to ${FORMATS[format].label.toLowerCase()} only.`
+        );
         rerender();
       },
     }, [
-      el('option', { value: '' }, 'Set format\u2026'),
-      ...FORMAT_ORDER.map((id) => el('option', { value: id }, FORMATS[id].label)),
+      el('option', { value: '' }, 'Format\u2026'),
+      // Adding is separated from replacing because they are different
+      // intentions: "I also have the audiobook" must not erase "I own this
+      // in print", which is what a single Set format list would have done.
+      ...FORMAT_PRIORITY.map((id) =>
+        el('option', { value: `add:${id}` }, `Also ${FORMATS[id].label.toLowerCase()}`)),
+      ...FORMAT_PRIORITY.map((id) =>
+        el('option', { value: `set:${id}` }, `Only ${FORMATS[id].label.toLowerCase()}`)),
     ]),
 
     el('button.btn.btn--quiet.btn--sm', {
@@ -851,7 +872,7 @@ async function coverDropped(book, payload) {
 }
 
 function shelfCard(book) {
-  const unit = FORMATS[book.format].unit;
+  const unit = formatUnit(book);
 
   const picked = selection.has(book.id);
 
@@ -903,6 +924,9 @@ function shelfCard(book) {
                 `${book.series.name}${book.series.number ? ` #${book.series.number}` : ''}${book.series.total ? ` of ${book.series.total}` : ''}`)
             : null,
           statusLine(book, unit),
+          book.formats.length > 1
+            ? el('p.shelf-card__formats', {}, formatLabel(book))
+            : null,
           orderBadge(book),
           book.rating ? el('p.shelf-card__rating', { 'aria-label': `${book.rating} out of 5` }, '\u2605'.repeat(book.rating)) : null,
           book.description || book.notes

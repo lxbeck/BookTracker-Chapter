@@ -15,7 +15,7 @@ import { openBookForm } from './bookForm.js';
 import { coverThumb } from './cover.js';
 import { paceFor, paceStanding } from '../logic/pacing.js';
 import { DAY_STATE_LABEL } from '../logic/schedule.js';
-import { FORMATS } from '../data/schema.js';
+import { formatUnit } from '../data/schema.js';
 import { setStatus } from '../data/store.js';
 import { openDayPopup } from './dayPopup.js';
 
@@ -157,7 +157,7 @@ function weekStrip(books, dayKey, todayKey, mount) {
  */
 function dayCard({ book, state }, dayKey, todayKey, redraw) {
   const pace = paceFor(book, dayKey, todayKey);
-  const unit = FORMATS[book.format].unit;
+  const unit = formatUnit(book);
   const noun = unit === 'minutes' ? 'minutes' : 'pages';
   const standing = paceStanding(book, todayKey);
 

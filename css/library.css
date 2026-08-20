@@ -445,3 +445,10 @@
   border-left: 2px solid var(--stamp);
   padding-left: var(--s2);
 }
+
+.shelf-card__formats {
+  font-family: var(--face-slip);
+  font-size: var(--size-xs);
+  color: var(--ink-faint);
+  margin-top: var(--s1);
+}

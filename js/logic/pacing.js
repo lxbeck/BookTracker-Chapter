@@ -12,7 +12,7 @@
  */
 
 import { today, spanLength, daysBetween, addDays } from '../lib/dates.js';
-import { FORMATS } from '../data/schema.js';
+import { formatUnit } from '../data/schema.js';
 import { observedPace, bookTotals, formatDuration } from './sessions.js';
 
 /**
@@ -43,8 +43,8 @@ const EMPTY = (reason) => ({ ok: false, reason });
  * @returns {Pace}
  */
 export function paceFor(book, dayKey = today(), todayKey = today()) {
-  const { schedule, pageCount, progress, format } = book;
-  const unit = FORMATS[format]?.unit ?? 'pages';
+  const { schedule, pageCount, progress } = book;
+  const unit = formatUnit(book);
 
   if (!schedule.start) return EMPTY('No plan set');
   if (!pageCount) return EMPTY(`No length recorded, so there's no daily target`);
@@ -189,7 +189,7 @@ export function projectedFinish(book, todayKey = today()) {
  *   timeLeft: string|null, projected: string|null, verdict: object|null}}
  */
 export function progressReport(book, todayKey = today()) {
-  const unit = FORMATS[book.format]?.unit ?? 'pages';
+  const unit = formatUnit(book);
   const total = book.pageCount ?? 0;
   const done = Math.min(book.progress.page || 0, total || Infinity) || 0;
 
@@ -279,7 +279,7 @@ function finishVerdict(book, projected) {
  */
 export function catchUpPreview(book, todayKey = today()) {
   const { schedule, pageCount, progress } = book;
-  const unit = FORMATS[book.format]?.unit ?? 'pages';
+  const unit = formatUnit(book);
 
   if (!schedule.start) return { ok: false, reason: 'This book has no plan to catch up on.' };
   if (!pageCount) return { ok: false, reason: 'Add a page count first, or there is nothing to spread.' };
@@ -360,7 +360,7 @@ export function catchUpPatch(book, todayKey = today()) {
  */
 export function startFromHere(book, todayKey = today()) {
   const { schedule, pageCount, progress } = book;
-  const unit = FORMATS[book.format]?.unit ?? 'pages';
+  const unit = formatUnit(book);
 
   if (!pageCount) return { ok: false, reason: 'Add a length first.' };
 

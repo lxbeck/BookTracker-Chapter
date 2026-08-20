@@ -15,7 +15,7 @@ import { el, fill } from '../lib/dom.js';
 import { paceFor, paceStanding, projectedFinish } from '../logic/pacing.js';
 import { dayState, DAY_STATE_LABEL } from '../logic/schedule.js';
 import { formatShort, today } from '../lib/dates.js';
-import { FORMATS } from '../data/schema.js';
+import { formatUnit } from '../data/schema.js';
 
 const OPEN_DELAY = 140; // long enough that sweeping the mouse across a week is quiet
 const CLOSE_DELAY = 90;
@@ -93,7 +93,7 @@ function cardBody(book, dayKey) {
   const todayKey = today();
   const state = dayState(book, dayKey, todayKey) ?? 'planned';
   const pace = paceFor(book, dayKey, todayKey);
-  const unit = FORMATS[book.format].unit;
+  const unit = formatUnit(book);
 
   return [
     el('p.hovercard__eyebrow', {}, `${formatShort(dayKey)} \u00b7 ${DAY_STATE_LABEL[state]}`),

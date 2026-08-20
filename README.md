@@ -303,6 +303,41 @@ whichever one you are working through belongs at the top.
 Every move is announced to a screen reader, since a row sliding one place up is
 otherwise silent.
 
+## One book, more than one format
+
+Reading the paperback with the audiobook playing is one book being read once —
+the same story, the same progress, the same finish date. Two records for it
+would double every count, split the reading log in half, and need the schedule
+kept in step by hand. So a book has **formats**, plural: tick both in the form.
+
+A comic and its audio drama are a different matter and should stay two records.
+Different scripts, different lengths, different things.
+
+There is no "primary" to choose, because the rule is obvious once stated:
+**pages beat minutes.** A page count is a property of the book; a running time
+is a property of one recording. So a book that is both physical and audio is
+measured in pages, and only an audio-only book is measured in minutes.
+
+Everything downstream follows from that one helper rather than from
+`book.format` read directly, which is what makes the change small: pacing,
+targets, the day view, the hover card, the session form and every label ask
+`formatUnit(book)`.
+
+- **Filtering** by format matches a book that is *any* of them.
+- **Bulk actions** separate "also audiobook" from "only audiobook", because
+  adding a form must not erase the one already recorded.
+- **A sitting** can say which way it happened, on books that are more than one
+  thing. "Both" is the default and the reason the feature exists — reading the
+  page while the narrator reads it aloud is one sitting, and logging it twice
+  would double the time recorded.
+- **Calibre** imports a record holding an EPUB and an M4B as one book in two
+  forms rather than as an ebook.
+
+Records saved before formats were plural still work: `format` alone is read as
+a list of one, and the two fields are kept in step on every save rather than
+stored independently, since two fields that can disagree about the same fact
+eventually will.
+
 ## Searching, and what "get details" actually does
 
 The search field reads titles, authors, genres, series names, **descriptions,

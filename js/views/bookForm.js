@@ -15,7 +15,8 @@ import {
 } from '../logic/pacing.js';
 import { allBooks } from '../data/store.js';
 import {
-  STATUSES, STATUS_ORDER, FORMATS, CATEGORIES, CATEGORY_ORDER, blankBook, resolveProgress,
+  STATUSES, STATUS_ORDER, FORMATS, FORMAT_PRIORITY, CATEGORIES, CATEGORY_ORDER,
+  blankBook, resolveProgress, formatUnit, hasFormat,
 } from '../data/schema.js';
 import { formatShort } from '../lib/dates.js';
 import { addBook, updateBook, removeBook, restoreBook, getBook } from '../data/store.js';
@@ -146,7 +147,7 @@ export function openBookForm({ book = null, defaultStart = null, onSaved } = {})
       refreshProgressNote();
     },
   }, [
-    el('option', { value: 'page' }, FORMATS[draft.format].unit === 'minutes' ? 'minutes in' : 'page'),
+    el('option', { value: 'page' }, formatUnit(draft) === 'minutes' ? 'minutes in' : 'page'),
     el('option', { value: 'percent' }, '% complete'),
   ]);
 
@@ -177,13 +178,65 @@ export function openBookForm({ book = null, defaultStart = null, onSaved } = {})
 
   const quotesBlock = quotesEditor(draft);
 
-  const formatSelect = el(
-    'select.select',
-    { id: 'f-format', name: 'format' },
-    Object.values(FORMATS).map((format) =>
-      el('option', { value: format.id, selected: draft.format === format.id }, format.label)
-    )
+/**
+   * Formats, plural.
+   *
+   * Reading the paperback with the audiobook playing is one book being read
+   * once — same story, same progress, same finish date — so it is one record
+   * that admits to being two objects, rather than two records to keep in step
+   * by hand. (A comic and its audio drama are genuinely different works and
+   * still want separate records.)
+   *
+   * Checkboxes rather than a select, and no "primary" to choose: when a book
+   * is both read and listened to, the unit is pages, because a page count is
+   * a property of the book and a running time is a property of one recording.
+   */
+  const formatChecks = FORMAT_PRIORITY.map((id) =>
+    el('label.format-check', {}, [
+      el('input', {
+        type: 'checkbox',
+        name: 'formats',
+        value: id,
+        checked: hasFormat(draft, id),
+        onChange: () => {
+          // Turning the last one off leaves a book with no unit and every
+          // pacing figure silently falling back to pages. Refuse quietly.
+          if (!readFormats().length) {
+            const box = formatChecks
+              .flatMap((label) => [...label.querySelectorAll('input')])
+              .find((input) => input.value === id);
+            if (box) box.checked = true;
+            formatNote.textContent = 'A book has to be in at least one format.';
+            return;
+          }
+          refreshFormatNote();
+          refreshFormatNote();
+  refreshPaceNote();
+          refreshProgressNote();
+        },
+      }),
+      el('span', {}, FORMATS[id].label),
+    ])
   );
+
+  const formatNote = el('span.field__hint');
+
+  const readFormats = () =>
+    formatChecks
+      .flatMap((label) => [...label.querySelectorAll('input')])
+      .filter((input) => input.checked)
+      .map((input) => input.value);
+
+  function refreshFormatNote() {
+    const chosen = readFormats();
+    const unit = formatUnit({ formats: chosen });
+    formatNote.textContent =
+      chosen.length > 1
+        ? `Both at once \u2014 one record, one set of progress, measured in ${unit}.`
+        : `Measured in ${unit}.`;
+  }
+
+  const formatField = el('div.format-checks', {}, formatChecks);
 
   const categorySelect = el(
     'select.select',
@@ -222,7 +275,7 @@ export function openBookForm({ book = null, defaultStart = null, onSaved } = {})
     const start = startInput.value;
     const end = endInput.value;
     const pages = Number.parseInt(pagesInput.value, 10);
-    const unit = FORMATS[formatSelect.value].unit;
+    const unit = formatUnit({ formats: readFormats() });
 
     if (!start || !end || !pages || end < start) {
       paceNote.textContent = 'Set a length and both dates to see the daily pace.';
@@ -233,7 +286,7 @@ export function openBookForm({ book = null, defaultStart = null, onSaved } = {})
     paceNote.textContent = `${days} day${days === 1 ? '' : 's'} — about ${perDay} ${unit} a day.`;
   }
 
-  [startInput, endInput, pagesInput, formatSelect].forEach((node) =>
+  [startInput, endInput, pagesInput].forEach((node) =>
     node.addEventListener('input', refreshPaceNote)
   );
 
@@ -246,6 +299,7 @@ export function openBookForm({ book = null, defaultStart = null, onSaved } = {})
     refreshPaceNote();
   });
 
+  refreshFormatNote();
   refreshPaceNote();
 
   // Cover art. A lookup can autofill the fields the user hasn't filled in
@@ -335,7 +389,8 @@ export function openBookForm({ book = null, defaultStart = null, onSaved } = {})
     ]),
     el('div.field-row', {}, [
       field('category', 'Kind', categorySelect, 'Book, comic, manga\u2026'),
-      field('format', 'Format', formatSelect, 'How you read it'),
+      field('format', 'Format', el('div', {}, [formatField, formatNote]),
+        'How you read it \u2014 tick both if you read and listen'),
       field('pageCount', 'Length', pagesInput, 'Pages, or minutes for audio'),
       field('genre', 'Genre', genreInput),
     ]),
@@ -460,7 +515,7 @@ export function openBookForm({ book = null, defaultStart = null, onSaved } = {})
       isbn: isbnInput.value,
       pageCount: pagesInput.value,
       genre: genreInput.value,
-      format: formatSelect.value,
+      formats: readFormats(),
       category: categorySelect.value,
       status: statusSelect.value,
       cover: draft.cover,

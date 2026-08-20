@@ -12,7 +12,7 @@ import { sessionLog } from './sessionLog.js';
 import { paceFor, paceStanding, projectedFinish } from '../logic/pacing.js';
 import { observedPace, bookTotals, formatDuration } from '../logic/sessions.js';
 import { formatShort } from '../lib/dates.js';
-import { FORMATS, STATUSES } from '../data/schema.js';
+import { formatUnit, STATUSES } from '../data/schema.js';
 import { setStatus } from '../data/store.js';
 import { openBookForm } from './bookForm.js';
 
@@ -28,7 +28,7 @@ import { openBookForm } from './bookForm.js';
 export function dayRow({ book, state }, dayKey, todayKey, { redraw, beforeOpenRecord, size = 'compact' }) {
   const large = size === 'large';
   const pace = paceFor(book, dayKey, todayKey);
-  const unit = FORMATS[book.format].unit;
+  const unit = formatUnit(book);
   const noun = unit === 'minutes' ? 'minutes' : 'pages';
 
   const lead =

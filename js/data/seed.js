@@ -59,7 +59,7 @@ export function sampleBooks(from = today()) {
       genre: 'Science fiction',
       description:
         'An astronomer watches a cylinder open on Horsell Common, and by nightfall the first Martian fighting machine is walking across Surrey.',
-      format: 'audio',
+      formats: ['physical', 'audio'],
       shelves: ['book club'],
       status: 'reading',
       cover: withCover('9780486295060'),

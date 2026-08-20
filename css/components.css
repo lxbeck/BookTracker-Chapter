@@ -447,3 +447,24 @@
 .link-btn:hover {
   color: var(--ink-inverse);
 }
+
+/* --- Formats -------------------------------------------------------------
+   A row of tick boxes rather than a select, because a book can be more than
+   one thing at once: read on paper with the audiobook playing is one book,
+   not two records to keep in step.
+   ------------------------------------------------------------------------ */
+
+.format-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s3);
+  align-items: center;
+}
+
+.format-check {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  font-size: var(--size-sm);
+  cursor: pointer;
+}

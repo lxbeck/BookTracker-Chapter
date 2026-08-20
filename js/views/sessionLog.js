@@ -16,7 +16,7 @@
 
 import { el, fill, toast } from '../lib/dom.js';
 import { addSession, updateSession, removeSession, getBook, updateBook } from '../data/store.js';
-import { FORMATS } from '../data/schema.js';
+import { FORMATS, formatUnit, hasFormat } from '../data/schema.js';
 import { formatShort, today } from '../lib/dates.js';
 import { bookTotals, formatDuration } from '../logic/sessions.js';
 import { sessionPages } from '../data/schema.js';
@@ -70,7 +70,7 @@ export function sessionLog({ bookId, fixedDate = null, compact = false, onChange
 function totalsLine(book) {
   const totals = bookTotals(book);
   if (!totals.sessions) return null;
-  const unit = FORMATS[book.format].unit;
+  const unit = formatUnit(book);
 
   return el('dl.session-totals', {}, [
     stat('Sittings', String(totals.sessions)),
@@ -86,7 +86,7 @@ const stat = (label, value) =>
 /* --- Entry form ----------------------------------------------------------- */
 
 function entryForm(book, fixedDate, onSaved) {
-  const unit = FORMATS[book.format].unit;
+  const unit = formatUnit(book);
   const isAudio = unit === 'minutes';
 
   const dateInput = el('input.input', {
@@ -196,12 +196,29 @@ function entryForm(book, fixedDate, onSaved) {
 
   const error = el('p.field__error', { hidden: true });
 
+  /**
+   * Which way this sitting happened.
+   *
+   * Only shown for a book that is more than one thing, because for every other
+   * book the answer is already known and a control with one option is just
+   * clutter. "Both" is a real answer and the reason the feature exists —
+   * reading the page while the narrator reads it aloud is one sitting, not
+   * two, and splitting it into two entries would double the time logged.
+   */
+  const viaSelect = book.formats.length > 1
+    ? el('select.select', { 'aria-label': 'How you read this sitting' }, [
+        el('option', { value: '' }, 'Both'),
+        ...book.formats.map((id) => el('option', { value: id }, FORMATS[id].label)),
+      ])
+    : null;
+
   const save = () => {
     const result = addSession(book.id, {
       date: dateInput.value,
       minutes: minutesInput.value,
       pageFrom: startingPage(),
       pageTo: endingPage(),
+      via: viaSelect?.value || null,
     });
 
     if (!result.ok) {
@@ -228,7 +245,8 @@ function entryForm(book, fixedDate, onSaved) {
       labelled(isAudio ? 'Ended at' : 'Ended on', el('div.progress-entry', {}, [toInput, unitSelect])),
       labelled(isAudio ? 'Started at' : 'Started from', fromInput),
       labelled('Minutes', minutesInput),
-    ]),
+      viaSelect ? labelled('How', viaSelect) : null,
+    ].filter(Boolean)),
     preview,
     el('div.session-form__actions', {}, [
       error,
@@ -268,7 +286,7 @@ function historyList(book, compact, onChange) {
   }
 
   const shown = compact ? sessions.slice(0, 3) : sessions;
-  const unit = FORMATS[book.format].unit;
+  const unit = formatUnit(book);
 
   return el('div', {}, [
     el('ul.session-list', {}, [
@@ -331,6 +349,9 @@ function sessionRow(book, session, unit, onChange) {
     session.minutes ? formatDuration(session.minutes) : null,
     covered ? `${covered} ${unit}` : null,
     session.pageTo != null ? `to ${unit === 'minutes' ? '' : 'page '}${session.pageTo}`.trim() : null,
+    // Only worth saying when the book has more than one form and this sitting
+    // was one of them; "both" is the default and needs no label.
+    session.via && book.formats.length > 1 ? FORMATS[session.via].label.toLowerCase() : null,
   ].filter(Boolean);
 
   return el('li.session-row', {}, [

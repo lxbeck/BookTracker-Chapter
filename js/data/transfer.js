@@ -102,6 +102,7 @@ const CSV_COLUMNS = [
   ['author', (b) => b.author],
   ['isbn', (b) => b.isbn],
   ['format', (b) => b.format],
+  ['formats', (b) => b.formats.join('; ')],
   ['status', (b) => b.status],
   ['genre', (b) => b.genre],
   ['shelves', (b) => b.shelves.join('; ')],
@@ -136,7 +137,7 @@ export function exportCsv(books = allBooks()) {
 
 /** One row per session, for anyone who wants to chart their own log. */
 export function exportSessionsCsv(books = allBooks()) {
-  const header = 'date,title,author,minutes,page_from,page_to,pages';
+  const header = 'date,title,author,minutes,page_from,page_to,pages,via';
   const rows = books.flatMap((book) =>
     book.sessions.map((session) =>
       [
@@ -147,6 +148,7 @@ export function exportSessionsCsv(books = allBooks()) {
         session.pageFrom ?? '',
         session.pageTo ?? '',
         session.pageFrom != null && session.pageTo != null ? session.pageTo - session.pageFrom : '',
+        session.via ?? '',
       ].join(',')
     )
   );

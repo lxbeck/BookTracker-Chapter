@@ -65,6 +65,14 @@ export function openBookForm({ book = null, defaultStart = null, onSaved } = {})
     required: true,
   });
   const authorInput = input('author', { value: draft.author, placeholder: 'Edgar Rice Burroughs' });
+
+  // Everyone else credited. One name is shown on a card and sorted by, because
+  // a shelf sorts by one name; the rest belong here rather than flattened into
+  // a sentence in the notes, where an import used to leave them.
+  const coAuthorsInput = input('coAuthors', {
+    value: draft.coAuthors?.join(', ') ?? '',
+    placeholder: 'Christopher Golden, Thomas E. Sniegoski',
+  });
   const isbnInput = input('isbn', { value: draft.isbn, placeholder: '9780486436173' });
   const pagesInput = input('pageCount', {
     type: 'number',
@@ -143,12 +151,24 @@ export function openBookForm({ book = null, defaultStart = null, onSaved } = {})
   // Progress can be given either way round. Percent matters for anything
   // without page numbers — a comic, an ebook that only reports a location, a
   // book you're judging by the thickness of what's left.
+  /**
+   * Controls the person has edited by hand.
+   *
+   * The form refreshes itself from the store while it is open, so a session
+   * logged in the panel below updates the progress and status above it. That
+   * refresh must never travel over a value someone has just set, so each
+   * control that can be both typed into and written by the log records that it
+   * was touched.
+   */
+  const touched = new Set();
+
   const progressInput = input('progress.page', {
     type: 'number',
     min: '0',
     step: 'any',
     value: draft.progress.page || '',
     placeholder: '79',
+    onInput: () => touched.add('progress'),
   });
 
   const progressUnit = el('select.select.progress-unit', {
@@ -275,6 +295,7 @@ export function openBookForm({ book = null, defaultStart = null, onSaved } = {})
       id: 'f-status',
       name: 'status',
       onChange: () => {
+        touched.add('status');
         // Revealed by the status rather than always present: for every book
         // that was not set down, the field is a prompt for something that
         // never happened.
@@ -294,10 +315,12 @@ export function openBookForm({ book = null, defaultStart = null, onSaved } = {})
   const startedInput = input('actual.startedAt', {
     type: 'date',
     value: draft.actual.startedAt ?? '',
+    onInput: () => touched.add('startedAt'),
   });
   const finishedInput = input('actual.finishedAt', {
     type: 'date',
     value: draft.actual.finishedAt ?? '',
+    onInput: () => touched.add('finishedAt'),
   });
 
   const paceNote = el('p.field__hint', { id: 'pace-note' });
@@ -417,6 +440,7 @@ export function openBookForm({ book = null, defaultStart = null, onSaved } = {})
     field('title', 'Title', titleInput),
     el('div.field-row', {}, [
       field('author', 'Author', authorInput),
+      field('coAuthors', 'Also by', coAuthorsInput, 'Separated by commas. Optional.'),
       field('isbn', 'ISBN', isbnInput, 'Used to look up cover art'),
     ]),
     el('div.field-row', {}, [
@@ -552,6 +576,7 @@ export function openBookForm({ book = null, defaultStart = null, onSaved } = {})
       category: categorySelect.value,
       status: statusSelect.value,
       dnfReason: dnfInput.value,
+      coAuthors: coAuthorsInput.value.split(',').map((name) => name.trim()).filter(Boolean),
       cover: draft.cover,
       description: descriptionInput.value,
       series: {
@@ -605,17 +630,33 @@ export function openBookForm({ book = null, defaultStart = null, onSaved } = {})
     draft.sessions = stored.sessions;
     draft.progress = stored.progress;
     draft.actual = { ...stored.actual };
-    draft.status = stored.status;
 
-    if (stored.progress.page) {
+    // Only fields the person has *not* edited are refreshed.
+    //
+    // This ran on save as well as after logging, and it wrote the stored
+    // status straight into the select — so changing a book from Reading to On
+    // hold and pressing Save re-selected Reading a moment before the form read
+    // the select, and the change vanished with no error. Refreshing what the
+    // log owns is right; overwriting what someone just typed is not, and the
+    // difference is whether they have touched the control.
+    if (!touched.has('status')) {
+      draft.status = stored.status;
+      statusSelect.value = stored.status;
+    }
+
+    if (!touched.has('progress') && stored.progress.page) {
       progressInput.value =
         progressUnit.value === 'percent'
           ? Math.round(stored.progress.percent)
           : stored.progress.page;
     }
-    if (stored.actual.startedAt) startedInput.value = stored.actual.startedAt;
-    if (stored.actual.finishedAt) finishedInput.value = stored.actual.finishedAt;
-    statusSelect.value = stored.status;
+
+    if (!touched.has('startedAt') && stored.actual.startedAt) {
+      startedInput.value = stored.actual.startedAt;
+    }
+    if (!touched.has('finishedAt') && stored.actual.finishedAt) {
+      finishedInput.value = stored.actual.finishedAt;
+    }
 
     refreshProgressNote();
   }

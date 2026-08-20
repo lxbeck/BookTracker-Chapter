@@ -11,6 +11,7 @@
  */
 
 import { today, withinRange, eachDay } from '../lib/dates.js';
+import { compareTitles } from '../lib/titles.js';
 
 /** @typedef {'finished'|'reading'|'planned'} DayState */
 
@@ -89,7 +90,8 @@ export function entriesForDay(books, dayKey, todayKey = today()) {
     .filter(Boolean)
     .sort(
       (a, b) =>
-        STATE_WEIGHT[a.state] - STATE_WEIGHT[b.state] || a.book.title.localeCompare(b.book.title)
+        STATE_WEIGHT[a.state] - STATE_WEIGHT[b.state] ||
+          compareTitles(a.book.title, b.book.title)
     );
 }
 
@@ -134,7 +136,8 @@ export function groupByDay(books, dayKeys, todayKey = today()) {
   for (const entries of buckets.values()) {
     entries.sort(
       (a, b) =>
-        STATE_WEIGHT[a.state] - STATE_WEIGHT[b.state] || a.book.title.localeCompare(b.book.title)
+        STATE_WEIGHT[a.state] - STATE_WEIGHT[b.state] ||
+          compareTitles(a.book.title, b.book.title)
     );
   }
 

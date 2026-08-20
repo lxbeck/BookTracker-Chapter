@@ -388,3 +388,37 @@ test('restoring a backup does not re-delete the books it contains', () => {
     'a tombstone for a book that is here again would delete it on the next sync'
   );
 });
+
+/* --- Status changes that stick --------------------------------------------- */
+
+test('a book can be moved off Reading to any other status', () => {
+  // The form used to refresh itself from the store on save, which wrote the
+  // stored status back into the select a moment before it was read — so
+  // choosing "On hold" saved "Reading" and the change vanished with no error.
+  store.replaceAll([], { readingOrders: [], deleted: [] });
+  const book = store.addBook({
+    title: 'Set down',
+    status: 'reading',
+    schedule: { start: '2026-08-01', end: '2026-08-10' },
+    pageCount: 200,
+  }).book;
+
+  for (const status of ['on-hold', 'dnf', 'finished']) {
+    assert.ok(store.updateBook(book.id, { status }).ok);
+    assert.equal(store.getBook(book.id).status, status);
+    store.updateBook(book.id, { status: 'reading' });
+  }
+});
+
+test('a did-not-finish book keeps its reason', () => {
+  store.replaceAll([], { readingOrders: [], deleted: [] });
+  const book = store.addBook({ title: 'Abandoned' }).book;
+
+  store.updateBook(book.id, { status: 'dnf', dnfReason: 'Lost the thread at page 200.' });
+  assert.equal(store.getBook(book.id).dnfReason, 'Lost the thread at page 200.');
+
+  // Kept if it is picked up again: a book abandoned once and returned to is a
+  // more interesting record with the first attempt still in it.
+  store.updateBook(book.id, { status: 'reading' });
+  assert.equal(store.getBook(book.id).dnfReason, 'Lost the thread at page 200.');
+});

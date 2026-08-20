@@ -70,6 +70,39 @@ export function loggedByMonth(books, count = 12, todayKey = today()) {
 }
 
 /** Cumulative pages over the last `days` days. */
+/**
+ * Pages read on each day, as itself.
+ *
+ * The cumulative line answers "how much have I read lately", and answers it
+ * well — it only ever goes up, so the shape is the trend. That is also its
+ * limit: a fortnight off shows as a flat stretch you have to measure with your
+ * eye, and a single enormous Sunday is a step you cannot size. This is the
+ * same data undoctored, one bar per day, where a gap is a gap and a big day is
+ * tall.
+ */
+export function dailyPages(books, days = 90, todayKey = today()) {
+  const start = addDays(todayKey, -(days - 1));
+  const perDay = new Map();
+
+  for (const { session } of allSessions(books)) {
+    if (session.date < start || session.date > todayKey) continue;
+    perDay.set(session.date, (perDay.get(session.date) ?? 0) + sessionPages(session));
+  }
+
+  return Array.from({ length: days }, (_, index) => {
+    const key = addDays(start, index);
+    const value = perDay.get(key) ?? 0;
+
+    return {
+      label: formatShort(key).slice(4),
+      fullLabel: formatLong(key),
+      value,
+      day: key,
+      note: value ? null : 'nothing logged',
+    };
+  });
+}
+
 export function cumulativePages(books, days = 90, todayKey = today()) {
   const start = addDays(todayKey, -(days - 1));
   const perDay = new Map();

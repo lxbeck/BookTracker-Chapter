@@ -14,7 +14,7 @@
  * Bump CACHE_VERSION to ship an update; old caches are dropped on activate.
  */
 
-const CACHE_VERSION = 'chapter-v13';
+const CACHE_VERSION = 'chapter-v14';
 const SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const IMAGE_CACHE = `${CACHE_VERSION}-images`;
 
@@ -58,6 +58,7 @@ const SHELL = [
   './js/data/snapshot.js',
   './js/data/merge.js',
   './js/lib/csv.js',
+  './js/lib/titles.js',
   './js/logic/schedule.js',
   './js/logic/pacing.js',
   './js/logic/sessions.js',

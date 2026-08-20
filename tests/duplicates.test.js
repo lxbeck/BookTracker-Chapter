@@ -383,3 +383,65 @@ test('one goal saved the old way still works', () => {
   );
   assert.equal(progress[0].done, 1);
 });
+
+/* --- Filing titles the way a shelf does ------------------------------------ */
+
+import { compareTitles, sortableTitle } from '../js/lib/titles.js';
+
+test('volumes sort by number, not by digit', () => {
+  // The commonest complaint about any sorted list: "Vol. 10" before "Vol. 2"
+  // because 1 comes before 2, so a nineteen-volume run reads 1, 10, 11 … 2.
+  const volumes = [
+    'BAKEMONOGATARI Vol. 1', 'BAKEMONOGATARI Vol. 10', 'BAKEMONOGATARI Vol. 2',
+    'BAKEMONOGATARI Vol. 20', 'BAKEMONOGATARI Vol. 3',
+  ];
+
+  assert.deepEqual(
+    [...volumes].sort(compareTitles),
+    [
+      'BAKEMONOGATARI Vol. 1', 'BAKEMONOGATARI Vol. 2', 'BAKEMONOGATARI Vol. 3',
+      'BAKEMONOGATARI Vol. 10', 'BAKEMONOGATARI Vol. 20',
+    ]
+  );
+});
+
+test('a leading article is skipped when filing', () => {
+  // Every catalogue and every bookshop files A Wizard of Earthsea under W.
+  assert.equal(sortableTitle('A Wizard of Earthsea'), 'wizard of earthsea');
+  assert.equal(sortableTitle('The Wind in the Willows'), 'wind in the willows');
+  assert.equal(sortableTitle('An Unkindness of Ghosts'), 'unkindness of ghosts');
+});
+
+test('only the leading article is skipped', () => {
+  // The second "the" is part of the title and stays.
+  assert.match(sortableTitle('The Wind in the Willows'), /in the willows$/);
+});
+
+test('a title that is only an article keeps it', () => {
+  assert.equal(sortableTitle('The'), 'the');
+});
+
+test('articles change where a book files, not what it is called', () => {
+  const shelf = ['Wuthering Heights', 'A Wizard of Earthsea', 'The Wind in the Willows', 'Zorro'];
+
+  assert.deepEqual(
+    [...shelf].sort(compareTitles),
+    ['The Wind in the Willows', 'A Wizard of Earthsea', 'Wuthering Heights', 'Zorro']
+  );
+});
+
+test('a word that merely starts with an article is not an article', () => {
+  // "Theft" is not "The ft".
+  assert.equal(sortableTitle('Theft of Fire'), 'theft of fire');
+  assert.equal(sortableTitle('Anno Dracula'), 'anno dracula');
+});
+
+test('leading punctuation is not the first letter', () => {
+  assert.equal(sortableTitle('"Repent, Harlequin!"'), 'repent, harlequin!"');
+});
+
+test('sorting is stable for titles that differ only by an article', () => {
+  const result = ['Wizard', 'A Wizard'].sort(compareTitles);
+  assert.equal(result.length, 2);
+  assert.deepEqual([...result].sort(compareTitles), result, 'the same order every time');
+});

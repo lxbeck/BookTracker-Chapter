@@ -1,8 +1,12 @@
 # Chapter
 
-A reading tracker. Helps to sort your books, plan them onto a calendar, and see your reading plan day by day.
+A reading tracker. Helps to sort your books, plan them onto a calendar, and see
+your reading plan day by day.
 
-It runs from a folder of files and
+Part of a small ecosystem of trackers — Quest (games), Chapter (books),
+Waypoint.
+
+No build step, no dependencies, no account. It runs from a folder of files and
 keeps your library in your browser, or in a folder on your own machine if you
 start the little sync server.
 
@@ -362,6 +366,30 @@ month is impossible to hover and is exactly the month worth inspecting.
 
 
 ## Your library
+
+<details>
+<summary><strong>How titles are sorted</strong> — Articles, and volume numbers</summary>
+
+Two things a plain alphabetical sort gets wrong, and both are obvious once you
+see a shelf sorted by it.
+
+**Leading articles are skipped.** `A Wizard of Earthsea` files under W, between
+`The Wind in the Willows` and `Wuthering Heights` — which is what every library
+catalogue and every bookshop does, because otherwise the A shelf fills with
+books whose only common feature is a word nobody thinks of as part of the
+title. The article is not removed: it is still shown, still searchable, and
+only skipped when deciding where the book sits. Only the leading one, so the
+second "the" in `The Wind in the Willows` stays put.
+
+**Numbers sort as numbers.** A string comparison reads digit by digit, so
+`Vol. 10` came before `Vol. 2` and a nineteen-volume run came out as 1, 10, 11
+… 19, 2, 20, 3. Runs of digits are now compared as numbers, so volumes go 1, 2,
+3 … 19, 20.
+
+A series with a volume number in its own field sorts by that field first, which
+is how volume 4.5 lands between 4 and 5.
+
+</details>
 
 <details>
 <summary><strong>Kinds of book</strong> — Books, comics, manga and anything you add</summary>
@@ -1001,6 +1029,7 @@ js/data/theme.js        colour schemes, and everything derived from them
 js/data/transfer.js     JSON and CSV export, merge-aware import
 js/lib/charts.js        hand-rolled SVG charts (no chart library)
 js/lib/csv.js           CSV parsing that survives quoted commas
+js/lib/titles.js        sorting titles the way a shelf does
 js/lib/dates.js         day-key arithmetic and the month grid
 js/lib/dom.js           element helper, focus trap, toasts
 js/logic/pacing.js      daily targets, ahead/behind, projected finish

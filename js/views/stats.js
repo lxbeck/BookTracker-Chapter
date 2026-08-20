@@ -9,7 +9,7 @@
 import { el, fill } from '../lib/dom.js';
 import { allBooks, getSettings } from '../data/store.js';
 import {
-  headline, allGoalProgress, finishedByMonth, loggedByMonth,
+  headline, allGoalProgress, finishedByMonth, loggedByMonth, dailyPages,
   cumulativePages, dailyMinutes, breakdown, finishedByCategory,
 } from '../logic/stats.js';
 import { formatDuration } from '../logic/sessions.js';
@@ -106,7 +106,17 @@ export function renderStats(mount) {
         // has a gutter to fit in and the readout does not.
         axisFormat: (value) => value.toLocaleString(),
       }),
-      'Hover a point for the date and running total.'
+      'Running total. Hover a point for the date.'
+    ),
+
+    panel(
+      'Pages read each day',
+      barChart(dailyPages(books), {
+        label: 'Pages read each day',
+        format: (value) => `${value.toLocaleString()} pages`,
+        axisFormat: (value) => value.toLocaleString(),
+      }),
+      'The same 90 days undoctored \u2014 a gap is a gap, and a long Sunday is tall.'
     ),
 
     panel(
@@ -115,10 +125,15 @@ export function renderStats(mount) {
       'Each square is a day, darker meaning longer. Hover one for the date and minutes.'
     ),
 
+    // Genre is the field most likely to be blank in a hand-built catalogue,
+    // and an empty panel headed "By genre" is a chart of nothing taking up the
+    // width of the page. Shown only once something has one.
     el('div.stat-split', {}, [
-      panel('By genre', rankChart(breakdown(books, (b) => b.genre), { label: 'Books by genre' })),
+      breakdown(books, (b) => b.genre).length
+        ? panel('By genre', rankChart(breakdown(books, (b) => b.genre), { label: 'Books by genre' }))
+        : null,
       panel('By author', rankChart(breakdown(books, (b) => b.author), { label: 'Books by author' })),
-    ]),
+    ].filter(Boolean)),
 
     panel('By kind',
       rankChart(breakdown(books, (b) => kindLabel(b.category)), { label: 'Books by kind' }),

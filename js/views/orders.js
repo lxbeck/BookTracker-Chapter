@@ -12,6 +12,7 @@
  */
 
 import { el, fill, toast } from '../lib/dom.js';
+import { compareTitles } from '../lib/titles.js';
 import {
   allOrders, allBooks, getBook, createOrder, updateOrder, removeOrder,
   addToOrder, removeFromOrder, moveInOrder, moveOrder, setOrderSequence,
@@ -348,7 +349,7 @@ function openAddDialog(order, redraw) {
       .sort((a, b) =>
         (a.series.name || '~').localeCompare(b.series.name || '~') ||
         (a.series.number ?? 0) - (b.series.number ?? 0) ||
-        a.title.localeCompare(b.title))
+        compareTitles(a.title, b.title))
       .slice(0, 60);
 
     fill(list, candidates.length

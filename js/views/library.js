@@ -8,6 +8,7 @@
  */
 
 import { el, fill, toast } from '../lib/dom.js';
+import { compareTitles } from '../lib/titles.js';
 import { showModal } from './modal.js';
 import {
   allBooks, updateBook, removeBook, restoreBook, getBook, getSettings,
@@ -29,12 +30,27 @@ import { addDays } from '../lib/dates.js';
 import { progressReport } from '../logic/pacing.js';
 
 /** Tabs are reading intents, not raw statuses — "To read" folds in on-hold. */
+/**
+ * The shelves, in the order a book moves through them.
+ *
+ * On hold used to be folded in with Planned, and did-not-finish had nowhere to
+ * go at all — so setting a book down took it off Reading and dropped it into a
+ * tab where it looked like something you were about to start. They are their
+ * own shelves now.
+ *
+ * `always` marks the tabs that are part of the furniture. The other two appear
+ * only when something is on them: an empty "Did not finish" is a reproach
+ * nobody needs, and a tab that never has anything on it is just a smaller
+ * library.
+ */
 const SHELVES = {
-  reading: { label: 'Reading', match: (b) => b.status === 'reading' },
-  planned: { label: 'Planned', match: (b) => b.status === 'planned' || b.status === 'on-hold' },
-  backlog: { label: 'Backlog', match: (b) => b.status === 'backlog' },
-  finished: { label: 'Finished', match: (b) => b.status === 'finished' },
-  all: { label: 'Everything', match: () => true },
+  reading: { label: 'Reading', always: true, match: (b) => b.status === 'reading' },
+  planned: { label: 'Planned', always: true, match: (b) => b.status === 'planned' },
+  backlog: { label: 'Backlog', always: true, match: (b) => b.status === 'backlog' },
+  'on-hold': { label: 'On hold', match: (b) => b.status === 'on-hold' },
+  dnf: { label: 'Did not finish', match: (b) => b.status === 'dnf' },
+  finished: { label: 'Finished', always: true, match: (b) => b.status === 'finished' },
+  all: { label: 'Everything', always: true, match: () => true },
 };
 
 /**
@@ -64,16 +80,27 @@ const SORTS = {
     compare: (a, b) => (a.schedule.start ?? '9999').localeCompare(b.schedule.start ?? '9999'),
   },
   added: { label: 'Recently added', compare: (a, b) => b.createdAt.localeCompare(a.createdAt) },
-  title: { label: 'Title', compare: (a, b) => a.title.localeCompare(b.title) },
+  title: { label: 'Title', compare: (a, b) => compareTitles(a.title, b.title) },
   progress: {
     label: 'Nearest finishing',
-    // Furthest through first, so the book that needs one more evening sits
-    // above the one you have barely started. Books with no progress at all
-    // fall to the bottom in title order rather than being scattered through
-    // a run of zeroes.
-    compare: (a, b) =>
-      (b.progress?.percent ?? 0) - (a.progress?.percent ?? 0) ||
-      a.title.localeCompare(b.title),
+    /**
+     * Furthest through first, so the book that needs one more evening sits
+     * above the one you have barely started.
+     *
+     * Finished books sort last rather than first, which is where they were
+     * landing: they are all at 100%, so by the letter of "nearest finishing"
+     * they win — and a sort meant to answer "what could I finish tonight"
+     * that opens with two hundred books you finished years ago answers
+     * nothing. "When did I finish it" is what sorting by finish date is for.
+     */
+    compare: (a, b) => {
+      const done = (book) => (book.status === 'finished' ? 1 : 0);
+      return (
+        done(a) - done(b) ||
+        (b.progress?.percent ?? 0) - (a.progress?.percent ?? 0) ||
+        compareTitles(a.title, b.title)
+      );
+    },
   },
   notes: {
     label: 'Has notes',
@@ -82,7 +109,7 @@ const SORTS = {
     // empty is really a way of surfacing the ones that are not empty.
     compare: (a, b) =>
       (b.notes?.trim().length ?? 0) - (a.notes?.trim().length ?? 0) ||
-      a.title.localeCompare(b.title),
+      compareTitles(a.title, b.title),
   },
   author: { label: 'Author', compare: (a, b) => (a.author || '~').localeCompare(b.author || '~') },
   length: { label: 'Length', compare: (a, b) => (b.pageCount ?? 0) - (a.pageCount ?? 0) },
@@ -99,7 +126,7 @@ const SORTS = {
       return (
         an.localeCompare(bn) ||
         (a.series.number ?? Infinity) - (b.series.number ?? Infinity) ||
-        a.title.localeCompare(b.title)
+        compareTitles(a.title, b.title)
       );
     },
   },
@@ -109,7 +136,7 @@ const SORTS = {
     // date is being read for the finished ones.
     compare: (a, b) =>
       (b.actual.finishedAt ?? '').localeCompare(a.actual.finishedAt ?? '') ||
-      a.title.localeCompare(b.title),
+      compareTitles(a.title, b.title),
   },
   format: {
     label: 'Format',
@@ -117,7 +144,7 @@ const SORTS = {
     // sort that scatters titles randomly inside each group is half a sort.
     compare: (a, b) =>
       FORMAT_PRIORITY.indexOf(a.format) - FORMAT_PRIORITY.indexOf(b.format) ||
-      a.title.localeCompare(b.title),
+      compareTitles(a.title, b.title),
   },
 };
 
@@ -160,6 +187,10 @@ export function renderLibrary(mount) {
    * "Everything" is the exception and keeps the full set, because that tab is
    * where you go precisely to find the things the current shelf does not show.
    */
+  // A shelf that no longer exists — or an optional one that has just emptied
+  // while you were standing on it — would otherwise leave the view stuck.
+  if (!SHELVES[filters.shelf]) filters.shelf = 'all';
+
   const inScope = filters.shelf === 'all' ? books : books.filter(SHELVES[filters.shelf].match);
 
   const tags = [...new Set(inScope.flatMap((book) => book.shelves))].sort();
@@ -230,6 +261,7 @@ export function renderLibrary(mount) {
 const SEARCHED = [
   (book) => book.title,
   (book) => book.author,
+  (book) => book.coAuthors?.join(' '),
   (book) => book.genre,
   (book) => book.series.name,
   (book) => book.description,
@@ -308,7 +340,10 @@ function toolbar(counts) {
   const tabs = el(
     'div.shelf-tabs',
     { role: 'tablist', 'aria-label': 'Shelves' },
-    Object.entries(SHELVES).map(([id, shelf]) =>
+    Object.entries(SHELVES)
+      // On hold and Did not finish appear only once something is on them.
+      .filter(([id, shelf]) => shelf.always || counts[id] > 0 || filters.shelf === id)
+      .map(([id, shelf]) =>
       el(
         'button.shelf-tab',
         {

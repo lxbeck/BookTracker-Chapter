@@ -70,10 +70,22 @@ test('imported books land in the backlog, unscheduled and unread', () => {
   }
 });
 
-test('multiple authors keep the first and note the rest', () => {
+test('multiple authors keep the first and record the rest as co-authors', () => {
   const book = rowToBook({ title: 'Co-written', authors: 'Charles Nordhoff & James Norman Hall' });
-  assert.equal(book.author, 'Charles Nordhoff');
-  assert.match(book.notes, /Also by James Norman Hall/);
+
+  assert.equal(book.author, 'Charles Nordhoff', 'one name is shown and sorted by');
+  assert.deepEqual(book.coAuthors, ['James Norman Hall']);
+});
+
+test('an import never writes in your notes', () => {
+  // Co-authors used to be flattened into "Also by ...", which is finding the
+  // importer's handwriting in your own margin.
+  // Checked on the finished record rather than the raw row, since notes only
+  // gets its default once the record is normalised.
+  const { books } = parseCalibreCsv('title,authors\n"Co-written","A Writer & B Writer & C Writer"');
+
+  assert.equal(books[0].notes, '');
+  assert.deepEqual(books[0].coAuthors, ['B Writer', 'C Writer']);
 });
 
 test('an audio format column is detected', () => {

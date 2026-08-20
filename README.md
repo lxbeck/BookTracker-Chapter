@@ -405,14 +405,22 @@ The preview says what will happen before it happens — how many will be added,
 how many filled, and which fields across all of them ("12 × description, 7 ×
 series number").
 
-### Custom Calibre columns
+### Column names
 
-Calibre prefixes every user-defined column with `#`, so a description written
-into a custom column exports as `#description` rather than as `comments`. Every
-column name is now tried both bare and hashed, and matched without regard to
-case or to spaces against underscores, because Calibre's catalogue and its CSV
-export disagree about both. Tick the column in the catalogue's field list
-before exporting or it will not be in the file at all.
+Descriptions come from Calibre's **comments** field, which is what the Comments
+box in its editor writes to and what every library has. A handful of other
+names are accepted as fallbacks for catalogues that keep their blurbs
+elsewhere, and column names are matched without regard to case, to spaces
+against underscores, or to a leading hash — `Series Index` and `series_index`
+are the same column.
+
+Preference order is the list's, not the file's. A catalogue carrying two
+columns that both hold a blurb used to get whichever one the export happened to
+write first, which is not a rule anyone could predict from looking at their
+library.
+
+Tick the fields you want in Calibre's catalogue options before exporting;
+anything left unticked is not in the file at all.
 
 ### Series numbers are not integers
 

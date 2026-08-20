@@ -23,22 +23,45 @@ const book = (props) => normalizeBook({ title: 'A Book', ...props }, '2026-08-19
 
 /* --- Custom columns -------------------------------------------------------- */
 
-test('a description written into a custom Calibre column is read', () => {
-  // Calibre prefixes every user-defined column with #, so an evening spent
-  // writing blurbs exports as `#description` and used to import as nothing.
+test('a description comes from the comments field', () => {
+  // Calibre's own field, and what the Comments box in its editor writes to.
   const { books } = parseCalibreCsv(
-    'title,#description\n"Little Nemo, Volume 1","Collects the Sunday pages."'
+    'title,comments\n"Little Nemo, Volume 1","Collects the Sunday pages."'
   );
   assert.equal(books[0].description, 'Collects the Sunday pages.');
 });
 
+test('comments wins when a catalogue carries more than one blurb column', () => {
+  // Reading whichever column the export listed first is not a rule anyone
+  // could predict from looking at their library.
+  const { books } = parseCalibreCsv(
+    'title,description,comments\n"Alex + Ada Vol. 1","The other one.","The comments field."'
+  );
+  assert.equal(books[0].description, 'The comments field.');
+});
+
+test('a catalogue with no comments column still finds a blurb elsewhere', () => {
+  const { books } = parseCalibreCsv(
+    'title,synopsis\n"Alex + Ada Vol. 1","Kept somewhere else."'
+  );
+  assert.equal(books[0].description, 'Kept somewhere else.');
+});
+
 test('column names are matched whatever case and spacing they arrive in', () => {
   const { books } = parseCalibreCsv(
-    'Title,Series Index,#Genre\n"Dune","4.5","Science Fiction"'
+    'Title,Series,Series Index,Genre\n"Dune","Dune","4.5","Science Fiction"'
   );
   assert.equal(books[0].title, 'Dune');
   assert.equal(books[0].series.number, 4.5);
   assert.equal(books[0].genre, 'Science Fiction');
+});
+
+test('a volume number with no series attached is not invented', () => {
+  // Calibre writes an index of 1.0 for every book whether or not it is in a
+  // series. A library of standalones all claiming to be volume one is worse
+  // than one claiming nothing.
+  const { books } = parseCalibreCsv('title,series,series_index\n"A Standalone","","1.0"');
+  assert.equal(books[0].series.number, null);
 });
 
 test('a byte-order mark does not hide the title column', () => {
@@ -59,7 +82,7 @@ test('a half-numbered volume keeps its half', () => {
 });
 
 test('Calibre writing 5.0 still means five', () => {
-  const { books } = parseCalibreCsv('title,series_index\n"Vol. 5","5.0"');
+  const { books } = parseCalibreCsv('title,series,series_index\n"Vol. 5","A Run","5.0"');
   assert.equal(books[0].series.number, 5);
 });
 

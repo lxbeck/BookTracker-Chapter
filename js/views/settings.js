@@ -595,7 +595,7 @@ function calibreRow(redraw) {
   return el('div', {}, [
     el('h4.settings__subhead', {}, 'From Calibre'),
     el('p.settings__hint', {},
-      'In Calibre: select your books, then Convert books \u2192 Create a catalogue, and choose CSV. Tick every field you want carried across \u2014 including any custom column, which exports with a # in front of its name. New books arrive unscheduled, since a Calibre catalogue records what you own rather than what you have read.'),
+      'In Calibre: select your books, then Convert books \u2192 Create a catalogue, and choose CSV. Tick every field you want carried across \u2014 comments is the one that holds your descriptions. New books arrive unscheduled, since a Calibre catalogue records what you own rather than what you have read.'),
     el('p.settings__hint', {},
       'Importing the same catalogue again is safe and useful: books already here keep everything you have entered and only gain the fields they are missing. Write descriptions into Calibre, export again, and they arrive.'),
     el('p.settings__hint', {},
@@ -685,7 +685,7 @@ function confirmCalibre(parsed, summary, redraw) {
 
       !withDescriptions
         ? el('p.settings__note', {},
-            'No descriptions in this catalogue. If you wrote them into a custom Calibre column, make sure that column is ticked in the catalogue\u2019s field list before exporting \u2014 it exports as "#description" and is read from there.')
+            'No descriptions in this catalogue. Tick the comments field in Calibre\u2019s catalogue options before exporting, and they will come across.')
         : null,
 
       el('p.settings__note', {},

@@ -47,10 +47,6 @@ export function allSessions(books) {
     .sort((a, b) => a.session.date.localeCompare(b.session.date));
 }
 
-/** Sessions logged on one day, across every book. */
-export function sessionsOnDay(books, dayKey) {
-  return allSessions(books).filter((entry) => entry.session.date === dayKey);
-}
 
 /**
  * Consecutive days with logged reading, counting back from today.
@@ -172,9 +168,6 @@ export function formatDuration(minutes) {
   return rest ? `${hours}h ${rest}m` : `${hours}h`;
 }
 
-/** The day a streak breaks if nothing is logged. */
-export const streakDeadline = (streak, todayKey = today()) =>
-  streak.current > 0 && !streak.readToday ? todayKey : addDays(todayKey, 1);
 
 /**
  * The days a book was actually read, and the gaps between them.

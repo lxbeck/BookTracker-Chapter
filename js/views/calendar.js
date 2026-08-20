@@ -24,7 +24,7 @@ import { loadSampleLibrary } from '../data/seed.js';
 import { attachHoverCard, hide as hideHoverCard } from './hoverCard.js';
 import { libraryTotals, formatDuration } from '../logic/sessions.js';
 import { openDayPopup } from './dayPopup.js';
-import { goToDay } from './day.js';
+import { goToDay } from './dayCursor.js';
 
 /**
  * How many covers a day can hold.
@@ -104,7 +104,7 @@ const visibleKinds = new Set();
  * Wired in step 4.5. Kept as hooks rather than direct imports so the grid
  * stays usable — and testable — without the popup and hover layers.
  */
-export const calendarHooks = {
+const calendarHooks = {
   onDayOpen: (dayKey, entries) => openDayPopup(dayKey, entries),
   attachHover: attachHoverCard,
 };

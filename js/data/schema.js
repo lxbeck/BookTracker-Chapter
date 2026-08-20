@@ -205,7 +205,7 @@ export function blankBook(overrides = {}) {
  * reordering a fifty-book list would touch fifty records on every drag.
  * -------------------------------------------------------------------------- */
 
-export function blankOrder(overrides = {}) {
+function blankOrder(overrides = {}) {
   const now = new Date().toISOString();
   return {
     id: newId('ro'),
@@ -251,7 +251,7 @@ export function validateOrder(order) {
  * records nothing, so validation requires at least one.
  * -------------------------------------------------------------------------- */
 
-export function blankSession(overrides = {}) {
+function blankSession(overrides = {}) {
   return {
     id: newId('se'),
     via: null,

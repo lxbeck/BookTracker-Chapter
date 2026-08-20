@@ -16,7 +16,7 @@ import { PROVIDERS } from '../data/providers.js';
 import { acceptCoverDrop } from './coverDrop.js';
 import {
   cacheCover, storeCoverOnServer, storeUploadedCover, storeUploadedCoverOnServer,
-  cachedIds, hasServer, LOCAL_COVER,
+  cachedIds, removeCachedCover, deleteCoverOnServer, hasServer, LOCAL_COVER,
 } from '../data/coverCache.js';
 
 const SOURCE_LABEL = {
@@ -269,6 +269,15 @@ export function coverPicker({ draft, readForm, onPick }) {
         setCover({ url: null, source: null });
         results.hidden = true;
         status.textContent = 'Cover removed.';
+
+        // Clearing the field is not removing the cover. The file stayed in the
+        // covers folder and the copy stayed in this browser's image store, so
+        // a removed cover still counted as stored, still synced to every other
+        // device, and came back the moment anything re-read either copy.
+        if (draft.id) {
+          removeCachedCover(draft.id).catch(() => null);
+          deleteCoverOnServer(draft.id).catch(() => null);
+        }
       },
     }, 'Remove'),
   ];

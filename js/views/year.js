@@ -18,7 +18,7 @@ import {
 } from '../lib/dates.js';
 import { groupByDay } from '../logic/schedule.js';
 import { openDayPopup } from './dayPopup.js';
-import { goToDay } from './day.js';
+import { goToDay } from './dayCursor.js';
 import { goToMonth } from './calendar.js';
 import { libraryTotals, formatDuration } from '../logic/sessions.js';
 

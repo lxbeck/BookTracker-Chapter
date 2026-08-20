@@ -18,19 +18,11 @@ import { DAY_STATE_LABEL } from '../logic/schedule.js';
 import { formatUnit } from '../data/schema.js';
 import { setStatus } from '../data/store.js';
 import { openDayPopup } from './dayPopup.js';
-
-/** Which day is on screen. Module state, like the calendar's month cursor. */
-let cursor = null;
-
-/** Let the calendar hand off to this view on a day click. */
-export function goToDay(dayKey) {
-  cursor = dayKey;
-  location.hash = '#/day';
-}
+import { currentDay, setCurrentDay, goToDay } from './dayCursor.js';
 
 export function renderDay(mount) {
   const todayKey = today();
-  if (!cursor) cursor = todayKey;
+  const cursor = currentDay();
 
   const books = allBooks();
   const entries = entriesForDay(books, cursor, todayKey);
@@ -67,7 +59,7 @@ export function renderDay(mount) {
         el('button.btn.btn--ghost', {
           type: 'button',
           onClick: () => {
-            cursor = todayKey;
+            setCurrentDay(todayKey);
             redraw();
           },
         }, 'Today'),
@@ -115,7 +107,7 @@ function gridShape(count) {
 }
 
 function move(delta, mount) {
-  cursor = addDays(cursor, delta);
+  setCurrentDay(addDays(currentDay(), delta));
   renderDay(mount);
 }
 
@@ -137,7 +129,7 @@ function weekStrip(books, dayKey, todayKey, mount) {
       class: [isCursor && 'is-current', key === todayKey && 'is-today'].filter(Boolean).join(' '),
       'aria-current': isCursor ? 'date' : null,
       onClick: () => {
-        cursor = key;
+        setCurrentDay(key);
         renderDay(mount);
       },
     }, [

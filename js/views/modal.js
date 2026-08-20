@@ -103,4 +103,3 @@ export function showModal({
   return handle;
 }
 
-export const closeModal = () => openModal?.close();

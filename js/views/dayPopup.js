@@ -12,7 +12,7 @@ import { dayRow } from './dayRow.js';
 import { entriesForDay } from '../logic/schedule.js';
 import { formatLong, relativeDay, today } from '../lib/dates.js';
 import { allBooks } from '../data/store.js';
-import { goToDay } from './day.js';
+import { goToDay } from './dayCursor.js';
 
 /**
  * @param {string} dayKey

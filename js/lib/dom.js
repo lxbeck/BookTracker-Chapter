@@ -68,7 +68,6 @@ export function fill(node, children) {
 }
 
 export const $ = (sel, root = document) => root.querySelector(sel);
-export const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
 /** Show a transient message. Errors stay up longer. */
 export function toast(message, { variant = 'info', ms = 2600 } = {}) {

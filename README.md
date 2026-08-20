@@ -276,6 +276,26 @@ instead, which makes the call server-side and hands back the JSON. The proxy is
 locked to the four provider hostnames — an open proxy left running on a home
 network is a genuinely bad thing to ship.
 
+## Checking the app against itself
+
+With no build step there is nothing between a typo and a blank screen. A
+misspelled import is valid JavaScript that parses, loads, and throws only when
+the browser reaches the line — which for a rarely opened dialog can be weeks
+later. Most view modules touch `document` at import time, so the tests cannot
+simply load them all and find out.
+
+`tests/imports.test.js` reads the source as text instead and checks four
+things: every module imported exists, every *name* imported is actually
+exported by the module it comes from, no two modules import each other in a
+loop, and nothing imports the same name twice.
+
+The cycle check earned its place immediately. `day.js` imported `dayPopup.js`
+and `dayPopup.js` imported `day.js`, which worked — both modules only called
+each other from event handlers, by which time both had finished loading. Move
+one line of that work to the top level of either file and it becomes
+`undefined` at import time and a blank screen naming neither module usefully.
+The shared state now lives in `dayCursor.js`, a leaf both can import.
+
 ## Which covers do you actually have
 
 A cover on screen is not a cover you have. It might be a file in the covers

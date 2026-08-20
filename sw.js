@@ -68,6 +68,7 @@ const SHELL = [
   './js/views/hoverCard.js',
   './js/views/dayRow.js',
   './js/views/dayPopup.js',
+  './js/views/dayCursor.js',
   './js/views/day.js',
   './js/views/sessionLog.js',
   './js/views/orders.js',

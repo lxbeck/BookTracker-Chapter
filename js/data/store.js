@@ -113,8 +113,6 @@ export function onPersistError(handler) {
   notifyError = handler;
 }
 
-export const isPersisting = () => !persistFailed;
-
 /**
  * Everything needed to answer "is my library actually saved?" without asking
  * the user to take it on faith.
@@ -185,17 +183,6 @@ export const getState = () => state;
 export const allBooks = () => state.books;
 export const getBook = (id) => state.books.find((book) => book.id === id) ?? null;
 export const getSettings = () => state.settings;
-
-export const booksByStatus = (status) => state.books.filter((book) => book.status === status);
-
-/** Books whose *plan* covers a given day. */
-export const booksScheduledOn = (dayKey) =>
-  state.books.filter(
-    (book) =>
-      book.schedule.start &&
-      book.schedule.start <= dayKey &&
-      (book.schedule.end ?? book.schedule.start) >= dayKey
-  );
 
 /* --- Writes --------------------------------------------------------------- */
 
@@ -378,10 +365,6 @@ export const allOrders = () =>
   );
 
 export const getOrder = (id) => state.readingOrders.find((order) => order.id === id) ?? null;
-
-/** Every order a given book appears in. */
-export const ordersContaining = (bookId) =>
-  state.readingOrders.filter((order) => order.bookIds.includes(bookId));
 
 /** Position of a book within an order, or Infinity when it isn't in it. */
 export function positionInOrder(orderId, bookId) {
@@ -579,12 +562,6 @@ export function mergeBooks(survivorId, absorbedIds, patch = {}) {
   for (const id of gone) removeBook(id);
 
   return { ok: true, book: getBook(survivorId), removed: gone.length };
-}
-
-export function setProgress(bookId, input) {
-  const book = getBook(bookId);
-  if (!book) return { ok: false };
-  return updateBook(bookId, { progress: resolveProgress(book, input) });
 }
 
 export function updateSettings(patch) {

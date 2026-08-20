@@ -48,7 +48,6 @@ export function configureSources(next = {}) {
   return sources;
 }
 
-export const currentSources = () => ({ ...sources });
 
 /**
  * The providers to ask for a given lookup.

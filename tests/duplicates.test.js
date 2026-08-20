@@ -249,3 +249,43 @@ test('a finish date on any copy means the book was finished', () => {
   assert.equal(patch.actual.finishedAt, '2026-08-05');
   assert.equal(patch.status, 'finished');
 });
+
+/* --- Bugs worth keeping fixed ---------------------------------------------- */
+
+import { FILLABLE } from '../js/data/fill.js';
+
+test('a duplicate is found when only one of the copies has an ISBN', () => {
+  // The commonest duplicate of all, and the one the finder used to miss: an
+  // import that ran before the ISBN was filled in matched nothing and added a
+  // second record. Grouping by ISBN used to stop the title check running.
+  const groups = findDuplicates([
+    book({ id: 'a', title: 'Gideon the Ninth', author: 'Tamsyn Muir', isbn: '9781250313195' }),
+    book({ id: 'b', title: 'Gideon the Ninth', author: 'Tamsyn Muir' }),
+  ]);
+
+  assert.equal(groups.length, 1);
+  assert.equal(groups[0].books.length, 2);
+});
+
+test('a pair matched by both ISBN and title is reported once', () => {
+  const groups = findDuplicates([
+    book({ id: 'a', title: 'Dune', author: 'Frank Herbert', isbn: '9780441013593' }),
+    book({ id: 'b', title: 'Dune', author: 'Frank Herbert', isbn: '9780441013593' }),
+  ]);
+
+  assert.equal(groups.length, 1, 'two readings of the same pair is still one pair');
+  assert.equal(groups[0].reason, 'isbn', 'the stronger claim is the one shown');
+});
+
+test('an import never fills a field the reader decided', () => {
+  // Status, schedule, progress, format and category are all guessed by
+  // importers. A guess must not overwrite a decision, even a default one.
+  const paths = FILLABLE.map((entry) => entry.path);
+
+  for (const forbidden of ['status', 'schedule', 'progress', 'format', 'formats', 'category']) {
+    assert.ok(
+      !paths.some((path) => path === forbidden || path.startsWith(`${forbidden}.`)),
+      `${forbidden} must not be fillable by an import`
+    );
+  }
+});

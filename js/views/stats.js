@@ -9,7 +9,7 @@
 import { el, fill } from '../lib/dom.js';
 import { allBooks, getSettings } from '../data/store.js';
 import {
-  headline, goalProgress, finishedByMonth, loggedByMonth,
+  headline, allGoalProgress, finishedByMonth, loggedByMonth,
   cumulativePages, dailyMinutes, breakdown, finishedByCategory,
 } from '../logic/stats.js';
 import { formatDuration } from '../logic/sessions.js';
@@ -34,7 +34,9 @@ export function renderStats(mount) {
   }
 
   const stats = headline(books);
-  const goal = goalProgress(books, settings.goal);
+  // Every goal that has been set, not only the first: a year can be "twenty
+  // books and twelve comics", and showing one of them is showing half a year.
+  const goals = allGoalProgress(books, settings.goals ?? settings.goal);
 
   fill(mount, [
     el('div.view-head', {}, [
@@ -44,7 +46,7 @@ export function renderStats(mount) {
       ]),
     ]),
 
-    goal ? goalPanel(goal) : null,
+    ...goals.map((goal) => goalPanel(goal)),
 
     stats.byCategory.length > 1 ? categoryPanel(stats) : null,
 
@@ -168,12 +170,19 @@ function categoryPanel(stats) {
 }
 
 function goalPanel(goal) {
-  const noun = goal.type === 'pages' ? 'pages' : 'books';
+  // A per-kind goal counts that kind, so "12 of 20 comics" reads correctly
+  // rather than calling every finished thing a book.
+  const noun = goal.type === 'pages'
+    ? 'pages'
+    : goal.label
+      ? kindPlural(goal.category)
+      : 'books';
 
   return el('div.goal-panel', { class: goal.onTrack ? 'is-ahead' : 'is-behind' }, [
     el('div.goal-panel__head', {}, [
       el('div', {}, [
-        el('p.goal-panel__eyebrow', {}, `${new Date().getFullYear()} goal`),
+        el('p.goal-panel__eyebrow', {},
+          `${new Date().getFullYear()} goal${goal.label ? ` \u00b7 ${goal.label}` : ''}`),
         el('h3.goal-panel__figure', {}, [
           el('b', {}, goal.done.toLocaleString()),
           ` of ${goal.target.toLocaleString()} ${noun}`,

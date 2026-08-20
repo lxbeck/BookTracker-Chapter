@@ -276,12 +276,15 @@ test('an interlude volume keeps its place between two whole numbers', () => {
   assert.deepEqual(nemo, [1, 2, 2.5, 3]);
 });
 
-test('a volume with no clue in its own title inherits the series it belongs to', () => {
-  // "Little Nemo: A Slumberland Interlude" says nothing about being a comic;
-  // the three volumes either side of it say it plainly.
+test('an import never guesses a kind from the books around it', () => {
+  // A catalogue row says what it says. Inferring "this one is a comic because
+  // its neighbours are" silently rewrites a field the reader owns, and being
+  // quietly wrong about six books is worse than being blank about one — the
+  // library view can sort by recently added and set them all in one action.
   const { books } = parseCalibreCsv(fixture('calibre-with-descriptions.csv'));
-  const nemo = books.filter((entry) => entry.series.name === 'Little Nemo');
-  assert.ok(nemo.every((entry) => entry.category === 'comic'));
+  const interlude = books.find((entry) => entry.title.includes('Interlude'));
+
+  assert.equal(interlude.category, 'book', 'nothing in its own row says comic');
 });
 
 /* --- One book, more than one form ------------------------------------------ */

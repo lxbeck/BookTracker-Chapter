@@ -165,7 +165,15 @@ function dayCard({ book, state }, dayKey, todayKey, redraw) {
             }`;
 
   return el('article.day-card', {}, [
-    el('div.day-card__art', {}, coverThumb(book, { width: 'auto', alt: '' })),
+    // Clicking the cover opens the book, the same as it does on the calendar.
+    // It looks identical in both places, so it should behave identically —
+    // learning that one of them is a button and the other is a picture is not
+    // a thing anyone should have to learn.
+    el('button.day-card__art', {
+      type: 'button',
+      'aria-label': `Open ${book.title}`,
+      onClick: () => openBookForm({ book }),
+    }, coverThumb(book, { width: 'auto', alt: '' })),
 
     el('div.day-card__text', {}, [
       el('p.day-card__state', { class: `is-${state}` }, DAY_STATE_LABEL[state]),

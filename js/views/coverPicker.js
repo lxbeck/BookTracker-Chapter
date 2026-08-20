@@ -122,9 +122,9 @@ export function coverPicker({ draft, readForm, onPick }) {
         ? await cachedCoverUrl(draft.id)
             .then((url) => (url ? fetch(url).then((r) => r.blob()) : null))
             .then((blob) => (blob ? blobToDataUrl(blob) : null))
-            .then((dataUrl) => (dataUrl ? storeUploadedCoverOnServer(draft.id, dataUrl, title) : false))
+            .then((dataUrl) => (dataUrl ? storeUploadedCoverOnServer(draft.id, dataUrl, title, draft.category) : false))
             .catch(() => false)
-        : await storeCoverOnServer(draft.id, cover.url, title).catch(() => false);
+        : await storeCoverOnServer(draft.id, cover.url, title, draft.category).catch(() => false);
 
       saveToFolder.disabled = false;
       status.textContent = stored
@@ -151,7 +151,7 @@ export function coverPicker({ draft, readForm, onPick }) {
       cacheCover(draft.id, next.url).catch(() => null);
       // The title goes with it: the server files cover art under the book's
       // name, and the draft's title is the freshest one there is.
-      storeCoverOnServer(draft.id, next.url, readForm().title || draft.title)
+      storeCoverOnServer(draft.id, next.url, readForm().title || draft.title, draft.category)
         .catch(() => null);
     }
   }
@@ -289,7 +289,7 @@ export function coverPicker({ draft, readForm, onPick }) {
       }
       // An upload only exists on the device that made it until the server has
       // a copy, which is not what "my library is on both my devices" implies.
-      storeUploadedCoverOnServer(draft.id, dataUrl, readForm().title || draft.title)
+      storeUploadedCoverOnServer(draft.id, dataUrl, readForm().title || draft.title, draft.category)
         .catch(() => null);
       setBusy(false, 'Using your image.');
     } catch (error) {

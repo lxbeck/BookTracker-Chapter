@@ -109,18 +109,18 @@ async function postCover(bookId, payload) {
  * Ask the server to fetch and keep a cover.
  * @returns {Promise<boolean>}
  */
-export async function storeCoverOnServer(bookId, url, title) {
+export async function storeCoverOnServer(bookId, url, title, category) {
   if (!url || url.startsWith('data:') || url === 'local:cover') return false;
-  return postCover(bookId, { url, title });
+  return postCover(bookId, { url, title, category });
 }
 
 /**
  * Send an image we already have the bytes of — an upload, or something dropped
  * onto a book — to the server, so every other device gets it too.
  */
-export async function storeUploadedCoverOnServer(bookId, dataUrl, title) {
+export async function storeUploadedCoverOnServer(bookId, dataUrl, title, category) {
   if (!dataUrl?.startsWith('data:')) return false;
-  return postCover(bookId, { dataUrl, title });
+  return postCover(bookId, { dataUrl, title, category });
 }
 
 /** Forget the server's copy — used when a cover is removed rather than replaced. */
@@ -252,7 +252,7 @@ export async function cacheAll(books, onProgress) {
     if (!already.has(book.id)) {
       // Ask the server first: it can reach hosts the browser can't, and its
       // copy is the one every other device will use.
-      const onServer = await storeCoverOnServer(book.id, book.cover.url, book.title);
+      const onServer = await storeCoverOnServer(book.id, book.cover.url, book.title, book.category);
       const inBrowser = await cacheCover(book.id, book.cover.url);
       if (onServer || inBrowser) cached += 1;
       else failed += 1;
@@ -345,9 +345,9 @@ export async function evacuateDataUrls(books) {
 }
 
 /** Ask the server to copy a cover in from a local path (Calibre imports). */
-export async function storeLocalCoverOnServer(bookId, path, title) {
+export async function storeLocalCoverOnServer(bookId, path, title, category) {
   if (!path) return false;
-  return postCover(bookId, { path, title });
+  return postCover(bookId, { path, title, category });
 }
 
 /** Whether a sync server is answering, for features that depend on one. */

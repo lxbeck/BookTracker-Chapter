@@ -21,12 +21,14 @@
 import { createServer } from 'node:http';
 import { readFile, writeFile, mkdir, readdir, stat, rm, rename } from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
-import { join, extname, normalize, resolve } from 'node:path';
+import { join, extname, dirname, normalize, resolve } from 'node:path';
 import { networkInterfaces } from 'node:os';
 import { fileURLToPath } from 'node:url';
 
 import { mergeLibraries, libraryRevision } from './js/data/merge.js';
-import { coverFileName, nameMatchesTitle, safeId, COVER_EXTENSIONS } from './js/data/coverNames.js';
+import {
+  coverPath, coverFolder, nameMatchesTitle, safeId, COVER_EXTENSIONS,
+} from './js/data/coverNames.js';
 import { PROVIDER_HOSTS } from './js/data/providers.js';
 
 const ROOT = fileURLToPath(new URL('.', import.meta.url));
@@ -177,7 +179,9 @@ function saveCoverIndex() {
   return indexChain;
 }
 
-const titleFor = (bookId) => library.books?.find((book) => book.id === bookId)?.title ?? '';
+const bookFor = (bookId) => library.books?.find((book) => book.id === bookId) ?? null;
+const titleFor = (bookId) => bookFor(bookId)?.title ?? '';
+const kindFor = (bookId) => bookFor(bookId)?.category ?? 'book';
 
 const typeForExtension = (extension) =>
   Object.keys(EXT_BY_TYPE).find((key) => EXT_BY_TYPE[key] === extension) ?? 'image/jpeg';
@@ -189,10 +193,18 @@ const typeForExtension = (extension) =>
  * different extension, which is how replacing a JPEG with a PNG used to leave
  * both on disk and the stale one winning the lookup.
  */
-async function writeCover(bookId, buffer, extension, title) {
-  await mkdir(COVER_DIR, { recursive: true });
+async function writeCover(bookId, buffer, extension, title, category) {
+  const name = coverPath(
+    coverIndex,
+    bookId,
+    title || titleFor(bookId),
+    extension,
+    category || kindFor(bookId)
+  );
 
-  const name = coverFileName(coverIndex, bookId, title || titleFor(bookId), extension);
+  // The folder is part of the name now, so it has to exist before the write.
+  await mkdir(join(COVER_DIR, dirname(name)), { recursive: true });
+
   const previous = coverIndex[bookId];
 
   await writeFile(join(COVER_DIR, name), buffer);
@@ -215,7 +227,7 @@ async function writeCover(bookId, buffer, extension, title) {
 const signatureOf = (buffer) =>
   IMAGE_MAGIC.find((candidate) => candidate.bytes.every((byte, index) => buffer[index] === byte));
 
-async function storeLocalCover(bookId, path, title) {
+async function storeLocalCover(bookId, path, title, category) {
   if (!ALLOW_LOCAL_COVERS) throw new Error('Local cover reading is disabled on this server.');
   if (!/\.(jpe?g|png|webp|gif)$/i.test(path)) throw new Error('Not an image path.');
 
@@ -228,10 +240,10 @@ async function storeLocalCover(bookId, path, title) {
   const signature = signatureOf(buffer);
   if (!signature) throw new Error('That file is not an image.');
 
-  return writeCover(bookId, buffer, signature.ext, title);
+  return writeCover(bookId, buffer, signature.ext, title, category);
 }
 
-async function storeCover(bookId, url, title) {
+async function storeCover(bookId, url, title, category) {
   if (!/^https?:\/\//.test(url)) throw new Error('Only http(s) cover URLs can be stored.');
 
   const response = await fetch(url, { redirect: 'follow' });
@@ -246,7 +258,7 @@ async function storeCover(bookId, url, title) {
   // than a 404; anything this small is not a book cover.
   if (buffer.byteLength < 1024) throw new Error('Source returned a placeholder image');
 
-  return writeCover(bookId, buffer, extension, title);
+  return writeCover(bookId, buffer, extension, title, category);
 }
 
 /**
@@ -257,7 +269,7 @@ async function storeCover(bookId, url, title) {
  * the declared media type, because the media type is just a string in a
  * request body and this writes to disk.
  */
-async function storeCoverBytes(bookId, dataUrl, title) {
+async function storeCoverBytes(bookId, dataUrl, title, category) {
   const match = /^data:(image\/[a-z+]+);base64,([\s\S]+)$/i.exec(String(dataUrl ?? ''));
   if (!match) throw new Error('That upload was not an image.');
 
@@ -268,7 +280,7 @@ async function storeCoverBytes(bookId, dataUrl, title) {
   const signature = signatureOf(buffer);
   if (!signature) throw new Error('That upload was not an image.');
 
-  return writeCover(bookId, buffer, signature.ext, title);
+  return writeCover(bookId, buffer, signature.ext, title, category);
 }
 
 async function findCover(bookId) {
@@ -310,8 +322,26 @@ async function forgetCover(bookId) {
  * since been retitled. Both are done by renaming rather than refetching — the
  * bytes are already correct, and a rename costs nothing.
  */
+/** Every cover file, as paths relative to the covers directory. */
+async function coverFiles() {
+  const entries = await readdir(COVER_DIR, { withFileTypes: true }).catch(() => []);
+  const found = [];
+
+  for (const entry of entries) {
+    if (entry.isDirectory()) {
+      const inner = await readdir(join(COVER_DIR, entry.name)).catch(() => []);
+      found.push(...inner.map((name) => `${entry.name}/${name}`));
+    } else if (entry.isFile()) {
+      // Pre-folder covers, still in the root. Adopted on the next reconcile.
+      found.push(entry.name);
+    }
+  }
+
+  return found;
+}
+
 async function reconcileCoverNames() {
-  const files = new Set(await readdir(COVER_DIR).catch(() => []));
+  const files = new Set(await coverFiles());
   if (!files.size) return { renamed: 0, adopted: 0 };
 
   let renamed = 0;
@@ -320,15 +350,18 @@ async function reconcileCoverNames() {
   for (const book of library.books ?? []) {
     const current = coverIndex[book.id];
 
-    // Adopt: a file named after the id, from before this existed.
+    // Adopt: a file named after the id, or one sitting in the root from
+    // before covers were filed by kind.
     if (!current || !files.has(current)) {
-      const legacy = COVER_EXTENSIONS
-        .map((extension) => `${safeId(book.id)}${extension}`)
-        .find((name) => files.has(name));
+      const legacy =
+        COVER_EXTENSIONS.map((extension) => `${safeId(book.id)}${extension}`).find((name) =>
+          files.has(name)
+        ) ?? (current && files.has(current) ? current : null);
       if (!legacy) continue;
 
-      const name = coverFileName(coverIndex, book.id, book.title, extname(legacy));
+      const name = coverPath(coverIndex, book.id, book.title, extname(legacy), book.category);
       if (name !== legacy) {
+        await mkdir(join(COVER_DIR, dirname(name)), { recursive: true });
         await rename(join(COVER_DIR, legacy), join(COVER_DIR, name)).catch(() => null);
         files.delete(legacy);
         files.add(name);
@@ -338,10 +371,12 @@ async function reconcileCoverNames() {
       continue;
     }
 
-    // Follow a retitling.
-    if (!nameMatchesTitle(current, book.title)) {
-      const next = coverFileName(coverIndex, book.id, book.title, extname(current));
+    // Follow a retitling, or a book being reclassified into another folder.
+    const wrongFolder = !current.startsWith(`${coverFolder(book.category)}/`);
+    if (wrongFolder || !nameMatchesTitle(current, book.title)) {
+      const next = coverPath(coverIndex, book.id, book.title, extname(current), book.category);
       if (next !== current) {
+        await mkdir(join(COVER_DIR, dirname(next)), { recursive: true });
         await rename(join(COVER_DIR, current), join(COVER_DIR, next)).catch(() => null);
         files.delete(current);
         files.add(next);
@@ -510,7 +545,7 @@ async function handleApi(request, response, url) {
     }
 
     const keep = new Set(bookIds.map(String));
-    const files = await readdir(COVER_DIR).catch(() => []);
+    const files = await coverFiles();
     const claimed = new Map(
       Object.entries(coverIndex).filter(([bookId]) => keep.has(bookId)).map(([, file]) => [file, true])
     );
@@ -555,13 +590,14 @@ async function handleApi(request, response, url) {
     const bookId = decodeURIComponent(coverMatch[1]);
 
     if (request.method === 'POST') {
-      const { url: source, path: localPath, dataUrl, title } = JSON.parse(await readBody(request));
+      const { url: source, path: localPath, dataUrl, title, category } =
+        JSON.parse(await readBody(request));
       try {
         const result = dataUrl
-          ? await storeCoverBytes(bookId, dataUrl, title)
+          ? await storeCoverBytes(bookId, dataUrl, title, category)
           : localPath
-            ? await storeLocalCover(bookId, localPath, title)
-            : await storeCover(bookId, source, title);
+            ? await storeLocalCover(bookId, localPath, title, category)
+            : await storeCover(bookId, source, title, category);
         json(response, 200, { ok: true, ...result });
       } catch (error) {
         json(response, 200, { ok: false, error: error.message });
@@ -589,7 +625,7 @@ async function handleApi(request, response, url) {
   }
 
   if (url.pathname === '/api/covers') {
-    const files = await readdir(COVER_DIR).catch(() => []);
+    const files = await coverFiles();
     let bytes = 0;
     for (const file of files) {
       const info = await stat(join(COVER_DIR, file)).catch(() => null);

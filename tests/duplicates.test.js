@@ -328,3 +328,58 @@ test('a dismissal does not silence a different pair', () => {
   assert.equal(groups.length, 2);
   assert.equal(findDuplicates(library, { dismissed: [groups[0].key] }).length, 1);
 });
+
+/* --- Goals per kind --------------------------------------------------------- */
+
+import { allGoalProgress } from '../js/logic/stats.js';
+
+const finishedThisYear = (props) =>
+  book({ status: 'finished', actual: { finishedAt: '2026-03-01' }, ...props });
+
+test('a goal can count one kind rather than everything', () => {
+  // "Twenty books" and "twenty things, four of which were single comic
+  // issues" are different years.
+  const library = [
+    finishedThisYear({ title: 'A', category: 'book' }),
+    finishedThisYear({ title: 'B', category: 'book' }),
+    finishedThisYear({ title: 'C', category: 'comic' }),
+  ];
+
+  const [overall, comics] = allGoalProgress(
+    library,
+    [{ type: 'books', target: 10 }, { type: 'books', target: 5, category: 'comic' }],
+    '2026-06-01'
+  );
+
+  assert.equal(overall.done, 3);
+  assert.equal(comics.done, 1);
+  assert.equal(comics.category, 'comic');
+});
+
+test('several goals are tracked at once', () => {
+  const progress = allGoalProgress(
+    [finishedThisYear({ category: 'manga' })],
+    [
+      { type: 'books', target: 12 },
+      { type: 'books', target: 6, category: 'manga' },
+      { type: 'pages', target: 3000 },
+    ],
+    '2026-06-01'
+  );
+
+  assert.equal(progress.length, 3);
+});
+
+test('a goal with no target is not a goal', () => {
+  assert.deepEqual(allGoalProgress([], [{ type: 'books' }], '2026-06-01'), []);
+});
+
+test('one goal saved the old way still works', () => {
+  // Settings held a single goal object before goals became a list.
+  const progress = allGoalProgress(
+    [finishedThisYear({})],
+    { type: 'books', target: 5 },
+    '2026-06-01'
+  );
+  assert.equal(progress[0].done, 1);
+});

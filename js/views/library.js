@@ -65,6 +65,16 @@ const SORTS = {
   },
   added: { label: 'Recently added', compare: (a, b) => b.createdAt.localeCompare(a.createdAt) },
   title: { label: 'Title', compare: (a, b) => a.title.localeCompare(b.title) },
+  progress: {
+    label: 'Nearest finishing',
+    // Furthest through first, so the book that needs one more evening sits
+    // above the one you have barely started. Books with no progress at all
+    // fall to the bottom in title order rather than being scattered through
+    // a run of zeroes.
+    compare: (a, b) =>
+      (b.progress?.percent ?? 0) - (a.progress?.percent ?? 0) ||
+      a.title.localeCompare(b.title),
+  },
   notes: {
     label: 'Has notes',
     // Books you have written something about, longest note first, then
@@ -138,7 +148,21 @@ export function renderLibrary(mount) {
     filters.shelf = Object.keys(SHELVES).find((id) => counts[id]) ?? 'all';
   }
 
-  const tags = [...new Set(books.flatMap((book) => book.shelves))].sort();
+  /**
+   * The books a filter row should describe.
+   *
+   * The rows used to be built from the whole library, so the Reading shelf
+   * offered a shelf tag, a reading list and a genre that between them matched
+   * nothing currently on it — every one of them a click that empties the view.
+   * A filter that cannot match anything you can see is not a filter, it is a
+   * trap.
+   *
+   * "Everything" is the exception and keeps the full set, because that tab is
+   * where you go precisely to find the things the current shelf does not show.
+   */
+  const inScope = filters.shelf === 'all' ? books : books.filter(SHELVES[filters.shelf].match);
+
+  const tags = [...new Set(inScope.flatMap((book) => book.shelves))].sort();
   if (filters.tag && !tags.includes(filters.tag)) filters.tag = null;
 
   const visible = books
@@ -175,12 +199,12 @@ export function renderLibrary(mount) {
     ]),
 
     books.length ? toolbar(counts) : null,
-    books.length ? formatBar(books) : null,
-    books.length ? categoryBar(books) : null,
-    books.length ? genreBar(books) : null,
+    books.length && showsRow('format') ? formatBar(inScope) : null,
+    books.length && showsRow('kind') ? categoryBar(inScope) : null,
+    books.length && showsRow('genre') ? genreBar(inScope) : null,
     books.length ? needsBar(books) : null,
-    allOrders().length ? orderBar() : null,
-    tags.length ? tagBar(tags) : null,
+    showsRow('orders') ? orderBar(inScope) : null,
+    tags.length && showsRow('shelves') ? tagBar(tags) : null,
     selection.size ? bulkBar(visible) : null,
 
     books.length === 0
@@ -212,6 +236,23 @@ const SEARCHED = [
   (book) => book.notes,
   (book) => book.shelves.join(' '),
 ];
+
+/**
+ * Whether a filter row is switched on.
+ *
+ * Six rows above the shelves is a lot of chrome for someone who only ever
+ * filters by one of them, and the rows they never use are pure noise. Hidden
+ * rows also clear their own filter, so a row cannot be switched off while
+ * still silently narrowing what is on screen.
+ */
+function showsRow(id) {
+  const hidden = getSettings().hiddenRows ?? [];
+  if (!hidden.includes(id)) return true;
+
+  const clears = { format: 'format', kind: 'category', genre: 'genre', orders: 'order', shelves: 'tag' };
+  if (filters[clears[id]]) filters[clears[id]] = null;
+  return false;
+}
 
 const matchesQuery = (query) => {
   const needle = query.trim().toLowerCase();
@@ -490,9 +531,18 @@ function needsBar(books) {
   ].filter(Boolean));
 }
 
-function orderBar() {
+function orderBar(inScope) {
   const rerender = () => renderLibrary(document.querySelector('#view'));
-  const orders = allOrders();
+
+  // Only lists with something on this shelf. A reading list offered on the
+  // Reading tab that holds nothing you are currently reading is a click that
+  // empties the view and tells you nothing.
+  const onShelf = new Set(inScope.map((book) => book.id));
+  const orders = allOrders()
+    .map((order) => ({ ...order, here: order.bookIds.filter((id) => onShelf.has(id)).length }))
+    .filter((order) => order.here > 0);
+
+  if (!orders.length) return null;
 
   return el('div.tag-bar', {}, [
     el('span.tag-bar__label', {}, 'Reading order'),
@@ -504,7 +554,7 @@ function orderBar() {
           filters.order = filters.order === order.id ? null : order.id;
           rerender();
         },
-      }, `${order.name} (${order.bookIds.length})`)
+      }, `${order.name} (${order.here})`)
     ),
     filters.order
       ? el('span.tag-bar__note', {}, 'showing this list in its own sequence')

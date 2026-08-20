@@ -205,13 +205,31 @@ export function headline(books, todayKey = today()) {
  * Progress against a yearly goal, with the pace needed to still hit it.
  * @param {{type: 'books'|'pages', target: number}} goal
  */
+/**
+ * Progress against every goal that has been set.
+ *
+ * Goals are a list rather than one setting, because "twenty books and twelve
+ * comics" is a perfectly ordinary year and expressing it as a single number
+ * means picking which half to leave out. An entry with no category is the
+ * overall goal and counts everything.
+ */
+export function allGoalProgress(books, goals, todayKey = today()) {
+  return (Array.isArray(goals) ? goals : [goals])
+    .map((goal) => goalProgress(books, goal, todayKey))
+    .filter(Boolean);
+}
+
 export function goalProgress(books, goal, todayKey = today()) {
   if (!goal?.target) return null;
 
   const year = todayKey.slice(0, 4);
-  const finished = books.filter(
-    (book) => book.status === 'finished' && book.actual.finishedAt?.startsWith(year)
-  );
+  const finished = books
+    .filter((book) => book.status === 'finished' && book.actual.finishedAt?.startsWith(year))
+    // A goal can be about one kind of thing. "Twenty books" and "twenty
+    // things, four of which were single comic issues" are different years, and
+    // counting them the same is what makes a round number stop meaning
+    // anything by about March.
+    .filter((book) => !goal.category || book.category === goal.category);
 
   const done =
     goal.type === 'pages'
@@ -227,6 +245,8 @@ export function goalProgress(books, goal, todayKey = today()) {
 
   return {
     type: goal.type,
+    category: goal.category ?? null,
+    label: goal.label ?? null,
     target: goal.target,
     done,
     remaining,

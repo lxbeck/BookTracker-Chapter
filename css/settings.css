@@ -315,3 +315,42 @@ kbd {
   margin: 0 0 var(--s2);
   font-size: var(--size-md);
 }
+
+
+/* --- Collapsible sections -------------------------------------------------
+   Everything open by default; the marker is the only affordance needed.
+   ------------------------------------------------------------------------- */
+
+.settings-block__title {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+}
+
+.settings-block__title::-webkit-details-marker {
+  display: none;
+}
+
+/* A caret that turns, drawn rather than typed so it inherits the theme. */
+.settings-block__title::before {
+  content: "";
+  width: 0;
+  height: 0;
+  flex: none;
+  border-left: 5px solid currentColor;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  transform: rotate(90deg);
+  transition: transform var(--fast) var(--ease);
+  opacity: 0.55;
+}
+
+.settings-block:not([open]) .settings-block__title::before {
+  transform: rotate(0deg);
+}
+
+.settings-block__body {
+  margin-top: var(--s3);
+}

@@ -15,7 +15,7 @@
 
 import { el, fill, toast } from '../lib/dom.js';
 import { allBooks, getSettings, rescheduleBook, getBook } from '../data/store.js';
-import { monthGrid, monthName, weekdayLabels, today, addDays, formatLong } from '../lib/dates.js';
+import { monthGrid, monthName, weekdayLabels, today, addDays, formatLong, toKey } from '../lib/dates.js';
 import { groupByDay, DAY_STATE_LABEL } from '../logic/schedule.js';
 import { matchesKinds } from '../data/schema.js';
 import { kindsPresent } from '../data/kinds.js';
@@ -235,10 +235,12 @@ function streakStrip(totals) {
  * empty calendar, since an empty grid with no visible way back is a trap.
  */
 function kindToggles(books, mount) {
-  // Every kind that actually has something on the calendar, including ones
-  // invented in Settings. Built from what is scheduled rather than from a
-  // fixed list, so the row is exactly as long as it needs to be.
-  const present = kindsPresent(books.filter((book) => book.schedule.start));
+  // Every kind actually scheduled *in the month on screen*, including kinds
+  // invented in Settings. Offering a toggle for an anthology that is planned
+  // for November while you are looking at August is offering to filter a grid
+  // down to nothing — and since the row is rebuilt on every render, arrowing
+  // to another month re-reads it.
+  const present = kindsPresent(booksInView(books));
 
   // Nothing to choose between when only one kind is scheduled.
   if (present.length < 2) return null;
@@ -280,6 +282,25 @@ function kindToggles(books, mount) {
             .join(' and ')} only`)
       : null,
   ].filter(Boolean));
+}
+
+/**
+ * The books whose plans touch the month on screen.
+ *
+ * A plan spanning a month boundary belongs to both months, so the test is an
+ * overlap rather than a start date: a book begun in July and finished in
+ * August is on the August grid and its kind should be filterable there.
+ */
+function booksInView(books) {
+  const first = toKey(new Date(cursor.year, cursor.month, 1));
+  const last = toKey(new Date(cursor.year, cursor.month + 1, 0));
+
+  return books.filter((book) => {
+    const start = book.schedule.start;
+    if (!start) return false;
+    const end = book.schedule.end || start;
+    return start <= last && end >= first;
+  });
 }
 
 const rerender = (mount) => renderCalendar(mount);

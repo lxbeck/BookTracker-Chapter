@@ -502,3 +502,41 @@ test('a kind with books in it is listed even when the setting is gone', () => {
 
   assert.equal(present.find((kind) => kind.id === 'researchPaper')?.count, 2);
 });
+
+/* --- Covers filed by kind --------------------------------------------------- */
+
+import { coverPath, coverFolder } from '../js/data/coverNames.js';
+
+test('a cover lives in a folder named after its kind', () => {
+  // One flat directory works until it doesn't: a few hundred files is a wall
+  // of names you scroll rather than read.
+  assert.equal(coverPath({}, 'bk-1', 'Dune', '.jpg', 'book'), 'book/dune.jpg');
+  assert.equal(coverPath({}, 'bk-1', 'Akira', '.jpg', 'manga'), 'manga/akira.jpg');
+});
+
+test('a custom kind gets its own folder', () => {
+  assert.equal(coverPath({}, 'bk-1', 'On Scaling', '.jpg', 'researchPaper'),
+    'researchPaper/on-scaling.jpg');
+});
+
+test('a kind name can never escape the covers folder', () => {
+  // The kind arrives over the network before it becomes a path.
+  assert.equal(coverFolder('../../etc'), 'etc');
+  assert.equal(coverFolder(''), 'book');
+});
+
+test('the same title in two kinds keeps the clean name in both', () => {
+  const index = {};
+  index['bk-1'] = coverPath(index, 'bk-1', 'Dune', '.jpg', 'book');
+  index['bk-2'] = coverPath(index, 'bk-2', 'Dune', '.jpg', 'comic');
+
+  assert.deepEqual(Object.values(index), ['book/dune.jpg', 'comic/dune.jpg']);
+});
+
+test('two of the same kind and title still disambiguate', () => {
+  const index = {};
+  index['bk-1'] = coverPath(index, 'bk-1', 'Dune', '.jpg', 'book');
+  index['bk-2'] = coverPath(index, 'bk-2', 'Dune', '.jpg', 'book');
+
+  assert.deepEqual(Object.values(index), ['book/dune.jpg', 'book/dune-2.jpg']);
+});

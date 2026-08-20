@@ -118,8 +118,15 @@ export async function lookupByIsbn(isbn) {
     .map((result) => (result.status === 'fulfilled' ? result.value : null))
     .filter(Boolean);
 
-  const merged = mergeFound(found, { coverFrom: sources.covers });
+  let merged = mergeFound(found, { coverFrom: sources.covers });
   if (!merged) return null;
+
+  // Open Library's search index has no description in it. If nothing else
+  // supplied one, go and get it from the work record — the request that turns
+  // "found the book, nothing to add" into an actual blurb.
+  if (!merged.description || !merged.genre) {
+    merged = await PROVIDERS.openlibrary.describe(merged, fetchJson).catch(() => merged);
+  }
 
   return {
     ...merged,
@@ -158,6 +165,24 @@ export async function searchByText(query, limit = 6) {
 
   const lists = settled.map((result) => (result.status === 'fulfilled' ? result.value : []));
   return interleave(lists, limit).filter((result) => result.title);
+}
+
+/**
+ * Fill in what a search result left out.
+ *
+ * Search returns as much as an index can hold, which for Open Library does not
+ * include the blurb. Fetching it for all six results of a search would be six
+ * requests to show a grid of covers nobody has chosen from yet, so it happens
+ * once, for the one result that is actually going to be used.
+ */
+export async function describeResult(result) {
+  if (!result || result.source !== 'openlibrary') return result;
+  if (result.description && result.genre) return result;
+  try {
+    return await PROVIDERS.openlibrary.describe(result, fetchJson);
+  } catch {
+    return result;
+  }
 }
 
 /**

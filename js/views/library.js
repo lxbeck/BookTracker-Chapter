@@ -175,14 +175,75 @@ export function renderLibrary(mount) {
   ]);
 }
 
+/**
+ * Which fields a search looks at.
+ *
+ * Descriptions are in here, which they were not before. A catalogue you cannot
+ * search the text of is a catalogue you can only find things in if you already
+ * remember what they were called — and the whole reason for writing blurbs
+ * into records is to be able to ask "which one was the book about the devil
+ * hunter" six months later.
+ *
+ * Notes and tags come along for the same reason: they are things you wrote
+ * about a book, and anything you wrote should be findable.
+ */
+const SEARCHED = [
+  (book) => book.title,
+  (book) => book.author,
+  (book) => book.genre,
+  (book) => book.series.name,
+  (book) => book.description,
+  (book) => book.notes,
+  (book) => book.shelves.join(' '),
+];
+
 const matchesQuery = (query) => {
   const needle = query.trim().toLowerCase();
   if (!needle) return () => true;
   return (book) =>
-    [book.title, book.author, book.genre, book.series.name]
+    SEARCHED.map((read) => read(book))
       .filter(Boolean)
-      .some((value) => value.toLowerCase().includes(needle));
+      .some((value) => String(value).toLowerCase().includes(needle));
 };
+
+/** Whether the query is only found in the long text, rather than the labels. */
+const matchedInText = (book, query) => {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return false;
+
+  const label = [book.title, book.author, book.genre, book.series.name]
+    .filter(Boolean)
+    .some((value) => value.toLowerCase().includes(needle));
+
+  return !label && `${book.description} ${book.notes}`.toLowerCase().includes(needle);
+};
+
+/**
+ * The sentence the search term was found in, rather than the opening line.
+ *
+ * A card showing the first forty words of a blurb is no help when the reason
+ * the book is on screen is a phrase four paragraphs down. The excerpt is cut
+ * at word boundaries so it reads as prose rather than as a substring.
+ */
+function excerptAround(text, query, span = 140) {
+  const body = String(text ?? '');
+  const at = body.toLowerCase().indexOf(query.trim().toLowerCase());
+  if (at === -1) return body;
+
+  let start = Math.max(0, at - Math.floor(span / 3));
+  let end = Math.min(body.length, at + query.length + Math.floor((span * 2) / 3));
+
+  if (start > 0) {
+    const space = body.indexOf(' ', start);
+    if (space > -1 && space < at) start = space + 1;
+  }
+  if (end < body.length) {
+    const space = body.lastIndexOf(' ', end);
+    if (space > at + query.length) end = space;
+  }
+
+  return `${start > 0 ? '\u2026' : ''}${body.slice(start, end).trim()}${end < body.length ? '\u2026' : ''}`;
+}
 
 function toolbar(counts) {
   const rerender = () => renderLibrary(document.querySelector('#view'));
@@ -210,7 +271,7 @@ function toolbar(counts) {
   const search = el('input.input.shelf-search', {
     type: 'search',
     value: filters.query,
-    placeholder: 'Search title, author, genre\u2026',
+    placeholder: 'Search titles, authors, descriptions\u2026',
     'aria-label': 'Search the library',
     onInput: (event) => {
       filters.query = event.target.value;
@@ -844,8 +905,18 @@ function shelfCard(book) {
           statusLine(book, unit),
           orderBadge(book),
           book.rating ? el('p.shelf-card__rating', { 'aria-label': `${book.rating} out of 5` }, '\u2605'.repeat(book.rating)) : null,
-          book.description
-            ? el('p.shelf-card__blurb', {}, book.description)
+          book.description || book.notes
+            ? el('p.shelf-card__blurb', {
+                // When the only reason this book is on screen is a phrase in
+                // its blurb, show that phrase rather than the opening line.
+                class: matchedInText(book, filters.query) ? 'shelf-card__blurb--hit' : '',
+              },
+              matchedInText(book, filters.query)
+                ? excerptAround(
+                    `${book.description} ${book.notes}`.trim(),
+                    filters.query
+                  )
+                : book.description)
             : null,
         ].filter(Boolean)),
       ]

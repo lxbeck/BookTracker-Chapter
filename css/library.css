@@ -436,3 +436,12 @@
   gap: var(--s1);
   min-width: 0;
 }
+
+/* A blurb shown because the search term is in it, rather than because it is
+   the blurb. Marked quietly — the excerpt itself is the signal, and a
+   highlight colour on a card in a grid of cards reads as an error state. */
+.shelf-card__blurb--hit {
+  color: var(--ink);
+  border-left: 2px solid var(--stamp);
+  padding-left: var(--s2);
+}

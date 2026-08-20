@@ -370,3 +370,48 @@ test('a cover address has to be http or https', () => {
   assert.throws(() => normalizeCoverUrl('not a url'), /web address/);
   assert.throws(() => normalizeCoverUrl(''), /Paste an image address/);
 });
+
+/* --- Searching what you wrote ---------------------------------------------- */
+
+import { normalizeBook } from '../js/data/schema.js';
+
+/**
+ * The library view's search predicate, kept in step with the one in
+ * `library.js`. Duplicated rather than imported because that module reaches
+ * for `document` at load time, and the rule is worth testing on its own.
+ */
+const searchable = (book) => [
+  book.title, book.author, book.genre, book.series.name,
+  book.description, book.notes, book.shelves.join(' '),
+];
+
+const matches = (book, query) => {
+  const needle = query.trim().toLowerCase();
+  return searchable(book)
+    .filter(Boolean)
+    .some((value) => String(value).toLowerCase().includes(needle));
+};
+
+const shelfBook = (props) => normalizeBook({ title: 'A Book', ...props }, '2026-08-19');
+
+test('a search reaches into descriptions', () => {
+  const book = shelfBook({
+    title: 'Chainsaw Man, Vol. 1',
+    description: 'Denji was a small-time devil hunter just trying to survive.',
+  });
+
+  assert.ok(matches(book, 'devil hunter'), 'the phrase is why the book is memorable');
+  assert.ok(matches(book, 'chainsaw'), 'the title still matches');
+  assert.ok(!matches(book, 'vampire'));
+});
+
+test('a search reaches into notes and tags', () => {
+  const book = shelfBook({ notes: 'Lent to Sam in March.', shelves: ['borrowed'] });
+  assert.ok(matches(book, 'sam'));
+  assert.ok(matches(book, 'borrowed'));
+});
+
+test('searching is case-insensitive across every field', () => {
+  const book = shelfBook({ description: 'A DEVIL HUNTER.' });
+  assert.ok(matches(book, 'devil'));
+});

@@ -303,6 +303,45 @@ whichever one you are working through belongs at the top.
 Every move is announced to a screen reader, since a row sliding one place up is
 otherwise silent.
 
+## Searching, and what "get details" actually does
+
+The search field reads titles, authors, genres, series names, **descriptions,
+notes and tags**. Descriptions were not searched before, which made a blurb
+something you could write and never find again — and finding it again six
+months later is the entire reason to write one. When the only reason a book is
+on screen is a phrase four paragraphs into its blurb, the card shows that
+phrase instead of the opening line.
+
+"Get details" fills empty fields and only empty fields. It asks the catalogues
+in two passes:
+
+1. **By ISBN**, when the record has one, since that identifies an edition and
+   so gets the page count right.
+2. **By title and author**, when the first pass left something out. An edition
+   nobody has catalogued fully is a dead end — a regional printing may be
+   indexed with a title and nothing else while the work everyone else owns has
+   a blurb, a page count and a cover. A title search finds the work, so its
+   page count belongs to some printing and its ISBN is never claimed as yours.
+
+### Open Library has no descriptions in its search index
+
+This was a real bug and worth writing down. Open Library's search API returns
+titles, authors, page counts and cover ids, and no description, however you ask
+for it — the blurb lives on the *work* record, one level up from any edition.
+So a lookup could find a book, return everything search knows, and report that
+there was nothing the record was missing, while the description sat on a page
+you could open in a browser and read.
+
+The work record is now fetched as a second request, made only when something is
+still missing. Its subject list stands in for a genre, which Open Library does
+not have as a field at all — with cataloguing artefacts ("Accessible book",
+"Protected DAISY") and Library of Congress headings filtered out, since neither
+is a word anyone would use.
+
+When a lookup finds the book but not the gap, it now says which gap survived.
+"No description in any catalogue searched" tells you to write your own; "the
+lookup had nothing this book was missing" reads as a shrug.
+
 ## Importing the same catalogue twice
 
 A Calibre import that met a book already in the library used to skip it. That

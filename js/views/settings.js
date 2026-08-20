@@ -31,6 +31,7 @@ import {
 import { allKinds, customKinds, kindLabel, idFromLabel } from '../data/kinds.js';
 import { buildSnapshot } from '../data/snapshot.js';
 import { buildIcs, icsEventCount } from '../data/ics.js';
+import { showShortcuts } from './shortcuts.js';
 import {
   storeLocalCoverOnServer, storeCoverOnServer, storeUploadedCoverOnServer,
   cachedCoverUrl, isLocalCover, hasServer, LOCAL_COVER,

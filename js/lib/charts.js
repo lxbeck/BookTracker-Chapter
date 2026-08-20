@@ -79,10 +79,6 @@ function attachReadout(mark, content) {
   return mark;
 }
 
-export const hideChartReadout = () => {
-  if (readout) readout.hidden = true;
-};
-
 function svgEl(tag, attrs = {}, children = []) {
   const node = document.createElementNS(NS, tag);
   for (const [key, value] of Object.entries(attrs)) {

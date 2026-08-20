@@ -41,7 +41,7 @@ const go = (route) => {
  * Grouped the way someone would look for them rather than alphabetically: the
  * views first, since those are the ones worth learning, then the actions.
  */
-export const SHORTCUTS = [
+const SHORTCUTS = [
   { keys: ['1'], label: 'Library', group: 'Go to', run: () => go('library') },
   { keys: ['2'], label: 'Calendar', group: 'Go to', run: () => go('calendar') },
   { keys: ['3'], label: 'Today', group: 'Go to', run: () => goToDay(today()) },

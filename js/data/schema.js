@@ -134,7 +134,7 @@ export function spineColor(seed = '') {
   return SPINE_COLORS[Math.abs(hash) % SPINE_COLORS.length];
 }
 
-export function newId(prefix = 'bk') {
+function newId(prefix = 'bk') {
   const rand =
     globalThis.crypto?.randomUUID?.().slice(0, 8) ??
     Math.random().toString(36).slice(2, 10);

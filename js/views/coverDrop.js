@@ -22,7 +22,7 @@ const IMAGE_URL = /^https?:\/\//i;
  * What was dropped, if it was something we can use.
  * @returns {{file: File}|{url: string}|null}
  */
-export function imageFromDrop(event) {
+function imageFromDrop(event) {
   const file = [...(event.dataTransfer?.files ?? [])].find((entry) =>
     entry.type.startsWith('image/')
   );

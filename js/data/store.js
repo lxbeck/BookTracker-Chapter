@@ -362,7 +362,21 @@ function applySessions(book, sessions) {
 
 /* --- Reading orders ------------------------------------------------------- */
 
-export const allOrders = () => state.readingOrders;
+/**
+ * The lists, in the order you put them in.
+ *
+ * `position` is a number rather than an array index because two devices
+ * editing different lists must not have to agree on one shared array — each
+ * list carries its own place, and the merge rule for a list is the same as for
+ * a book.
+ */
+export const allOrders = () =>
+  [...state.readingOrders].sort(
+    (a, b) =>
+      (a.position ?? Infinity) - (b.position ?? Infinity) ||
+      String(a.createdAt).localeCompare(String(b.createdAt))
+  );
+
 export const getOrder = (id) => state.readingOrders.find((order) => order.id === id) ?? null;
 
 /** Every order a given book appears in. */
@@ -379,6 +393,16 @@ export function createOrder(input) {
   const order = normalizeOrder(input);
   const errors = validateOrder(order);
   if (Object.keys(errors).length) return { ok: false, errors };
+
+  if (order.position == null) {
+    // A new list goes after the ones already there, rather than wherever an
+    // unset position happens to sort.
+    const highest = state.readingOrders.reduce(
+      (max, entry) => Math.max(max, entry.position ?? -1),
+      -1
+    );
+    order.position = highest + 1;
+  }
 
   commit(() => {
     state.readingOrders.push(order);
@@ -455,6 +479,57 @@ export function moveInOrder(orderId, bookId, toIndex) {
   next.splice(from, 1);
   next.splice(Math.max(0, Math.min(toIndex, next.length)), 0, bookId);
   return updateOrder(orderId, { bookIds: next });
+}
+
+/**
+ * Put a whole sequence back the way it was.
+ *
+ * What undo is built on. Restoring the array wholesale rather than replaying
+ * the inverse of a move is the only version that is correct after a drag,
+ * where "the inverse" depends on where the row started and nobody remembers.
+ */
+export function setOrderSequence(orderId, bookIds) {
+  const order = getOrder(orderId);
+  if (!order) return { ok: false };
+
+  // Only ids already in the list, and every one of them: a restore must not
+  // resurrect a book removed since, or drop one added since.
+  const known = new Set(order.bookIds);
+  const next = bookIds.filter((id) => known.has(id));
+  for (const id of order.bookIds) if (!next.includes(id)) next.push(id);
+
+  return updateOrder(orderId, { bookIds: next });
+}
+
+/**
+ * Move a list itself up or down among the others.
+ *
+ * Positions are renumbered from zero on every move. Gaps would work too, but
+ * renumbering keeps the numbers meaning what they look like they mean, and a
+ * handful of lists is not a dataset worth optimising for.
+ */
+export function moveOrder(orderId, delta) {
+  const ordered = allOrders();
+  const from = ordered.findIndex((order) => order.id === orderId);
+  if (from === -1) return { ok: false };
+
+  const to = Math.max(0, Math.min(from + delta, ordered.length - 1));
+  if (to === from) return { ok: true, moved: false };
+
+  const next = [...ordered];
+  next.splice(to, 0, ...next.splice(from, 1));
+
+  const now = new Date().toISOString();
+  commit(() => {
+    const positions = new Map(next.map((order, index) => [order.id, index]));
+    state.readingOrders = state.readingOrders.map((order) =>
+      positions.has(order.id)
+        ? { ...order, position: positions.get(order.id), updatedAt: now }
+        : order
+    );
+  });
+
+  return { ok: true, moved: true };
 }
 
 /** Set progress from either a page or a percentage; both are kept in step. */

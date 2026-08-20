@@ -15,6 +15,8 @@ import {
 } from '../data/store.js';
 import { STATUSES, STATUS_ORDER, FORMATS, CATEGORIES, CATEGORY_ORDER } from '../data/schema.js';
 import { coverThumb } from './cover.js';
+import { acceptCoverDrop } from './coverDrop.js';
+import { setCoverFromFile, setCoverFromUrl } from '../data/coverActions.js';
 import { openBookForm } from './bookForm.js';
 import { formatShort, relativeDay } from '../lib/dates.js';
 import { enrichAll, needsDetails } from '../data/enrich.js';
@@ -766,12 +768,38 @@ function openDetailsDialog(books, done) {
   });
 }
 
+/**
+ * Give a book its cover from something dropped on it.
+ *
+ * The shortest path from "I don't like that cover" to a better one. Everything
+ * else — the picker, the ISBN lookup, the catalogue search — needs the book
+ * open in a form first, which is three clicks and a modal to change a picture
+ * you are already looking at.
+ */
+async function coverDropped(book, payload) {
+  const result = payload.file
+    ? await setCoverFromFile(book, payload.file)
+    : await setCoverFromUrl(book, payload.url);
+
+  toast(
+    result.ok
+      ? `New cover for ${book.title}.`
+      : result.error,
+    result.ok ? {} : { variant: 'error' }
+  );
+}
+
 function shelfCard(book) {
   const unit = FORMATS[book.format].unit;
 
   const picked = selection.has(book.id);
 
-  return el('li.shelf-card.slip.slip--plain', { class: picked ? 'is-selected' : '' }, [
+  const card = el('li.shelf-card.slip.slip--plain', {
+    class: picked ? 'is-selected' : '',
+    // Marks this as somewhere a file may legitimately land, so the window-wide
+    // guard leaves it alone.
+    dataset: { coverDrop: 'book' },
+  }, [
     el('label.shelf-card__pick', {}, [
       el('input', {
         type: 'checkbox',
@@ -824,7 +852,10 @@ function shelfCard(book) {
     ),
     el('span', { class: `chip chip--${book.status} shelf-card__chip` }, STATUSES[book.status].label),
     book.status === 'reading' && book.progress.percent > 0 ? progressBar(book) : null,
+    el('span.shelf-card__droptip', { 'aria-hidden': 'true' }, 'Drop to set cover'),
   ]);
+
+  return acceptCoverDrop(card, { onImage: (payload) => coverDropped(book, payload) });
 }
 
 /** The one line of metadata that matters most for the shelf a book is on. */

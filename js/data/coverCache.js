@@ -82,17 +82,52 @@ export const serverCoverUrl = (bookId) =>
   serverAvailable ? `api/covers/${encodeURIComponent(bookId)}` : null;
 
 /**
- * Ask the server to fetch and keep a cover.
- * @returns {Promise<boolean>}
+ * Post to the cover endpoint.
+ *
+ * The title rides along with every write. The server files cover art by title
+ * rather than by record id — `the-hobbit.jpg` rather than `bk-9f2c1a04.jpg` —
+ * and it can only do that if it is told the title at the moment the bytes
+ * arrive. Sending it here means the folder is readable even for a book the
+ * server has never seen in a library push.
  */
-export async function storeCoverOnServer(bookId, url) {
-  if (!serverAvailable || !url || url.startsWith('data:') || url === 'local:cover') return false;
+async function postCover(bookId, payload) {
+  if (!serverAvailable) return false;
   try {
     const response = await fetch(`api/covers/${encodeURIComponent(bookId)}`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ url }),
+      body: JSON.stringify(payload),
     });
+    const body = await response.json();
+    return Boolean(body?.ok);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Ask the server to fetch and keep a cover.
+ * @returns {Promise<boolean>}
+ */
+export async function storeCoverOnServer(bookId, url, title) {
+  if (!url || url.startsWith('data:') || url === 'local:cover') return false;
+  return postCover(bookId, { url, title });
+}
+
+/**
+ * Send an image we already have the bytes of — an upload, or something dropped
+ * onto a book — to the server, so every other device gets it too.
+ */
+export async function storeUploadedCoverOnServer(bookId, dataUrl, title) {
+  if (!dataUrl?.startsWith('data:')) return false;
+  return postCover(bookId, { dataUrl, title });
+}
+
+/** Forget the server's copy — used when a cover is removed rather than replaced. */
+export async function deleteCoverOnServer(bookId) {
+  if (!serverAvailable) return false;
+  try {
+    const response = await fetch(`api/covers/${encodeURIComponent(bookId)}`, { method: 'DELETE' });
     const body = await response.json();
     return Boolean(body?.ok);
   } catch {
@@ -217,7 +252,7 @@ export async function cacheAll(books, onProgress) {
     if (!already.has(book.id)) {
       // Ask the server first: it can reach hosts the browser can't, and its
       // copy is the one every other device will use.
-      const onServer = await storeCoverOnServer(book.id, book.cover.url);
+      const onServer = await storeCoverOnServer(book.id, book.cover.url, book.title);
       const inBrowser = await cacheCover(book.id, book.cover.url);
       if (onServer || inBrowser) cached += 1;
       else failed += 1;
@@ -310,19 +345,9 @@ export async function evacuateDataUrls(books) {
 }
 
 /** Ask the server to copy a cover in from a local path (Calibre imports). */
-export async function storeLocalCoverOnServer(bookId, path) {
-  if (!serverAvailable || !path) return false;
-  try {
-    const response = await fetch(`api/covers/${encodeURIComponent(bookId)}`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ path }),
-    });
-    const body = await response.json();
-    return Boolean(body?.ok);
-  } catch {
-    return false;
-  }
+export async function storeLocalCoverOnServer(bookId, path, title) {
+  if (!path) return false;
+  return postCover(bookId, { path, title });
 }
 
 /** Whether a sync server is answering, for features that depend on one. */

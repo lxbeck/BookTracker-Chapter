@@ -14,7 +14,7 @@
 import { el, fill, toast } from '../lib/dom.js';
 import {
   allOrders, allBooks, getBook, createOrder, updateOrder, removeOrder,
-  addToOrder, removeFromOrder, moveInOrder,
+  addToOrder, removeFromOrder, moveInOrder, moveOrder, setOrderSequence,
 } from '../data/store.js';
 import { showModal } from './modal.js';
 import { coverThumb } from './cover.js';
@@ -23,6 +23,31 @@ import { STATUSES } from '../data/schema.js';
 
 /** Which list is expanded. Module state; not worth persisting. */
 let openId = null;
+
+/**
+ * The sequence as it was before the last change, per list.
+ *
+ * A reordering has no natural inverse once a drag is involved — "where did
+ * that row come from" is exactly the thing you have already forgotten by the
+ * time you notice it went to the wrong place. Keeping the previous array is
+ * both simpler and more honest than replaying moves backwards.
+ *
+ * One step deep on purpose. A stack of twenty would need a visible history to
+ * be usable, and the mistake this exists for is always the move you just made.
+ * @type {Map<string, string[]>}
+ */
+const undoStack = new Map();
+
+/** Remember where a list was before changing it. */
+function rememberSequence(order) {
+  undoStack.set(order.id, [...order.bookIds]);
+}
+
+/** Spoken aloud after a move, since the visual change is the only other cue. */
+function announce(message) {
+  const region = document.querySelector('.order-announce');
+  if (region) region.textContent = message;
+}
 
 export function renderOrders(mount) {
   const orders = allOrders();
@@ -39,8 +64,13 @@ export function renderOrders(mount) {
       }, 'New list'),
     ]),
 
+    // A move is announced rather than only shown: a row sliding one place up
+    // is invisible to a screen reader and easy to miss on a long list.
+    el('p.order-announce.visually-hidden', { role: 'status', 'aria-live': 'polite' }),
+
     orders.length
-      ? el('div.order-list', {}, orders.map((order) => orderPanel(order, redraw)))
+      ? el('div.order-list', {}, orders.map((order, index) =>
+          orderPanel(order, index, orders.length, redraw)))
       : el('div.empty', {}, [
           el('h3', {}, 'No reading orders yet'),
           el('p', {}, 'A reading order is a sequence: the Poe tales books in publication order, a manga backlog, a series reread. A book can sit in as many of them as you like.'),
@@ -51,7 +81,7 @@ export function renderOrders(mount) {
   ]);
 }
 
-function orderPanel(order, redraw) {
+function orderPanel(order, index, total, redraw) {
   const expanded = openId === order.id;
   const books = order.bookIds.map((id) => getBook(id)).filter(Boolean);
   const finished = books.filter((book) => book.status === 'finished').length;
@@ -77,6 +107,31 @@ function orderPanel(order, redraw) {
         ]),
       ]),
       el('div.order-panel__actions', {}, [
+        // The lists themselves have an order too. Whichever one you are
+        // working through belongs at the top, and there is otherwise no way to
+        // put it there short of deleting and remaking it.
+        move('\u2191', `Move ${order.name} up`, index > 0, () => {
+          moveOrder(order.id, -1);
+          announce(`${order.name} moved up.`);
+          redraw();
+        }),
+        move('\u2193', `Move ${order.name} down`, index < total - 1, () => {
+          moveOrder(order.id, 1);
+          announce(`${order.name} moved down.`);
+          redraw();
+        }),
+        undoStack.has(order.id)
+          ? el('button.btn.btn--quiet.btn--sm', {
+              type: 'button',
+              onClick: () => {
+                setOrderSequence(order.id, undoStack.get(order.id));
+                undoStack.delete(order.id);
+                toast(`${order.name} put back.`);
+                announce(`${order.name} restored to its previous order.`);
+                redraw();
+              },
+            }, 'Undo move')
+          : null,
         el('button.btn.btn--quiet.btn--sm', {
           type: 'button', onClick: () => openAddDialog(order, redraw),
         }, 'Add books'),
@@ -92,7 +147,7 @@ function orderPanel(order, redraw) {
             redraw();
           },
         }, 'Delete'),
-      ]),
+      ].filter(Boolean)),
     ]),
 
     order.description ? el('p.order-panel__description', {}, order.description) : null,
@@ -106,7 +161,23 @@ function orderPanel(order, redraw) {
   ].filter(Boolean));
 }
 
+/**
+ * One book in a sequence.
+ *
+ * Reordering is offered three ways because they fail in different situations.
+ * Arrows work on a phone, with a keyboard and with a screen reader, none of
+ * which is true of drag-and-drop. The edge buttons exist because moving a book
+ * from twentieth to first with an arrow is nineteen clicks. Dragging is the
+ * fastest when it works, which is on a mouse, on a list you can see all of.
+ */
 function orderRow(order, book, index, total, redraw) {
+  const reorder = (toIndex, message) => {
+    rememberSequence(order);
+    moveInOrder(order.id, book.id, toIndex);
+    announce(message);
+    redraw();
+  };
+
   const row = el('li.order-row', {
     draggable: 'true',
     dataset: { bookId: book.id, index: String(index) },
@@ -119,18 +190,20 @@ function orderRow(order, book, index, total, redraw) {
     ]),
     el('span', { class: `chip chip--${book.status}` }, STATUSES[book.status].label),
     el('div.order-row__moves', {}, [
-      move('\u2191', 'Move up', index > 0, () => {
-        moveInOrder(order.id, book.id, index - 1);
-        redraw();
-      }),
-      move('\u2193', 'Move down', index < total - 1, () => {
-        moveInOrder(order.id, book.id, index + 1);
-        redraw();
-      }),
+      move('\u21c8', `Move ${book.title} to the top`, index > 0,
+        () => reorder(0, `${book.title} moved to the top.`)),
+      move('\u2191', 'Move up', index > 0,
+        () => reorder(index - 1, `${book.title} moved to position ${index}.`)),
+      move('\u2193', 'Move down', index < total - 1,
+        () => reorder(index + 1, `${book.title} moved to position ${index + 2}.`)),
+      move('\u21ca', `Move ${book.title} to the bottom`, index < total - 1,
+        () => reorder(total - 1, `${book.title} moved to the bottom.`)),
       el('button.icon-btn', {
         type: 'button', 'aria-label': `Remove ${book.title} from this list`,
         onClick: () => {
+          rememberSequence(order);
           removeFromOrder(order.id, book.id);
+          announce(`${book.title} removed from ${order.name}.`);
           redraw();
         },
       }, '\u00d7'),
@@ -146,24 +219,69 @@ function orderRow(order, book, index, total, redraw) {
     event.dataTransfer.effectAllowed = 'move';
     row.classList.add('is-dragging');
   });
-  row.addEventListener('dragend', () => row.classList.remove('is-dragging'));
+
+  row.addEventListener('dragend', () => {
+    row.classList.remove('is-dragging');
+    clearDropMarks(row.parentElement);
+  });
+
+  /**
+   * Which side of this row a drop would land on.
+   *
+   * The old version dropped everything *at* the target's index, which meant a
+   * downward drag landed after the row you aimed at and an upward drag landed
+   * before it — the same gesture doing two different things depending on which
+   * way you came from. Splitting the row at its midpoint makes the rule one
+   * rule, and drawing a line where the book will land means you can see it
+   * before you let go.
+   */
+  const dropsAfter = (event) => {
+    const box = row.getBoundingClientRect();
+    return event.clientY > box.top + box.height / 2;
+  };
+
   row.addEventListener('dragover', (event) => {
     event.preventDefault();
-    row.classList.add('is-drop-target');
+    event.dataTransfer.dropEffect = 'move';
+    row.classList.toggle('is-drop-after', dropsAfter(event));
+    row.classList.toggle('is-drop-before', !dropsAfter(event));
   });
-  row.addEventListener('dragleave', () => row.classList.remove('is-drop-target'));
+
+  row.addEventListener('dragleave', () => {
+    row.classList.remove('is-drop-before', 'is-drop-after');
+  });
+
   row.addEventListener('drop', (event) => {
     event.preventDefault();
-    row.classList.remove('is-drop-target');
+    const after = dropsAfter(event);
+    clearDropMarks(row.parentElement);
+
     const draggedId = event.dataTransfer.getData('text/plain');
-    if (draggedId && draggedId !== book.id) {
-      moveInOrder(order.id, draggedId, index);
-      redraw();
-    }
+    if (!draggedId || draggedId === book.id) return;
+
+    const from = order.bookIds.indexOf(draggedId);
+    if (from === -1) return;
+
+    // The target's index shifts by one once the dragged row is lifted out of
+    // the list above it, which is the off-by-one that made drops land a place
+    // further down than they looked like they would.
+    let target = index + (after ? 1 : 0);
+    if (from < target) target -= 1;
+
+    rememberSequence(order);
+    moveInOrder(order.id, draggedId, target);
+    announce(`${getBook(draggedId)?.title ?? 'Book'} moved to position ${target + 1}.`);
+    redraw();
   });
 
   return row;
 }
+
+const clearDropMarks = (list) => {
+  for (const node of list?.querySelectorAll('.is-drop-before, .is-drop-after') ?? []) {
+    node.classList.remove('is-drop-before', 'is-drop-after');
+  }
+};
 
 const move = (glyph, label, enabled, onClick) =>
   el('button.icon-btn.order-row__move', {

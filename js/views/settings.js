@@ -11,18 +11,23 @@ import {
   allBooks, getSettings, updateSettings, replaceAll,
   storageStatus, requestPersistentStorage,
 } from '../data/store.js';
-import { exportJson, exportCsv, exportSessionsCsv, importJson, download, backupFilename } from '../data/transfer.js';
+import {
+  exportJson, exportJsonWithCovers, exportCsv, exportSessionsCsv,
+  importJson, restoreCovers, download, backupFilename,
+} from '../data/transfer.js';
 import { cacheAll, cachedIds, cacheSize, evacuateDataUrls } from '../data/coverCache.js';
 import { updateBook } from '../data/store.js';
 import { goalProgress } from '../logic/stats.js';
 import { sampleBooks } from '../data/seed.js';
 import { parseGoodreadsCsv } from '../data/goodreads.js';
 import { parseCalibreCsv } from '../data/calibre.js';
+import { fillMissing, matchExisting } from '../data/fill.js';
 import { buildSnapshot } from '../data/snapshot.js';
 import {
   storeLocalCoverOnServer, storeCoverOnServer, hasServer, LOCAL_COVER,
 } from '../data/coverCache.js';
-import { coverUrlForIsbn } from '../data/covers.js';
+import { coverUrlForIsbn, configureSources } from '../data/covers.js';
+import { SOURCE_CHOICES, EVERY_SOURCE, PROVIDERS } from '../data/providers.js';
 import { syncStatus } from '../data/sync.js';
 import { addBook } from '../data/store.js';
 
@@ -40,6 +45,7 @@ export function renderSettings(mount) {
     ]),
 
     syncSection(),
+    sourcesSection(settings, redraw),
     storageSection(redraw),
     snapshotSection(),
     goalSection(books, settings, redraw),
@@ -88,6 +94,95 @@ function goalSection(books, settings, redraw) {
           `${progress.done} of ${progress.target} so far \u00b7 ${progress.onTrack ? 'on pace' : `${Math.abs(progress.delta)} behind pace`}`)
       : null,
   ].filter(Boolean));
+}
+
+/* --- Where lookups go ------------------------------------------------------ */
+
+/**
+ * Which catalogue answers "what is this book" and which one supplies the art.
+ *
+ * Two settings rather than one because they are genuinely different questions.
+ * Open Library has the page count of a 1937 printing and no picture of it;
+ * Apple has a 600px cover and no idea how long it is. Forcing one choice for
+ * both means picking which half of the answer to get wrong.
+ */
+function sourcesSection(settings, redraw) {
+  const current = settings.sources ?? { metadata: EVERY_SOURCE, covers: EVERY_SOURCE };
+
+  const pick = (name, value) =>
+    el('select.select', { 'aria-label': name },
+      SOURCE_CHOICES.map((choice) =>
+        el('option', { value: choice.id, selected: choice.id === value }, choice.label)));
+
+  const metadata = pick('Where details come from', current.metadata);
+  const covers = pick('Where cover art comes from', current.covers);
+
+  const hint = el('p.settings__note', { 'aria-live': 'polite' });
+  const describe = () => {
+    hint.textContent = [
+      SOURCE_CHOICES.find((choice) => choice.id === metadata.value)?.hint,
+      metadata.value === covers.value
+        ? null
+        : SOURCE_CHOICES.find((choice) => choice.id === covers.value)?.hint,
+    ].filter(Boolean).join(' ');
+  };
+  metadata.addEventListener('change', describe);
+  covers.addEventListener('change', describe);
+  describe();
+
+  const save = () => {
+    const sources = { metadata: metadata.value, covers: covers.value };
+    updateSettings({ sources });
+    // The lookup layer is told directly rather than reading the store, so a
+    // change takes effect on the next search instead of the next reload.
+    configureSources(sources);
+    toast('Lookup sources saved.');
+    redraw();
+  };
+
+  return section('Where details and covers come from', [
+    el('p.settings__hint', {},
+      'Searches ask these catalogues. "Every source" asks all of them at once and keeps the best of each \u2014 Open Library\u2019s page counts, Google\u2019s blurbs, Apple\u2019s artwork \u2014 which is why it is the default. Narrow it if one catalogue keeps returning the wrong edition.'),
+    el('div.settings__row', {}, [
+      el('label.field.field--inline', {}, [el('span.field__label', {}, 'Book details'), metadata]),
+      el('label.field.field--inline', {}, [el('span.field__label', {}, 'Cover art'), covers]),
+      el('button.btn.btn--stamp.btn--sm', { type: 'button', onClick: save }, 'Save sources'),
+    ]),
+    hint,
+    el('p.settings__hint', {},
+      'Amazon is not on the list, and cannot be: its catalogue needs an affiliate account with qualifying sales, and the cover URLs people pass around are unsanctioned and increasingly answered with a blank image. The honest substitute is in the cover picker \u2014 right-click any cover anywhere, copy its image address, and paste it in. Dragging the image onto the book does the same thing.'),
+    coversFolderNote(),
+  ]);
+}
+
+/**
+ * Where the cover files actually are, in words.
+ *
+ * "Somewhere in the browser" is not an answer anyone can act on, and the
+ * answer differs depending on whether a sync server is running.
+ */
+function coversFolderNote() {
+  const note = el('p.settings__note', { 'aria-live': 'polite' },
+    hasServer()
+      ? 'Checking the covers folder\u2026'
+      : 'No sync server is running, so cover art is kept in this browser\u2019s image store rather than in a folder. Start the server with "npm start" and covers are written to data/covers as ordinary files.');
+
+  if (!hasServer()) return note;
+
+  fetch('api/covers')
+    .then((response) => response.json())
+    .then((body) => {
+      note.textContent =
+        `${body.count} cover files in data/covers, ` +
+        `about ${(body.bytes / 1048576).toFixed(1)} MB. ` +
+        'Each is named after its book \u2014 the-hobbit.jpg \u2014 and renamed if you edit the title. ' +
+        'Drop a replacement in the folder under the same name and it is picked up on the next load.';
+    })
+    .catch(() => {
+      note.textContent = 'The covers folder could not be read just now.';
+    });
+
+  return note;
 }
 
 /* --- Offline -------------------------------------------------------------- */
@@ -147,19 +242,65 @@ function dataSection(books, redraw) {
         toast(result.error, { variant: 'error' });
         return;
       }
-      toast(`Imported: ${result.added} added, ${result.updated} updated.`);
+
+      toast(
+        [
+          `${result.added} added`,
+          `${result.updated} updated`,
+          result.orders ? `${result.orders} reading ${result.orders === 1 ? 'list' : 'lists'}` : null,
+        ].filter(Boolean).join(', ') + '.'
+      );
       redraw();
+
+      // Cover art comes back after the books, because writing a few hundred
+      // images should not hold up the thing you actually asked for.
+      try {
+        const parsed = JSON.parse(text);
+        const { restored } = await restoreCovers(parsed, result.remapped);
+        if (restored) {
+          toast(`${restored} ${restored === 1 ? 'cover' : 'covers'} restored.`);
+          redraw();
+        }
+      } catch {
+        /* a backup without covers is the normal case */
+      }
     },
   });
 
+  const withCovers = el('input', { type: 'checkbox', id: 'backup-covers' });
+  const exportNote = el('p.settings__note', { 'aria-live': 'polite' });
+
+  const exportButton = el('button.btn.btn--quiet.btn--sm', {
+    type: 'button',
+    onClick: async () => {
+      if (!withCovers.checked) {
+        download(backupFilename('json'), exportJson());
+        exportNote.textContent = 'Backup saved. Cover art is not inside it \u2014 tick the box to include it.';
+        return;
+      }
+
+      exportButton.disabled = true;
+      exportNote.textContent = 'Gathering cover art\u2026';
+      try {
+        const json = await exportJsonWithCovers((done, total) => {
+          exportNote.textContent = `Gathering cover art\u2026 ${done} of ${total}`;
+        });
+        download(backupFilename('json'), json);
+        exportNote.textContent = `Backup saved, ${(new Blob([json]).size / 1048576).toFixed(1)} MB with covers included.`;
+      } catch (error) {
+        exportNote.textContent = `The backup could not be built: ${error.message}`;
+      } finally {
+        exportButton.disabled = false;
+      }
+    },
+  }, 'Export JSON');
+
   return section('Your data', [
     el('p.settings__hint', {},
-      'JSON is the full backup and restores everything, including your reading log. CSV is for spreadsheets and keeps one row per book.'),
+      'JSON is the full backup and restores everything. CSV is for spreadsheets and keeps one row per book \u2014 it is lossy by design, and cannot carry your sessions or your lists.'),
     el('div.settings__row', {}, [
-      el('button.btn.btn--quiet.btn--sm', {
-        type: 'button',
-        onClick: () => download(backupFilename('json'), exportJson()),
-      }, 'Export JSON'),
+      exportButton,
+      el('label.bulk-check', { for: 'backup-covers' }, [withCovers, el('span', {}, 'Include cover art')]),
       el('button.btn.btn--quiet.btn--sm', {
         type: 'button',
         onClick: () => download(backupFilename('csv'), exportCsv(), 'text/csv'),
@@ -173,7 +314,10 @@ function dataSection(books, redraw) {
       }, 'Import JSON'),
       fileInput,
     ]),
-    el('p.settings__note', {}, 'Importing merges by title and author, so restoring a backup updates books rather than duplicating them.'),
+    exportNote,
+    el('p.settings__note', {},
+      'The JSON backup carries books, reading sessions, shelves, tags, ratings, notes, reading order lists, your settings and the record of what you have deleted. Cover art is the one thing left out by default, because it makes the file many times larger; tick the box when you are moving to a new machine.'),
+    el('p.settings__note', {}, 'Importing merges by title and author, so restoring a backup updates books rather than duplicating them. Reading order lists are merged the same way, by name.'),
 
     goodreadsRow(redraw),
     calibreRow(redraw),
@@ -451,7 +595,9 @@ function calibreRow(redraw) {
   return el('div', {}, [
     el('h4.settings__subhead', {}, 'From Calibre'),
     el('p.settings__hint', {},
-      'In Calibre: select your books, then Convert books \u2192 Create a catalogue, and choose CSV. Everything arrives as an unscheduled ebook, since a Calibre catalogue records what you own rather than what you have read.'),
+      'In Calibre: select your books, then Convert books \u2192 Create a catalogue, and choose CSV. Tick every field you want carried across \u2014 including any custom column, which exports with a # in front of its name. New books arrive unscheduled, since a Calibre catalogue records what you own rather than what you have read.'),
+    el('p.settings__hint', {},
+      'Importing the same catalogue again is safe and useful: books already here keep everything you have entered and only gain the fields they are missing. Write descriptions into Calibre, export again, and they arrive.'),
     el('p.settings__hint', {},
       hasServer()
         ? 'The sync server is running, so cover art will be copied straight from the paths in the catalogue \u2014 no lookups needed.'
@@ -465,15 +611,52 @@ function calibreRow(redraw) {
   ]);
 }
 
+/**
+ * Preview a Calibre catalogue, then import it.
+ *
+ * A book already in the library is no longer skipped. Skipping was the safe
+ * answer and the wrong one: re-exporting a catalogue after an evening of
+ * writing descriptions into Calibre is *because* the books are already here.
+ * Matched books get their empty fields filled and nothing else touched.
+ */
 function confirmCalibre(parsed, summary, redraw) {
-  const { books, paths, skipped, withCovers, withIsbn } = parsed;
+  const { books, paths, authors, skipped, withCovers, withIsbn, withDescriptions } = parsed;
 
-  const existing = new Set(
-    allBooks().map((book) => `${book.title.toLowerCase()}|${book.author.toLowerCase()}`)
-  );
-  const duplicates = books.filter((book) =>
-    existing.has(`${book.title.toLowerCase()}|${book.author.toLowerCase()}`)
-  ).length;
+  // Worked out before the dialog opens so the button can say what will happen
+  // rather than how many rows are in the file.
+  const plan = books.map((book) => {
+    const incoming = { ...book, authors: authors.get(book.id) ?? [] };
+    const match = matchExisting(allBooks(), incoming);
+    if (!match) return { book, incoming, action: 'add' };
+
+    const hasCover = Boolean(match.cover?.url);
+    const { patch, filled } = fillMissing(match, incoming, {
+      cover: Boolean(paths.get(book.id)) || Boolean(book.isbn),
+    });
+
+    return {
+      book, incoming, match, patch, filled,
+      action: filled.length ? 'fill' : 'complete',
+      needsCover: !hasCover,
+    };
+  });
+
+  const additions = plan.filter((entry) => entry.action === 'add');
+  const fills = plan.filter((entry) => entry.action === 'fill');
+  const complete = plan.filter((entry) => entry.action === 'complete');
+
+  // Which fields, across all of them — "12 books will gain a description" is
+  // a far more useful sentence than "12 books will be updated".
+  const fieldCounts = new Map();
+  for (const entry of fills) {
+    for (const label of entry.filled) {
+      fieldCounts.set(label, (fieldCounts.get(label) ?? 0) + 1);
+    }
+  }
+  const fieldSummary = [...fieldCounts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([label, count]) => `${count} \u00d7 ${label}`)
+    .join(', ');
 
   const series = new Set(books.map((book) => book.series.name).filter(Boolean)).size;
 
@@ -481,39 +664,85 @@ function confirmCalibre(parsed, summary, redraw) {
     eyebrow: 'Calibre catalogue',
     title: `${books.length} books found`,
     body: [
-      el('p', {}, `All will be added as ebooks. ${series} series detected, ${withIsbn} with an ISBN, ${withCovers} with a cover on disk.`),
+      el('p', {}, `${series} series detected, ${withIsbn} with an ISBN, ${withDescriptions} with a description, ${withCovers} with a cover on disk.`),
+
+      additions.length
+        ? el('p', {}, `${additions.length} will be added as ${additions.length === 1 ? 'a new record' : 'new records'}.`)
+        : null,
+
+      fills.length
+        ? el('div', {}, [
+            el('p', {}, `${fills.length} ${fills.length === 1 ? 'is' : 'are'} already in your library and will have their empty fields filled in.`),
+            el('p.settings__note', {}, `Filling: ${fieldSummary}.`),
+            el('p.settings__note', {},
+              'Only empty fields are written. Anything you have already typed \u2014 a corrected length, a description you rewrote, a status, a schedule \u2014 is left exactly as it is.'),
+          ])
+        : null,
+
+      complete.length
+        ? el('p.settings__note', {}, `${complete.length} ${complete.length === 1 ? 'is' : 'are'} already complete and will not be touched.`)
+        : null,
+
+      !withDescriptions
+        ? el('p.settings__note', {},
+            'No descriptions in this catalogue. If you wrote them into a custom Calibre column, make sure that column is ticked in the catalogue\u2019s field list before exporting \u2014 it exports as "#description" and is read from there.')
+        : null,
+
       el('p.settings__note', {},
         'Calibre catalogues carry no page count, so lengths arrive empty. Pacing and progress need a length, so add one to any book you plan to schedule \u2014 an ISBN lookup on the record will fetch it.'),
-      duplicates
-        ? el('p', {}, `${duplicates} are already in your library and will be skipped.`)
-        : null,
+
       skipped ? el('p.settings__note', {}, `${skipped} rows had no title and will be ignored.`) : null,
     ].filter(Boolean),
     actions: [
       el('button.btn.btn--quiet', { type: 'button', onClick: () => modal.close() }, 'Cancel'),
       el('button.btn.btn--stamp', {
         type: 'button',
+        disabled: !additions.length && !fills.length,
         onClick: async () => {
           modal.close();
           let added = 0;
+          let updated = 0;
+          let fieldsFilled = 0;
           const queued = [];
 
-          for (const book of books) {
-            const key = `${book.title.toLowerCase()}|${book.author.toLowerCase()}`;
-            if (existing.has(key)) continue;
-
+          for (const entry of plan) {
+            const coverPath = paths.get(entry.book.id);
             // An ISBN gives a usable cover URL without a lookup round trip.
-            const coverUrl = book.isbn ? coverUrlForIsbn(book.isbn, 'L') : null;
-            const result = addBook(coverUrl ? { ...book, cover: { url: coverUrl, source: 'openlibrary' } } : book);
+            const coverUrl = entry.book.isbn ? coverUrlForIsbn(entry.book.isbn, 'L') : null;
 
-            if (result.ok) {
-              existing.add(key);
+            if (entry.action === 'add') {
+              const result = addBook(
+                coverUrl ? { ...entry.book, cover: { url: coverUrl, source: 'openlibrary' } } : entry.book
+              );
+              if (!result.ok) continue;
+
               added += 1;
-              queued.push({ id: result.book.id, path: paths.get(book.id), url: coverUrl });
+              queued.push({
+                id: result.book.id, title: result.book.title, path: coverPath, url: coverUrl,
+              });
+              continue;
+            }
+
+            if (entry.action === 'fill') {
+              const result = updateBook(entry.match.id, entry.patch);
+              if (result.ok) {
+                updated += 1;
+                fieldsFilled += entry.filled.length;
+              }
+            }
+
+            // A book already here but with no art still wants the cover this
+            // catalogue can point at, whether or not any text field was empty.
+            if (entry.needsCover && (coverPath || coverUrl)) {
+              queued.push({
+                id: entry.match.id, title: entry.match.title, path: coverPath, url: coverUrl,
+              });
             }
           }
 
-          summary.textContent = `Imported ${added} books. Fetching covers\u2026`;
+          summary.textContent = added || updated
+            ? `${added} added, ${updated} filled in. Fetching covers\u2026`
+            : 'Fetching covers\u2026';
           redraw();
 
           // Covers are stored one at a time after the books land, so a slow
@@ -521,7 +750,7 @@ function confirmCalibre(parsed, summary, redraw) {
           let stored = 0;
           for (const entry of queued) {
             const fromDisk = entry.path
-              ? await storeLocalCoverOnServer(entry.id, entry.path)
+              ? await storeLocalCoverOnServer(entry.id, entry.path, entry.title)
               : false;
 
             if (fromDisk) {
@@ -531,14 +760,30 @@ function confirmCalibre(parsed, summary, redraw) {
               stored += 1;
               continue;
             }
-            if (await storeCoverOnServer(entry.id, entry.url)) stored += 1;
+            if (entry.url && await storeCoverOnServer(entry.id, entry.url, entry.title)) stored += 1;
           }
 
-          summary.textContent = `Imported ${added} books${stored ? `, ${stored} covers stored` : ''}.`;
-          toast(`${added} books imported from Calibre.`);
+          summary.textContent = [
+            added ? `${added} books added` : null,
+            updated ? `${updated} books filled in (${fieldsFilled} fields)` : null,
+            stored ? `${stored} covers stored` : null,
+          ].filter(Boolean).join(', ') + '.';
+
+          toast(
+            added && updated
+              ? `${added} added, ${updated} filled in from Calibre.`
+              : updated
+                ? `${updated} books filled in from Calibre.`
+                : `${added} books imported from Calibre.`
+          );
           redraw();
         },
-      }, `Import ${books.length - duplicates} books`),
+      },
+        additions.length && fills.length
+          ? `Add ${additions.length}, fill ${fills.length}`
+          : fills.length
+            ? `Fill in ${fills.length} books`
+            : `Import ${additions.length} books`),
     ],
   });
 }

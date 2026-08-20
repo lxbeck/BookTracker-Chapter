@@ -395,3 +395,44 @@
   opacity: 0.25;
   cursor: default;
 }
+
+/* --- Dropping a cover on a book -------------------------------------------
+   The gesture is invisible until a drag is actually in flight, which is the
+   point: a shelf covered in "drop here" hints is a shelf you can't read. The
+   tip only appears while something is being dragged over this card, and the
+   card is dimmed underneath so the target is unambiguous when several sit
+   side by side in a grid.
+   ------------------------------------------------------------------------- */
+
+.shelf-card__droptip {
+  position: absolute;
+  inset: 0;
+  display: none;
+  place-items: center;
+  text-align: center;
+  padding: var(--s3);
+  font-family: var(--face-slip);
+  font-size: var(--size-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--stamp);
+  background: color-mix(in srgb, var(--slip) 88%, transparent);
+  pointer-events: none;
+}
+
+.shelf-card.is-drop-target {
+  outline: 2px dashed var(--stamp);
+  outline-offset: -2px;
+}
+
+.shelf-card.is-drop-target .shelf-card__droptip {
+  display: grid;
+}
+
+/* A field and its label on one line — used where a control is the sentence
+   rather than an answer to a question above it. */
+.field--inline {
+  flex-direction: column;
+  gap: var(--s1);
+  min-width: 0;
+}

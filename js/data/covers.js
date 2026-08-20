@@ -1,19 +1,25 @@
 /**
- * Cover art lookup.
+ * Cover and metadata lookup.
  *
- * Two providers, tried in order:
- *   Open Library — no key, no quota, generous CORS. First choice.
- *   Google Books — no key for basic volume search. Fills Open Library's gaps,
- *                  especially for recent and self-published titles.
+ * The catalogues themselves live in `providers.js`. This module is the part
+ * that decides *which* of them to ask, gets the request out of the browser in
+ * one piece, and turns an uploaded file into something small enough to store.
  *
- * Both are third-party services that will be slow, rate-limited, or down at
- * some point, so every path here has a manual fallback and nothing blocks the
- * user from saving a book. A lookup is a convenience, never a requirement.
+ * Two settings drive it, both chosen in Settings and passed in here at boot:
+ * where details come from and where art comes from. They are separate because
+ * they genuinely differ — Open Library knows the page count of a 1937 printing
+ * and Apple has the only cover of it worth looking at.
+ *
+ * Every third-party service will be slow, rate-limited or down at some point,
+ * so nothing here blocks saving a book. A lookup is a convenience, never a
+ * requirement.
  */
 
-const OPEN_LIBRARY_SEARCH = 'https://openlibrary.org/search.json';
-const OPEN_LIBRARY_COVER = 'https://covers.openlibrary.org/b';
-const GOOGLE_BOOKS = 'https://www.googleapis.com/books/v1/volumes';
+import {
+  PROVIDERS, PROVIDER_ORDER, EVERY_SOURCE, providersFor, mergeFound, interleave,
+  cleanIsbn, cleanDescription,
+} from './providers.js';
+import { hasServer } from './coverCache.js';
 
 const TIMEOUT_MS = 8000;
 
@@ -21,29 +27,60 @@ const TIMEOUT_MS = 8000;
 const UPLOAD_MAX_WIDTH = 400;
 const UPLOAD_QUALITY = 0.82;
 
-/** @typedef {{title?: string, author?: string, pageCount?: number|null,
- *   coverUrl?: string|null, isbn?: string, description?: string,
- *   genre?: string, source: string}} CoverResult */
+export { PROVIDERS, PROVIDER_ORDER, EVERY_SOURCE, cleanDescription };
 
-/** Blurbs arrive full of markup and boilerplate; strip it before storing. */
-function cleanDescription(raw) {
-  if (!raw) return '';
-  const text = typeof raw === 'object' ? (raw.value ?? '') : String(raw);
-  return text
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/\[\[([^\]|]+)(\|[^\]]+)?\]\]/g, '$1')
-    .replace(/\(\[?source[^)]*\)?/gi, '')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, 2000);
+/* --- Which sources to use -------------------------------------------------- */
+
+let sources = { metadata: EVERY_SOURCE, covers: EVERY_SOURCE };
+
+/**
+ * Point lookups at the chosen catalogues.
+ *
+ * Called at boot and whenever the setting changes, rather than read from the
+ * store here: this module is imported by tests and by the enrichment loop,
+ * neither of which should need a populated store to run.
+ */
+export function configureSources(next = {}) {
+  sources = {
+    metadata: next.metadata || EVERY_SOURCE,
+    covers: next.covers || EVERY_SOURCE,
+  };
+  return sources;
 }
+
+export const currentSources = () => ({ ...sources });
+
+/**
+ * The providers to ask for a given lookup.
+ *
+ * The union of both settings, because one request answers both questions: if
+ * details come from Open Library and art from Apple, asking only Open Library
+ * would leave every cover empty.
+ */
+function activeProviders() {
+  const wanted = new Map();
+  for (const provider of providersFor(sources.metadata)) wanted.set(provider.id, provider);
+  for (const provider of providersFor(sources.covers)) wanted.set(provider.id, provider);
+  return PROVIDER_ORDER.map((id) => wanted.get(id)).filter(Boolean);
+}
+
+/* --- Getting the request out ------------------------------------------------ */
+
+/**
+ * Some catalogues answer a browser directly and some do not, and which is
+ * which changes without notice. When the sync server is running it will make
+ * the call on our behalf, which sidesteps CORS entirely; when it isn't, we go
+ * direct and accept that a provider may refuse.
+ */
+const throughServer = (url) => `api/lookup?url=${encodeURIComponent(url)}`;
 
 /** fetch with a timeout, because a hung request is worse than a failed one. */
 async function fetchJson(url) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   try {
-    const response = await fetch(url, { signal: controller.signal });
+    const target = hasServer() ? throughServer(url) : url;
+    const response = await fetch(target, { signal: controller.signal });
     if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
     return await response.json();
   } finally {
@@ -51,21 +88,19 @@ async function fetchJson(url) {
   }
 }
 
-const cleanIsbn = (isbn) => String(isbn ?? '').replace(/[^0-9Xx]/g, '').toUpperCase();
+/* --- Lookups ---------------------------------------------------------------- */
 
 /** Direct cover URL from an ISBN. Open Library serves these without a lookup. */
 export function coverUrlForIsbn(isbn, size = 'L') {
   const clean = cleanIsbn(isbn);
   if (!clean) return null;
-  // `default=false` returns 404 instead of a 1px placeholder, so the <img>
-  // error handler can fall back to the typeset spine.
-  return `${OPEN_LIBRARY_COVER}/isbn/${clean}-${size}.jpg?default=false`;
+  return PROVIDERS.openlibrary.coverForIsbn(clean, size);
 }
 
 /**
- * Look a book up by ISBN across both providers.
+ * Look a book up by ISBN across every active provider.
  * @param {string} isbn
- * @returns {Promise<CoverResult|null>}
+ * @returns {Promise<object|null>}
  */
 export async function lookupByIsbn(isbn) {
   const clean = cleanIsbn(isbn);
@@ -73,89 +108,89 @@ export async function lookupByIsbn(isbn) {
     throw new Error('An ISBN is 10 or 13 characters.');
   }
 
-  const [openLibrary, google] = await Promise.allSettled([
-    fetchJson(`${OPEN_LIBRARY_SEARCH}?q=isbn:${clean}&limit=1&fields=title,author_name,number_of_pages_median,cover_i,isbn,first_sentence`),
-    fetchJson(`${GOOGLE_BOOKS}?q=isbn:${clean}&maxResults=1`),
-  ]);
+  // Apple has no ISBN index, so it sits this one out — see providers.js.
+  const asked = activeProviders().filter((provider) => provider.byIsbn);
+  const settled = await Promise.allSettled(
+    asked.map((provider) => provider.byIsbn(clean, fetchJson))
+  );
 
-  const fromOl = openLibrary.status === 'fulfilled' ? parseOpenLibrary(openLibrary.value) : null;
-  const fromGb = google.status === 'fulfilled' ? parseGoogle(google.value) : null;
+  const found = settled
+    .map((result) => (result.status === 'fulfilled' ? result.value : null))
+    .filter(Boolean);
 
-  if (!fromOl && !fromGb) return null;
-
-  // Merge: prefer whichever provider actually has each field, rather than
-  // making one of them win outright and dropping good data.
-  // Google's blurbs are consistently fuller than Open Library's, so it wins
-  // this field even though Open Library wins the others.
-  const description = fromGb?.description || fromOl?.description || '';
+  const merged = mergeFound(found, { coverFrom: sources.covers });
+  if (!merged) return null;
 
   return {
-    title: fromOl?.title || fromGb?.title || '',
-    author: fromOl?.author || fromGb?.author || '',
-    pageCount: fromOl?.pageCount ?? fromGb?.pageCount ?? null,
-    coverUrl: fromOl?.coverUrl || fromGb?.coverUrl || coverUrlForIsbn(clean),
-    description,
-    genre: fromGb?.genre || '',
-    isbn: clean,
-    source: fromOl?.coverUrl ? 'openlibrary' : fromGb?.coverUrl ? 'google' : 'openlibrary',
+    ...merged,
+    isbn: merged.isbn || clean,
+    // A record with no art of its own can still fall back to Open Library's
+    // ISBN endpoint, which is a different index from its search results.
+    coverUrl: merged.coverUrl ?? coverUrlForIsbn(clean),
+    source: merged.coverUrl ? merged.source : 'openlibrary',
   };
 }
 
 /**
  * Search by title / author when there's no ISBN to hand.
- * @returns {Promise<CoverResult[]>} up to `limit` candidates
+ *
+ * This is the path that used to come back empty: one catalogue, and if it had
+ * never heard of the book that was the end of it. Asking all of them and
+ * interleaving what returns is most of the difference between "no results" and
+ * a shelf of covers to choose from.
+ *
+ * @returns {Promise<object[]>} up to `limit` candidates, best-first
  */
 export async function searchByText(query, limit = 6) {
   const term = String(query ?? '').trim();
   if (term.length < 2) return [];
 
-  const data = await fetchJson(
-    `${OPEN_LIBRARY_SEARCH}?q=${encodeURIComponent(term)}&limit=${limit}` +
-      '&fields=title,author_name,number_of_pages_median,cover_i,isbn,first_publish_year'
+  const asked = activeProviders();
+  const settled = await Promise.allSettled(
+    asked.map((provider) => provider.search(term, limit, fetchJson))
   );
 
-  return (data?.docs ?? [])
-    .map((doc) => ({
-      title: doc.title ?? '',
-      author: doc.author_name?.[0] ?? '',
-      pageCount: doc.number_of_pages_median ?? null,
-      year: doc.first_publish_year ?? null,
-      isbn: doc.isbn?.[0] ?? '',
-      description: cleanDescription(doc.first_sentence?.[0]),
-      coverUrl: doc.cover_i ? `${OPEN_LIBRARY_COVER}/id/${doc.cover_i}-M.jpg` : null,
-      key: doc.key ?? null,
-      source: 'openlibrary',
-    }))
-    .filter((result) => result.title);
+  // Every provider refusing is a failure worth reporting; some of them
+  // refusing is a Tuesday.
+  if (settled.length && settled.every((result) => result.status === 'rejected')) {
+    throw settled[0].reason ?? new Error('No source answered.');
+  }
+
+  const lists = settled.map((result) => (result.status === 'fulfilled' ? result.value : []));
+  return interleave(lists, limit).filter((result) => result.title);
 }
 
-function parseOpenLibrary(data) {
-  const doc = data?.docs?.[0];
-  if (!doc) return null;
-  return {
-    title: doc.title ?? '',
-    author: doc.author_name?.[0] ?? '',
-    pageCount: doc.number_of_pages_median ?? null,
-    description: cleanDescription(doc.first_sentence?.[0]),
-    coverUrl: doc.cover_i ? `${OPEN_LIBRARY_COVER}/id/${doc.cover_i}-L.jpg` : null,
-  };
+/**
+ * Accept a cover URL somebody pasted in.
+ *
+ * The escape hatch for every catalogue being wrong, and the honest answer to
+ * "can we use Amazon" — right-click, copy image address, paste. Validated
+ * enough to catch a page URL pasted by mistake, not so strictly that a URL
+ * without a file extension is refused, because plenty of real image URLs have
+ * none.
+ */
+export function normalizeCoverUrl(input) {
+  const raw = String(input ?? '').trim();
+  if (!raw) throw new Error('Paste an image address first.');
+
+  let parsed;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    throw new Error('That does not look like a web address.');
+  }
+
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+    throw new Error('A cover address has to start with http or https.');
+  }
+  if (/\.(html?|php|aspx?)$/i.test(parsed.pathname)) {
+    throw new Error('That is a page, not an image. Right-click the cover itself and copy its image address.');
+  }
+
+  return parsed.toString();
 }
 
-function parseGoogle(data) {
-  const info = data?.items?.[0]?.volumeInfo;
-  if (!info) return null;
-  const links = info.imageLinks ?? {};
-  const raw = links.thumbnail ?? links.smallThumbnail ?? null;
-  return {
-    title: info.title ?? '',
-    author: info.authors?.[0] ?? '',
-    pageCount: info.pageCount ?? null,
-    description: cleanDescription(info.description),
-    genre: info.categories?.[0] ?? '',
-    // Google's default thumbnails are http and curled; ask for the flat, https one.
-    coverUrl: raw ? raw.replace(/^http:/, 'https:').replace('&edge=curl', '') : null,
-  };
-}
+/* --- Uploads ---------------------------------------------------------------- */
 
 /**
  * Turn an uploaded image into a storage-safe data URL.
@@ -166,7 +201,7 @@ function parseGoogle(data) {
  * at roughly 20-40 KB — good enough for a 34px calendar tile and a detail
  * panel, small enough that hundreds of them fit.
  *
- * @param {File} file
+ * @param {File|Blob} file
  * @returns {Promise<string>} data URL
  */
 export function fileToCoverDataUrl(file) {

@@ -11,6 +11,8 @@ import { $, el, fill, toast } from './lib/dom.js';
 import * as store from './data/store.js';
 import { initSync, onSyncChange, syncStatus } from './data/sync.js';
 import { warmCoverCache, setServerCovers, evacuateDataUrls } from './data/coverCache.js';
+import { configureSources } from './data/covers.js';
+import { guardStrayDrops } from './views/coverDrop.js';
 import { renderLibrary } from './views/library.js';
 import { renderCalendar } from './views/calendar.js';
 import { renderDay } from './views/day.js';
@@ -102,7 +104,16 @@ function paintSaveStatus() {
 async function start() {
   store.onPersistError((message) => toast(message, { variant: 'error' }));
   store.init();
+  // Lookups need to know which catalogues to ask before the first search, and
+  // the setting can arrive later from another device, so it is applied on
+  // every change rather than only at boot.
+  configureSources(store.getSettings().sources);
+  store.subscribe(() => configureSources(store.getSettings().sources));
   store.subscribe(render);
+
+  // An image dropped next to a book rather than on it should do nothing, not
+  // replace the app with a JPEG.
+  guardStrayDrops();
   onSyncChange(paintSaveStatus);
   window.addEventListener('hashchange', render);
 

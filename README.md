@@ -1,4 +1,5 @@
-# BookTracker-Chapter
+# Chapter
+
 A reading tracker. Helps to sort your books, plan them onto a calendar, and see your reading plan day by day.
 
 ## Running it
@@ -53,7 +54,11 @@ js/lib/dom.js         element helper, focus trap, toasts
 js/lib/dates.js       day-key arithmetic and the month grid
 js/data/schema.js     the Book record: defaults, normalise, validate
 js/data/store.js      persistence, migrations, CRUD, pub/sub
-js/data/covers.js     Open Library + Google Books lookup, upload downscaling
+js/data/providers.js  Open Library, Google Books, Apple Books
+js/data/covers.js     which catalogue to ask, and upload downscaling
+js/data/coverNames.js what a cover file is called on disk
+js/data/fill.js       filling only the fields a record is missing
+js/data/coverActions.js one path for setting a cover, wherever it came from
 js/data/seed.js       sample library for demos
 js/logic/schedule.js  which books land on which day, in which state
 js/logic/pacing.js    daily targets, ahead/behind, projected finish
@@ -61,6 +66,7 @@ js/logic/sessions.js  session totals, reading streak, observed pace
 js/logic/stats.js     monthly rollups, breakdowns, goal progress
 js/lib/charts.js      hand-rolled SVG charts (no chart library)
 js/data/coverCache.js IndexedDB store for offline cover art
+js/views/coverDrop.js drag-and-drop wiring for cover art
 js/data/transfer.js   JSON and CSV export, merge-aware import
 sw.js                 service worker: offline app shell
 js/views/             one module per view
@@ -204,6 +210,172 @@ Two separate mechanisms, because they solve different halves of the problem:
 
 Records themselves were always offline — they live in this browser's local
 storage. Clearing site data erases the library, so Settings has JSON export.
+
+## Where covers come from, and where they end up
+
+Three catalogues, all free and none needing a key: **Open Library** (the best
+page counts and the strongest on older and public domain titles), **Google
+Books** (the widest coverage of recent, translated and self-published work, and
+by far the best blurbs) and **Apple Books** (the largest artwork). By default a
+search asks all three at once and keeps the best field from each, which is why
+a title that used to return nothing now usually returns a row of covers to pick
+from.
+
+Settings has two selects, not one: where **book details** come from and where
+**cover art** comes from. They are separate because the answers differ —
+Open Library knows how long a 1937 printing is and has no picture of it, Apple
+has a 600px cover and no idea how long it is.
+
+Amazon is not on the list and cannot be. The Product Advertising API needs an
+affiliate account with qualifying sales, and the `images-amazon.com/images/P/`
+URLs people pass around are unsanctioned and increasingly answered with a blank
+image. The honest substitute is in the cover picker: right-click a cover
+anywhere, copy its image address, paste it in. Dragging the image itself onto
+the book does the same thing.
+
+### Changing a cover you don't like
+
+Three ways, in ascending order of effort:
+
+1. **Drag an image onto the book** in the library — from your desktop or from
+   another browser tab. Nothing to open first.
+2. **Paste an image address** into the cover picker in the book form.
+3. **Search the catalogues** from the picker and choose a different edition;
+   each result is labelled with which catalogue it came from.
+
+### The covers folder
+
+With `npm start` running, cover art is written to `data/covers` as ordinary
+files named after their book:
+
+```
+data/covers/the-hobbit.jpg
+data/covers/dune.jpg
+data/covers/dune-2.jpg          a second book with the same title
+data/cover-index.json           which file belongs to which record
+```
+
+They used to be named after the record id — `bk-9f2c1a04.jpg` — which is
+stable, correct and completely unreadable. Opening the folder told you nothing
+and replacing one cover by hand was impossible without first looking up an id.
+The index is what makes titles safe as filenames: titles are neither unique nor
+permanent, so the mapping is written down rather than inferred. Rename a book
+and its file is renamed to follow on the next sync; drop a replacement image
+into the folder under the same name and it is picked up on the next load. Older
+id-named files are renamed automatically the first time the server starts.
+
+Without a server there is no folder — the art lives in this browser's image
+store (IndexedDB), keyed by record id, and there is nowhere on disk to go and
+look at it.
+
+### When a catalogue won't answer a browser
+
+Providers block cross-origin requests without warning and change their minds
+about it. When the sync server is running, lookups go through `api/lookup`
+instead, which makes the call server-side and hands back the JSON. The proxy is
+locked to the four provider hostnames — an open proxy left running on a home
+network is a genuinely bad thing to ship.
+
+## Reading orders
+
+A shelf answers "which books are these"; an order answers "in what order do I
+read them". Sequences are wrong more often than shelves are — a volume goes in
+at the bottom when it belonged third, a run gets added in publication order
+when you wanted release order — so every way of fixing one is offered:
+
+- **Arrows** move a book one place. They work on a phone, with a keyboard and
+  with a screen reader, none of which is true of dragging.
+- **Double arrows** send it to the top or the bottom, because moving a book
+  from twentieth to first one place at a time is nineteen clicks.
+- **Dragging** is fastest when it works. A line is drawn on the edge the book
+  will land on, and the drop honours it: the old behaviour dropped everything
+  *at* the target's index, so a downward drag landed after the row you aimed at
+  and an upward drag landed before it — one gesture doing two things depending
+  on which way you came from.
+- **Undo move** appears after any change and puts the whole sequence back.
+  Restoring the array wholesale is the only version that is correct after a
+  drag, where "the inverse of that move" is precisely what you have already
+  forgotten.
+
+The lists themselves reorder too, with the arrows in each list's header —
+whichever one you are working through belongs at the top.
+
+Every move is announced to a screen reader, since a row sliding one place up is
+otherwise silent.
+
+## Importing the same catalogue twice
+
+A Calibre import that met a book already in the library used to skip it. That
+is the safe answer and the wrong one: the reason to export a catalogue again
+after an evening of writing descriptions into Calibre is precisely that the
+books are already here and the descriptions are not.
+
+A second import now **fills**. The rule is the one enrichment already used and
+it is strict and one-directional: only empty fields are written. A length you
+corrected by hand, a description you rewrote, a status, a schedule, a rating —
+none of them can be touched by an import, ever. What can arrive is what is not
+there yet: author, ISBN, length, description, genre, series name, series
+number, series length, notes.
+
+Two fields are additive rather than filled. Tags are a set, so new ones are
+added and none are removed. Cover art is fetched for a matched book that has
+none, whether or not any text field was empty.
+
+Books are matched on ISBN first, then on title and author, then on title alone
+— but only when exactly one book carries that title and one of the two authors
+is blank. Every credited author is compared, not just the first: the same
+graphic novel is "Fábio Moon & Terry Moore" in one catalogue and "Terry Moore"
+in a record typed by hand, and reading only the first credit files it twice.
+
+The preview says what will happen before it happens — how many will be added,
+how many filled, and which fields across all of them ("12 × description, 7 ×
+series number").
+
+### Custom Calibre columns
+
+Calibre prefixes every user-defined column with `#`, so a description written
+into a custom column exports as `#description` rather than as `comments`. Every
+column name is now tried both bare and hashed, and matched without regard to
+case or to spaces against underscores, because Calibre's catalogue and its CSV
+export disagree about both. Tick the column in the catalogue's field list
+before exporting or it will not be in the file at all.
+
+### Series numbers are not integers
+
+A side story published between volumes four and five is genuinely #4.5, and
+rounding it to 4 or 5 files it under a volume that already exists. Series
+numbers are stored to two decimals; the form accepts them and sequences sort by
+them. How many books are in a series stays a whole number — you can own volume
+4.5, you cannot own 4.5 volumes.
+
+A series also votes on what kind of thing it is. `Little Nemo, Volume 2` is
+obviously a comic and `Little Nemo: A Slumberland Interlude` is obviously
+nothing at all; read together they are plainly the same shelf, so a run whose
+volumes are mostly comics makes its odd one out a comic too.
+
+## What is in a backup
+
+Settings > Export JSON writes one file containing books, reading sessions,
+progress, shelves, tags, ratings, notes, series, reading order lists and their
+order, your settings, and the tombstones recording what you have deleted. The
+tombstones matter: restore without them onto a device that still has a book you
+deleted elsewhere and the book comes back.
+
+**Cover art is the exception**, and it is opt-in. Tick "Include cover art" and
+the images are read back out of the image store and written into the file as
+data URLs. Untick it and the file stays small enough to keep a weekly copy of.
+Only art that would otherwise be lost is carried — an uploaded cover, or one
+dropped onto a book — since a plain `https://` cover URL will still be a plain
+`https://` cover URL after a restore.
+
+Import merges by default. Books match on id first and then on title and author;
+lists match on id and then on name. A list that exists on both sides takes the
+imported sequence and keeps anything added here since on the end, rather than
+one silently overwriting the other. Book ids are rewritten on the way in, so a
+sequence restored onto a device that catalogued the same books separately points
+at the records that are actually there.
+
+CSV remains lossy by design: one row per book, no sessions, no lists.
 
 ## What dragging a cover does
 

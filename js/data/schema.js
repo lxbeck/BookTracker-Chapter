@@ -14,7 +14,7 @@
 
 import { isValidKey, today } from '../lib/dates.js';
 
-export const SCHEMA_VERSION = 6;
+export const SCHEMA_VERSION = 7;
 
 /** @type {Record<string, {id: string, label: string, hint: string}>} */
 export const STATUSES = {
@@ -173,6 +173,9 @@ export function blankOrder(overrides = {}) {
     name: '',
     description: '',
     bookIds: [],
+    // Where this list sits among the others. Null means "not placed yet" and
+    // sorts to the end, which is where a newly made list belongs.
+    position: null,
     createdAt: now,
     updatedAt: now,
     ...overrides,
@@ -190,6 +193,7 @@ export function normalizeOrder(input = {}) {
     // Duplicates would make "position in the list" ambiguous, and a book can
     // only be in one place in a sequence.
     bookIds: [...new Set((Array.isArray(input.bookIds) ? input.bookIds : []).map(String))],
+    position: Number.isFinite(input.position) ? input.position : null,
     createdAt: input.createdAt || base.createdAt,
     updatedAt: input.updatedAt || new Date().toISOString(),
   };
@@ -275,6 +279,20 @@ const toInt = (value) => {
   return Number.isFinite(n) ? n : null;
 };
 
+/**
+ * A place in a series, which may be fractional.
+ *
+ * Kept to two decimals: 4.5 is the everyday case, 4.25 exists, and anything
+ * finer is a floating-point artefact rather than a number anyone typed.
+ * Negative is meaningless — a prequel is #0 or #0.5, not #-1.
+ */
+const toSeriesNumber = (value) => {
+  if (value === '' || value == null) return null;
+  const n = Number.parseFloat(value);
+  if (!Number.isFinite(n) || n < 0) return null;
+  return Math.round(n * 100) / 100;
+};
+
 const cleanKey = (value) => (isValidKey(value) ? value : null);
 
 /** A rebase is only meaningful with both a day and a page to start from. */
@@ -323,7 +341,11 @@ export function normalizeBook(input = {}, todayKey = today()) {
     status,
     series: {
       name: String(input.series?.name ?? '').trim(),
-      number: toInt(input.series?.number),
+      // Not an integer: half-numbered volumes are real and common. A side
+      // story published between books four and five is #4.5, an omnibus of
+      // the first three is sometimes #1-3, and rounding either to a whole
+      // number puts it in the wrong place in every sequence it appears in.
+      number: toSeriesNumber(input.series?.number),
       total: toInt(input.series?.total),
     },
     cover: {

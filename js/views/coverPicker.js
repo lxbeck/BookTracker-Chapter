@@ -9,15 +9,19 @@
 
 import { el, fill, toast } from '../lib/dom.js';
 import { coverThumb } from './cover.js';
-import { lookupByIsbn, searchByText, fileToCoverDataUrl } from '../data/covers.js';
 import {
-  cacheCover, storeCoverOnServer, storeUploadedCover, LOCAL_COVER,
+  lookupByIsbn, searchByText, fileToCoverDataUrl, normalizeCoverUrl,
+} from '../data/covers.js';
+import { PROVIDERS } from '../data/providers.js';
+import { acceptCoverDrop } from './coverDrop.js';
+import {
+  cacheCover, storeCoverOnServer, storeUploadedCover, storeUploadedCoverOnServer, LOCAL_COVER,
 } from '../data/coverCache.js';
 
 const SOURCE_LABEL = {
-  openlibrary: 'Open Library',
-  google: 'Google Books',
+  ...Object.fromEntries(Object.values(PROVIDERS).map((provider) => [provider.id, provider.label])),
   upload: 'Uploaded',
+  url: 'Pasted address',
 };
 
 /**
@@ -30,7 +34,10 @@ const SOURCE_LABEL = {
 export function coverPicker({ draft, readForm, onPick }) {
   let cover = { ...draft.cover };
 
-  const preview = el('div.cover-picker__preview');
+  const preview = acceptCoverDrop(
+    el('div.cover-picker__preview', { dataset: { coverDrop: 'picker' } }),
+    { onImage: (payload) => (payload.file ? handleUpload(payload.file) : useUrl(payload.url)) }
+  );
   const status = el('p.cover-picker__status', { 'aria-live': 'polite' });
   const results = el('div.cover-picker__results', { hidden: true });
 
@@ -58,7 +65,10 @@ export function coverPicker({ draft, readForm, onPick }) {
     // moment it's saved rather than only after a manual sweep in Settings.
     if (next.url && draft.id) {
       cacheCover(draft.id, next.url).catch(() => null);
-      storeCoverOnServer(draft.id, next.url).catch(() => null);
+      // The title goes with it: the server files cover art under the book's
+      // name, and the draft's title is the freshest one there is.
+      storeCoverOnServer(draft.id, next.url, readForm().title || draft.title)
+        .catch(() => null);
     }
   }
 
@@ -114,6 +124,39 @@ export function coverPicker({ draft, readForm, onPick }) {
     }
   }
 
+  /**
+   * Use an image address typed or pasted in.
+   *
+   * The catalogue of last resort. Every provider here is a catalogue with
+   * gaps, and for anything unusual — a small press, a fan translation, a
+   * boxed set with its own art — the picture that exists on the publisher's
+   * own page is better than the three that don't exist anywhere else.
+   */
+  function useUrl(value) {
+    try {
+      const url = normalizeCoverUrl(value);
+      setCover({ url, source: 'url' });
+      results.hidden = true;
+      urlInput.value = '';
+      status.textContent = 'Using that image.';
+    } catch (error) {
+      status.textContent = error.message;
+    }
+  }
+
+  const urlInput = el('input.input.cover-picker__url', {
+    type: 'url',
+    placeholder: 'or paste an image address\u2026',
+    'aria-label': 'Cover image address',
+    onKeydown: (event) => {
+      if (event.key !== 'Enter') return;
+      // Enter in a field inside a form means submit, which would save the book
+      // half way through choosing its cover.
+      event.preventDefault();
+      useUrl(urlInput.value);
+    },
+  });
+
   function showResults(matches) {
     results.hidden = false;
     fill(
@@ -135,6 +178,9 @@ export function coverPicker({ draft, readForm, onPick }) {
             el('span.cover-option__meta', {
               text: [match.author, match.year].filter(Boolean).join(' \u00b7 '),
             }),
+            // Which catalogue each candidate came from, because two results
+            // for the same book with different art is a choice, not a bug.
+            el('span.cover-option__source', { text: SOURCE_LABEL[match.source] ?? match.source }),
           ]
         )
       )
@@ -157,6 +203,10 @@ export function coverPicker({ draft, readForm, onPick }) {
         // No IndexedDB: fall back to the old behaviour rather than losing it.
         setCover({ url: dataUrl, source: 'upload' });
       }
+      // An upload only exists on the device that made it until the server has
+      // a copy, which is not what "my library is on both my devices" implies.
+      storeUploadedCoverOnServer(draft.id, dataUrl, readForm().title || draft.title)
+        .catch(() => null);
       setBusy(false, 'Using your image.');
     } catch (error) {
       setBusy(false, error.message);
@@ -188,6 +238,13 @@ export function coverPicker({ draft, readForm, onPick }) {
     preview,
     el('div.cover-picker__controls', {}, [
       el('div.cover-picker__actions', {}, buttons),
+      el('div.cover-picker__url-row', {}, [
+        urlInput,
+        el('button.btn.btn--quiet.btn--sm', {
+          type: 'button', onClick: () => useUrl(urlInput.value),
+        }, 'Use address'),
+      ]),
+      el('p.field__hint', {}, 'You can also drag an image straight onto the cover \u2014 from your desktop, or from another browser tab.'),
       status,
       results,
       fileInput,

@@ -106,3 +106,43 @@
     gap: var(--s3);
   }
 }
+
+/* --- Pasted address -------------------------------------------------------
+   The escape hatch when no catalogue has the right art. Sits under the
+   buttons rather than beside them: it is the third thing you try, not the
+   first, and giving it a full row keeps a long URL readable.
+   ------------------------------------------------------------------------- */
+
+.cover-picker__url-row {
+  display: flex;
+  gap: var(--s2);
+  align-items: center;
+}
+
+.cover-picker__url {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--size-sm);
+}
+
+.cover-option__source {
+  font-family: var(--face-slip);
+  font-size: 0.5625rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  opacity: 0.8;
+}
+
+/* A drop lands on the preview as readily as on a book in the library. */
+.cover-picker__preview.is-drop-target {
+  outline: 2px dashed var(--stamp);
+  outline-offset: 4px;
+  border-radius: var(--r-control);
+}
+
+@media (max-width: 560px) {
+  .cover-picker__url-row {
+    flex-wrap: wrap;
+  }
+}

@@ -84,7 +84,12 @@ export function openBookForm({ book = null, defaultStart = null, onSaved } = {})
     placeholder: 'Barsoom',
   });
   const seriesNumberInput = input('series.number', {
-    type: 'number', min: '1', value: draft.series.number ?? '', placeholder: '2',
+    // `step` matters as much as `min` here: a number input with the default
+    // step of 1 rejects 4.5 on submit in every browser, so a half-numbered
+    // volume could be typed and then silently refused. Zero is allowed
+    // because prequels are #0 as often as they are #0.5.
+    type: 'number', min: '0', step: '0.01',
+    value: draft.series.number ?? '', placeholder: '4.5',
   });
   const seriesTotalInput = input('series.total', {
     type: 'number', min: '1', value: draft.series.total ?? '', placeholder: '4',

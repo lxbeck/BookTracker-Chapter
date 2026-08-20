@@ -798,6 +798,13 @@
   display: flex;
   gap: var(--s2);
   flex-wrap: wrap;
+  align-items: center;
+}
+
+/* The two arrows that move a whole list among the others sit tight together,
+   so they read as one control rather than as two unrelated buttons. */
+.order-panel__actions .order-row__move {
+  margin-right: calc(var(--s2) * -0.5);
 }
 
 .order-books {
@@ -822,8 +829,15 @@
   opacity: 0.4;
 }
 
-.order-row.is-drop-target {
+/* Where the book will land, drawn on the edge it will land on. A single
+   highlight on the whole row cannot say "above this" or "below this", which
+   is the only thing you need to know mid-drag. */
+.order-row.is-drop-before {
   box-shadow: inset 0 2px 0 var(--stamp);
+}
+
+.order-row.is-drop-after {
+  box-shadow: inset 0 -2px 0 var(--stamp);
 }
 
 .order-row__n {

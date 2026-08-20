@@ -1,0 +1,87 @@
+
+/* --- Where the cover art is -----------------------------------------------
+   A count, a verdict and a way to see which books it means. The count is the
+   headline because the first question is "how bad is it"; the "Which?" button
+   exists because the second question is always "which ones".
+   ------------------------------------------------------------------------- */
+
+.cover-report__list {
+  list-style: none;
+  margin: var(--s3) 0 0;
+  padding: 0;
+  display: grid;
+  gap: var(--s2);
+}
+
+.cover-report__row {
+  display: grid;
+  grid-template-columns: 3rem 1fr auto;
+  gap: var(--s3);
+  align-items: center;
+  padding: var(--s2) var(--s3);
+  border-left: 3px solid var(--rule);
+  background: var(--slip);
+}
+
+.cover-report__row.is-stored { border-left-color: var(--ok, var(--stamp)); }
+.cover-report__row.is-linked { border-left-color: var(--stamp); }
+.cover-report__row.is-none { border-left-color: var(--rule); }
+
+.cover-report__count {
+  font-family: var(--face-slip);
+  font-size: var(--size-lg);
+  text-align: right;
+}
+
+.cover-report__label {
+  display: block;
+  font-weight: 600;
+  font-size: var(--size-sm);
+}
+
+.cover-report__hint {
+  display: block;
+  font-size: var(--size-xs);
+  color: var(--ink-faint);
+}
+
+/* --- Duplicates ---------------------------------------------------------- */
+
+.dupes__group {
+  padding: var(--s3) 0;
+  border-top: 1px solid var(--rule);
+}
+
+.dupes__reason {
+  font-family: var(--face-slip);
+  font-size: var(--size-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-faint);
+}
+
+.plain-list {
+  list-style: none;
+  margin: var(--s2) 0;
+  padding: 0;
+}
+
+.plain-list__row {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--s3);
+  padding: var(--s1) 0;
+  font-size: var(--size-sm);
+}
+
+/* The record that survives a merge, marked so the choice is visible before
+   the button is pressed rather than explained after it. */
+.plain-list__row.is-keeping {
+  font-weight: 600;
+}
+
+.plain-list__aside {
+  color: var(--ink-faint);
+  font-size: var(--size-xs);
+  white-space: nowrap;
+}

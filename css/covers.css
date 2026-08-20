@@ -146,3 +146,15 @@
     flex-wrap: wrap;
   }
 }
+
+/* Whether this cover is a file you have or an address you are borrowing.
+   Small and under the source label: it matters, but not more than the picture
+   it is describing. */
+.cover-picker__where {
+  display: block;
+  margin-top: var(--s1);
+  font-size: 0.625rem;
+  line-height: 1.4;
+  color: var(--ink-faint);
+  max-width: 22ch;
+}

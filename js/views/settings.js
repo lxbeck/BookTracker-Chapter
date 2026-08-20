@@ -8,7 +8,7 @@
 import { el, fill, toast } from '../lib/dom.js';
 import { showModal } from './modal.js';
 import {
-  allBooks, getSettings, updateSettings, replaceAll,
+  allBooks, getSettings, updateSettings, replaceAll, mergeBooks,
   storageStatus, requestPersistentStorage,
 } from '../data/store.js';
 import {
@@ -22,9 +22,12 @@ import { sampleBooks } from '../data/seed.js';
 import { parseGoodreadsCsv } from '../data/goodreads.js';
 import { parseCalibreCsv } from '../data/calibre.js';
 import { fillMissing, matchExisting } from '../data/fill.js';
+import { auditCovers, VERDICTS, VERDICT_ORDER } from '../data/coverAudit.js';
+import { findDuplicates, mergePlan } from '../data/duplicates.js';
 import { buildSnapshot } from '../data/snapshot.js';
 import {
-  storeLocalCoverOnServer, storeCoverOnServer, hasServer, LOCAL_COVER,
+  storeLocalCoverOnServer, storeCoverOnServer, storeUploadedCoverOnServer,
+  cachedCoverUrl, isLocalCover, hasServer, LOCAL_COVER,
 } from '../data/coverCache.js';
 import { coverUrlForIsbn, configureSources } from '../data/covers.js';
 import { SOURCE_CHOICES, EVERY_SOURCE, PROVIDERS } from '../data/providers.js';
@@ -47,6 +50,8 @@ export function renderSettings(mount) {
     syncSection(),
     sourcesSection(settings, redraw),
     storageSection(redraw),
+    coverStorageSection(books, redraw),
+    duplicatesSection(books, redraw),
     snapshotSection(),
     goalSection(books, settings, redraw),
     offlineSection(books),
@@ -184,6 +189,281 @@ function coversFolderNote() {
 
   return note;
 }
+
+/* --- Where the covers are -------------------------------------------------- */
+
+/**
+ * Which covers are files and which are only addresses.
+ *
+ * The question this answers cannot be answered by looking at the shelf: a
+ * cover fetched live from a catalogue and a cover sitting in the folder are
+ * pixel-identical until the day the catalogue stops serving it, at which point
+ * one of them is gone and you find out by scrolling past a blank spine.
+ */
+function coverStorageSection(books, redraw) {
+  const report = el('div.cover-report', {}, el('p.settings__note', {}, 'Checking\u2026'));
+
+  const storeButton = el('button.btn.btn--stamp.btn--sm', {
+    type: 'button', hidden: true,
+  }, 'Save the rest to the folder');
+
+  loadCoverAudit(books).then((audit) => {
+    fill(report, [
+      el('ul.cover-report__list', {}, VERDICT_ORDER.map((verdict) => {
+        const count = audit.counts[verdict];
+        if (!count) return null;
+        return el('li.cover-report__row', { class: `is-${verdict}` }, [
+          el('span.cover-report__count', {}, String(count)),
+          el('div', {}, [
+            el('span.cover-report__label', {}, VERDICTS[verdict].label),
+            el('span.cover-report__hint', {}, VERDICTS[verdict].hint),
+          ]),
+          // Naming a few is worth more than a number: "which ones" is the
+          // actual question behind "how many".
+          count
+            ? el('button.btn.btn--quiet.btn--sm', {
+                type: 'button',
+                onClick: () => showCoverList(verdict, audit.byVerdict[verdict]),
+              }, 'Which?')
+            : null,
+        ].filter(Boolean));
+      }).filter(Boolean)),
+
+      audit.orphans.length
+        ? el('p.settings__note', {},
+            `${audit.orphans.length} files in the folder belong to no book in this library \u2014 left behind by a book deleted elsewhere, or by a library restored onto a server that kept its old folder.`)
+        : null,
+    ].filter(Boolean));
+
+    if (audit.storable) {
+      storeButton.hidden = false;
+      storeButton.textContent = `Save ${audit.storable} more to the folder`;
+      storeButton.onclick = () => storeMissingCovers(audit, storeButton, redraw);
+    }
+  }).catch(() => {
+    fill(report, el('p.settings__note', {}, 'The covers could not be checked just now.'));
+  });
+
+  return section('Where the cover art is', [
+    el('p.settings__hint', {}, hasServer()
+      ? 'A cover on screen is not necessarily a cover you have. Files in the covers folder are yours; the rest are addresses that work until the catalogue serving them stops.'
+      : 'No sync server is running, so there is no covers folder. Art is held in this browser and disappears with its site data. Start the server with "npm start" to keep covers as files.'),
+    report,
+    el('div.settings__row', {}, [storeButton]),
+  ]);
+}
+
+/** Ask every source where the covers are, then classify. */
+async function loadCoverAudit(books) {
+  const ids = books.map((book) => book.id);
+  const onDevice = await cachedIds(ids).catch(() => []);
+
+  let files = {};
+  let onServer = [];
+  if (hasServer()) {
+    try {
+      const body = await (await fetch('api/covers')).json();
+      files = body.byBook ?? {};
+      onServer = Object.keys(files);
+    } catch {
+      /* the folder could not be read; every cover falls back to its weaker copy */
+    }
+  }
+
+  return auditCovers(books, { onServer, onDevice, files, hasServer: hasServer() });
+}
+
+function showCoverList(verdict, entries) {
+  const modal = showModal({
+    eyebrow: 'Cover art',
+    title: VERDICTS[verdict].label,
+    body: [
+      el('p.settings__note', {}, VERDICTS[verdict].hint),
+      el('ul.plain-list', {}, entries.slice(0, 200).map((entry) =>
+        el('li.plain-list__row', {}, [
+          el('span', {}, entry.title),
+          entry.file ? el('code.plain-list__aside', {}, entry.file) : null,
+        ].filter(Boolean)))),
+      entries.length > 200
+        ? el('p.settings__note', {}, `\u2026and ${entries.length - 200} more.`)
+        : null,
+    ].filter(Boolean),
+    actions: [el('button.btn.btn--quiet', { type: 'button', onClick: () => modal.close() }, 'Close')],
+  });
+}
+
+/** Turn every linked cover into a file, one at a time. */
+async function storeMissingCovers(audit, button, redraw) {
+  const targets = [...audit.byVerdict.linked, ...audit.byVerdict.device];
+  button.disabled = true;
+
+  let stored = 0;
+  for (const [index, entry] of targets.entries()) {
+    button.textContent = `Saving ${index + 1} of ${targets.length}\u2026`;
+    const book = allBooks().find((candidate) => candidate.id === entry.id);
+    if (!book) continue;
+
+    if (entry.verdict === 'device') {
+      // Already bytes on this machine; send those rather than refetching a
+      // URL that may no longer resolve.
+      const dataUrl = await cachedCoverUrl(book.id).then((url) =>
+        url ? fetch(url).then((r) => r.blob()).then(blobToDataUrl) : null
+      ).catch(() => null);
+
+      if (dataUrl && await storeUploadedCoverOnServer(book.id, dataUrl, book.title)) {
+        stored += 1;
+        continue;
+      }
+    }
+
+    if (book.cover?.url && !isLocalCover(book.cover.url)) {
+      if (await storeCoverOnServer(book.id, book.cover.url, book.title)) stored += 1;
+    }
+  }
+
+  button.disabled = false;
+  toast(stored
+    ? `${stored} covers saved to the folder.`
+    : 'None of those could be saved \u2014 the sources did not answer.');
+  redraw();
+}
+
+const blobToDataUrl = (blob) => new Promise((resolve) => {
+  const reader = new FileReader();
+  reader.onload = () => resolve(reader.result);
+  reader.onerror = () => resolve(null);
+  reader.readAsDataURL(blob);
+});
+
+/* --- The same book twice --------------------------------------------------- */
+
+/**
+ * Find records that are the same book, and offer to fold them together.
+ *
+ * Merging rather than deleting, because the thing worth saving is the reading
+ * log: a session is a fact about an evening and belongs to the book however
+ * many records happened to be open at the time. Deleting the spare copy throws
+ * that away silently, which is why "find duplicates" tools are usually more
+ * dangerous than the duplicates.
+ */
+function duplicatesSection(books, redraw) {
+  const summary = el('p.settings__note', { 'aria-live': 'polite' });
+
+  return section('The same book twice', [
+    el('p.settings__hint', {},
+      'Duplicates arrive on their own \u2014 an import that ran before an ISBN was filled in, a book catalogued on two devices before sync was set up, a volume added as "Vol. 1" once and "Volume 1" the next time. The cost is a reading log split across two records, so neither one is true.'),
+    el('div.settings__row', {}, [
+      el('button.btn.btn--quiet.btn--sm', {
+        type: 'button',
+        onClick: () => {
+          const groups = findDuplicates(books);
+          if (!groups.length) {
+            summary.textContent = `No duplicates among ${books.length} books.`;
+            return;
+          }
+          summary.textContent = '';
+          showDuplicates(groups, redraw);
+        },
+      }, 'Check for duplicates'),
+    ]),
+    summary,
+  ]);
+}
+
+const REASON_TEXT = {
+  isbn: 'Same ISBN \u2014 the same edition, whatever the titles say.',
+  both: 'Same title and author.',
+  title: 'Same title, and only one of them names an author.',
+};
+
+function showDuplicates(groups, redraw) {
+  const body = el('div.dupes');
+
+  const draw = () => {
+    // Recomputed against the live library so a merged group disappears rather
+    // than sitting there offering to merge records that are already gone.
+    const remaining = findDuplicates(allBooks()).filter(
+      (group) => !group.books.every((book) => dismissed.has(book.id))
+    );
+
+    fill(body, remaining.length
+      ? remaining.map((group) => duplicateGroup(group, () => {
+          draw();
+          redraw();
+        }))
+      : el('p.settings__note', {}, 'Nothing left to merge.'));
+  };
+
+  draw();
+
+  const modal = showModal({
+    eyebrow: 'Duplicates',
+    title: `${groups.length} possible ${groups.length === 1 ? 'duplicate' : 'duplicates'}`,
+    body: [
+      el('p.settings__note', {},
+        'Merging keeps the fullest record, fills its empty fields from the others, and combines every reading session. Nothing you have already entered is overwritten.'),
+      body,
+    ],
+    actions: [el('button.btn.btn--quiet', { type: 'button', onClick: () => modal.close() }, 'Done')],
+  });
+}
+
+function duplicateGroup(group, done) {
+  const plan = mergePlan(group.books);
+
+  return el('div.dupes__group', {}, [
+    el('p.dupes__reason', {}, REASON_TEXT[group.reason] ?? 'These look like the same book.'),
+    el('ul.plain-list', {}, plan.survivor
+      ? [plan.survivor, ...plan.absorbed].map((book, index) =>
+          el('li.plain-list__row', { class: index === 0 ? 'is-keeping' : '' }, [
+            el('span', {}, `${book.title}${book.author ? ` \u00b7 ${book.author}` : ''}`),
+            el('span.plain-list__aside', {},
+              [
+                index === 0 ? 'kept' : 'merged in',
+                `${book.sessions.length} ${book.sessions.length === 1 ? 'session' : 'sessions'}`,
+              ].join(' \u00b7 ')),
+          ]))
+      : []),
+
+    plan.gains.length
+      ? el('p.settings__note', {}, `The kept record gains: ${plan.gains.join(', ')}.`)
+      : el('p.settings__note', {}, 'The kept record already has everything the others hold.'),
+
+    el('div.settings__row', {}, [
+      el('button.btn.btn--stamp.btn--sm', {
+        type: 'button',
+        onClick: () => {
+          const result = mergeBooks(
+            plan.survivor.id,
+            plan.absorbed.map((book) => book.id),
+            plan.patch
+          );
+          toast(result.ok
+            ? `Merged into ${plan.survivor.title}.`
+            : Object.values(result.errors ?? {})[0] ?? 'That merge could not be applied.');
+          done();
+        },
+      }, `Merge into "${plan.survivor.title}"`),
+      el('button.btn.btn--quiet.btn--sm', {
+        type: 'button',
+        onClick: () => {
+          // A title collision between two genuinely different books is a
+          // real thing; there has to be a way to say so.
+          group.books.forEach((book) => dismissed.add(book.id));
+          done();
+        },
+      }, 'Not duplicates'),
+    ]),
+  ]);
+}
+
+/**
+ * Groups the person has said are not duplicates.
+ *
+ * Session-scoped rather than stored: a persisted "ignore" list is a second
+ * thing to keep in sync and to explain, and re-running the check is cheap.
+ */
+const dismissed = new Set();
 
 /* --- Offline -------------------------------------------------------------- */
 

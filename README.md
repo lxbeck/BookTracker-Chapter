@@ -276,6 +276,53 @@ instead, which makes the call server-side and hands back the JSON. The proxy is
 locked to the four provider hostnames — an open proxy left running on a home
 network is a genuinely bad thing to ship.
 
+## Which covers do you actually have
+
+A cover on screen is not a cover you have. It might be a file in the covers
+folder, a copy in this browser's image store, or nothing but a URL pointing at
+a catalogue that answers today and 404s in three years. All three look
+identical on the shelf, which is the problem.
+
+Settings > **Where the cover art is** counts them, ranked by how much of the
+image survives the internet going away:
+
+| Verdict | What it means |
+| --- | --- |
+| In the covers folder | A file on the server. Survives clearing this browser; every device sees it. |
+| This browser only | In the image store here. Lost with site data, invisible elsewhere. |
+| Linked, not saved | An address. Blank spine the day the source stops serving it. |
+| No cover | Nothing but a typeset spine. |
+
+Each row has a **Which?** button, because the question behind "how many" is
+always "which ones". One button turns every linked cover into a file. Files
+belonging to no book — left by a deletion on another device, or by a library
+restored onto a server that kept its old folder — are reported as orphans.
+
+The cover picker answers the same question for one book: *Saved in the covers
+folder as the-hobbit.jpg*, or *Linked from the web, not saved*.
+
+## The same book twice
+
+Duplicates arrive on their own: an import that ran before an ISBN was filled
+in, a book catalogued on two devices before sync was set up, a volume added as
+"Vol. 1" once and "Volume 1" the next. The cost is a reading log split across
+two records, so neither one is true.
+
+Settings > **The same book twice** finds them three ways — same ISBN, same
+title and author, or same title where only one names an author. It is
+deliberately not fuzzier than that: a finder that suggests merging two volumes
+of a series is worse than no finder, because the only thing worse than a split
+reading log is a wrongly merged one. Anything it raises can be dismissed as
+**Not duplicates**.
+
+Merging, not deleting. The fullest record survives — a reading log outweighs
+everything, being the only part no catalogue can supply again — and the others
+contribute only what it is missing. Sessions from every copy are combined and
+de-duplicated, tags are unioned, progress becomes the furthest anyone got, and
+a finish date on any copy finishes the book. Reading orders are repointed to
+the survivor in the slot the duplicate held, rather than quietly losing an
+entry.
+
 ## Reading orders
 
 A shelf answers "which books are these"; an order answers "in what order do I

@@ -533,6 +533,54 @@ export function moveOrder(orderId, delta) {
 }
 
 /** Set progress from either a page or a percentage; both are kept in step. */
+/**
+ * Fold duplicate records into one.
+ *
+ * The patch is applied first and the absorbed records removed second, so a
+ * failure part-way leaves two copies rather than none — the wrong outcome, but
+ * the recoverable one.
+ *
+ * Reading orders are repointed rather than left holding ids that no longer
+ * exist. A sequence quietly losing an entry because two records were tidied up
+ * is exactly the kind of damage a merge is supposed to prevent.
+ *
+ * @param {string} survivorId
+ * @param {string[]} absorbedIds
+ * @param {object} patch - from `mergePlan`
+ */
+export function mergeBooks(survivorId, absorbedIds, patch = {}) {
+  const survivor = getBook(survivorId);
+  if (!survivor) return { ok: false, errors: { id: 'That book is no longer here.' } };
+
+  const gone = absorbedIds.filter((id) => id !== survivorId && getBook(id));
+  if (!gone.length) return { ok: false, errors: { id: 'Nothing to merge into it.' } };
+
+  const result = updateBook(survivorId, patch);
+  if (!result.ok) return result;
+
+  const doomed = new Set(gone);
+  const now = new Date().toISOString();
+
+  commit(() => {
+    state.readingOrders = state.readingOrders.map((order) => {
+      if (!order.bookIds.some((id) => doomed.has(id))) return order;
+
+      // Replace in place so the survivor inherits the position the duplicate
+      // held, then dedupe — a list naming both copies keeps the earlier slot.
+      const rebuilt = [];
+      for (const id of order.bookIds) {
+        const next = doomed.has(id) ? survivorId : id;
+        if (!rebuilt.includes(next)) rebuilt.push(next);
+      }
+      return { ...order, bookIds: rebuilt, updatedAt: now };
+    });
+  });
+
+  for (const id of gone) removeBook(id);
+
+  return { ok: true, book: getBook(survivorId), removed: gone.length };
+}
+
 export function setProgress(bookId, input) {
   const book = getBook(bookId);
   if (!book) return { ok: false };

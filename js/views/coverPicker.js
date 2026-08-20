@@ -15,7 +15,8 @@ import {
 import { PROVIDERS } from '../data/providers.js';
 import { acceptCoverDrop } from './coverDrop.js';
 import {
-  cacheCover, storeCoverOnServer, storeUploadedCover, storeUploadedCoverOnServer, LOCAL_COVER,
+  cacheCover, storeCoverOnServer, storeUploadedCover, storeUploadedCoverOnServer,
+  cachedIds, hasServer, LOCAL_COVER,
 } from '../data/coverCache.js';
 
 const SOURCE_LABEL = {
@@ -54,7 +55,47 @@ export function coverPicker({ draft, readForm, onPick }) {
       el('span.cover-picker__source', {
         text: cover.url ? SOURCE_LABEL[cover.source] ?? 'Custom' : 'No cover',
       }),
+      whereNote,
     ]);
+    describeWhere();
+  }
+
+  /**
+   * Whether this cover is a file you have or an address you are borrowing.
+   *
+   * The same question the report in Settings answers for the whole library,
+   * asked about the book in front of you — which is where it actually comes
+   * up, since "is this one safe" is what you want to know while looking at it.
+   */
+  const whereNote = el('span.cover-picker__where', { 'aria-live': 'polite' });
+
+  async function describeWhere() {
+    if (!cover.url) {
+      whereNote.textContent = '';
+      return;
+    }
+    if (!draft.id) {
+      whereNote.textContent = 'Saved when you save the book.';
+      return;
+    }
+
+    if (hasServer()) {
+      try {
+        const body = await (await fetch('api/covers')).json();
+        const file = body.byBook?.[draft.id];
+        if (file) {
+          whereNote.textContent = `Saved in the covers folder as ${file}`;
+          return;
+        }
+      } catch {
+        /* fall through to the weaker copy */
+      }
+    }
+
+    const cached = await cachedIds([draft.id]).catch(() => []);
+    whereNote.textContent = cached.length
+      ? 'Held in this browser only \u2014 not in the covers folder.'
+      : 'Linked from the web, not saved \u2014 it will go blank if the source does.';
   }
 
   function setCover(next, meta) {

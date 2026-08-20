@@ -15,6 +15,7 @@ import { configureSources } from './data/covers.js';
 import { applyTheme } from './data/theme.js';
 import { configureKinds } from './data/kinds.js';
 import { guardStrayDrops } from './views/coverDrop.js';
+import { installShortcuts } from './views/shortcuts.js';
 import { renderLibrary } from './views/library.js';
 import { renderCalendar } from './views/calendar.js';
 import { renderDay } from './views/day.js';
@@ -114,7 +115,7 @@ function paintSaveStatus() {
 function applySettings(settings) {
   configureSources(settings.sources);
   configureKinds(settings.kinds);
-  applyTheme(settings.theme);
+  applyTheme(settings.theme, settings);
 
   const name = String(settings.libraryName ?? '').trim();
   document.title = name ? `${name} \u2014 Chapter` : 'Chapter \u2014 reading tracker';
@@ -136,6 +137,7 @@ async function start() {
   // An image dropped next to a book rather than on it should do nothing, not
   // replace the app with a JPEG.
   guardStrayDrops();
+  installShortcuts();
   onSyncChange(paintSaveStatus);
   window.addEventListener('hashchange', render);
 

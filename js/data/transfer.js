@@ -209,7 +209,14 @@ export function importJson(text, { mode = 'merge' } = {}) {
   }
 
   if (mode === 'replace') {
-    replaceAll(books, { settings: parsed?.settings, readingOrders: parsed?.readingOrders });
+    replaceAll(books, {
+      settings: parsed?.settings,
+      readingOrders: parsed?.readingOrders,
+      // The backup's tombstones, not this device's: restoring a library means
+      // adopting its record of what was thrown away, and keeping the old ones
+      // would re-delete books the backup deliberately contains.
+      deleted: Array.isArray(parsed?.deleted) ? parsed.deleted : [],
+    });
     return {
       ok: true, added: books.length, updated: 0, skipped: 0,
       orders: (parsed?.readingOrders ?? []).length,

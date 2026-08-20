@@ -46,7 +46,7 @@ function seed() {
 
 beforeEach(() => {
   localStorage.clear();
-  store.replaceAll([], { readingOrders: [] });
+  store.replaceAll([], { readingOrders: [], deleted: [] });
 });
 
 /* --- What a backup contains ------------------------------------------------ */
@@ -238,4 +238,153 @@ test('the order of the lists survives a backup', () => {
   importJson(backup, { mode: 'merge' });
 
   assert.deepEqual(store.allOrders().map((order) => order.name), ['Second', 'First']);
+});
+
+/* --- Deleting, and changing your mind later -------------------------------- */
+
+test('a deleted book keeps a copy of itself so it can come back', () => {
+  // Undo used to last exactly as long as the toast, which is fine for the
+  // deletion you notice immediately and no use for the one you notice on
+  // Thursday.
+  const { ids } = seed();
+  store.removeBook(ids[1]);
+
+  const archived = store.recentlyDeleted();
+  assert.equal(archived.length, 1);
+  assert.equal(archived[0].book.title, BOOKS[1].title);
+});
+
+test('restoring brings back the whole record, not just the title', () => {
+  store.replaceAll([], { readingOrders: [], deleted: [] });
+  const book = store.addBook({
+    title: 'The Time Machine',
+    author: 'H. G. Wells',
+    shelves: ['to reread'],
+    sessions: [{ date: '2026-08-01', minutes: 40, pageFrom: 0, pageTo: 30 }],
+  }).book;
+
+  store.removeBook(book.id);
+  assert.equal(store.allBooks().length, 0);
+
+  store.restoreDeleted(book.id);
+  const back = store.allBooks()[0];
+
+  assert.equal(back.sessions.length, 1);
+  assert.deepEqual(back.shelves, ['to reread']);
+});
+
+test('the archive is capped but every tombstone survives', () => {
+  // Dropping a tombstone to save space would resurrect the book on the next
+  // sync, which is the one outcome worse than losing the archive.
+  store.replaceAll([], { readingOrders: [], deleted: [] });
+
+  for (let index = 0; index < 45; index += 1) {
+    const book = store.addBook({ title: `Book ${index}` }).book;
+    store.removeBook(book.id);
+  }
+
+  const tombstones = store.getState().deleted;
+  assert.equal(tombstones.length, 45);
+  assert.equal(tombstones.filter((entry) => entry.book).length, 40);
+});
+
+test('forgetting a book keeps the tombstone and drops the copy', () => {
+  store.replaceAll([], { readingOrders: [], deleted: [] });
+  const book = store.addBook({ title: 'Forgettable' }).book;
+  store.removeBook(book.id);
+
+  store.forgetDeleted(book.id);
+
+  assert.equal(store.recentlyDeleted().length, 0);
+  assert.ok(store.getState().deleted.some((entry) => entry.id === book.id));
+});
+
+test('a restored book is no longer listed as deleted', () => {
+  store.replaceAll([], { readingOrders: [], deleted: [] });
+  const book = store.addBook({ title: 'Back again' }).book;
+  store.removeBook(book.id);
+  store.restoreDeleted(book.id);
+
+  assert.equal(store.recentlyDeleted().length, 0);
+  assert.ok(!store.getState().deleted.some((entry) => entry.id === book.id));
+});
+
+/* --- The reading plan as a calendar ---------------------------------------- */
+
+const { buildIcs, icsEventCount } = await import('../js/data/ics.js');
+
+test('a scheduled book becomes an all-day event', () => {
+  const book = store.addBook({
+    title: 'The Hobbit', author: 'Tolkien',
+    schedule: { start: '2026-08-03', end: '2026-08-10' },
+  }).book;
+
+  const ics = buildIcs([book]);
+
+  assert.match(ics, /BEGIN:VCALENDAR/);
+  assert.match(ics, /DTSTART;VALUE=DATE:20260803/);
+  // An all-day DTEND is exclusive: using the last day itself silently drops a
+  // day off every plan in the calendar.
+  assert.match(ics, /DTEND;VALUE=DATE:20260811/);
+});
+
+test('commas and semicolons in a title are escaped', () => {
+  const book = store.addBook({
+    title: 'The Hobbit; or, There and Back Again',
+    schedule: { start: '2026-08-03' },
+  }).book;
+
+  const ics = buildIcs([book]);
+  assert.match(ics, /SUMMARY:The Hobbit\\; or\\, There and Back Again/);
+});
+
+test('no line exceeds the 75-octet limit', () => {
+  // Strict parsers reject a long line outright, and folding by character
+  // count rather than bytes still overruns on an accented title.
+  const book = store.addBook({
+    title: 'Le Théâtre et son double '.repeat(6),
+    schedule: { start: '2026-08-03' },
+  }).book;
+
+  for (const line of buildIcs([book]).split('\r\n')) {
+    assert.ok(new TextEncoder().encode(line).length <= 75, `too long: ${line.slice(0, 40)}`);
+  }
+});
+
+test('an unscheduled book is left out rather than dropped on today', () => {
+  store.replaceAll([], { readingOrders: [], deleted: [] });
+  const planned = store.addBook({ title: 'Planned', schedule: { start: '2026-08-03' } }).book;
+  const loose = store.addBook({ title: 'Someday' }).book;
+
+  assert.equal(icsEventCount([planned, loose]), 1);
+  assert.ok(!buildIcs([planned, loose]).includes('Someday'));
+});
+
+test('every event carries a stable id, so re-importing updates rather than doubles', () => {
+  const book = store.addBook({ title: 'Stable', schedule: { start: '2026-08-03' } }).book;
+  assert.ok(buildIcs([book]).includes(`UID:${book.id}@chapter`));
+});
+
+test('restoring a backup does not re-delete the books it contains', () => {
+  // The latent bug: replaceAll left this device's tombstones in place, so a
+  // book deleted here and then restored from a backup would be deleted again
+  // by the next sync — quietly losing exactly the records you restored.
+  const book = store.addBook({ title: 'Deleted then restored' }).book;
+  store.removeBook(book.id);
+  assert.ok(store.getState().deleted.some((entry) => entry.id === book.id));
+
+  const backup = JSON.stringify({
+    format: 'chapter-library',
+    books: [{ ...book }],
+    readingOrders: [],
+    deleted: [],
+  });
+
+  importJson(backup, { mode: 'replace' });
+
+  assert.equal(store.allBooks().length, 1);
+  assert.ok(
+    !store.getState().deleted.some((entry) => entry.id === book.id),
+    'a tombstone for a book that is here again would delete it on the next sync'
+  );
 });

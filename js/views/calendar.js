@@ -17,7 +17,8 @@ import { el, fill, toast } from '../lib/dom.js';
 import { allBooks, getSettings, rescheduleBook, getBook } from '../data/store.js';
 import { monthGrid, monthName, weekdayLabels, today, addDays, formatLong } from '../lib/dates.js';
 import { groupByDay, DAY_STATE_LABEL } from '../logic/schedule.js';
-import { KIND_GROUPS, KIND_GROUP_ORDER, matchesKinds, kindGroupOf } from '../data/schema.js';
+import { matchesKinds } from '../data/schema.js';
+import { kindsPresent } from '../data/kinds.js';
 import { coverThumb } from './cover.js';
 import { openBookForm } from './bookForm.js';
 import { loadSampleLibrary } from '../data/seed.js';
@@ -234,18 +235,15 @@ function streakStrip(totals) {
  * empty calendar, since an empty grid with no visible way back is a trap.
  */
 function kindToggles(books, mount) {
-  const counts = Object.fromEntries(
-    KIND_GROUP_ORDER.map((id) => [
-      id,
-      books.filter((book) => book.schedule.start && kindGroupOf(book.category) === id).length,
-    ])
-  );
+  // Every kind that actually has something on the calendar, including ones
+  // invented in Settings. Built from what is scheduled rather than from a
+  // fixed list, so the row is exactly as long as it needs to be.
+  const present = kindsPresent(books.filter((book) => book.schedule.start));
 
   // Nothing to choose between when only one kind is scheduled.
-  const present = KIND_GROUP_ORDER.filter((id) => counts[id] > 0);
   if (present.length < 2) return null;
 
-  const showingAll = visibleKinds.size === 0 || visibleKinds.size === KIND_GROUP_ORDER.length;
+  const showingAll = visibleKinds.size === 0 || visibleKinds.size === present.length;
 
   return el('div.kind-toggles', { role: 'group', 'aria-label': 'Kinds shown' }, [
     el('button.kind-toggle.kind-toggle--all', {
@@ -258,25 +256,28 @@ function kindToggles(books, mount) {
       },
     }, 'Everything'),
 
-    ...present.map((id) =>
+    ...present.map((kind) =>
       el('button.kind-toggle', {
         type: 'button',
-        class: !showingAll && visibleKinds.has(id) ? 'is-on' : '',
-        'aria-pressed': String(!showingAll && visibleKinds.has(id)),
+        class: !showingAll && visibleKinds.has(kind.id) ? 'is-on' : '',
+        'aria-pressed': String(!showingAll && visibleKinds.has(kind.id)),
         onClick: () => {
-          if (visibleKinds.has(id)) visibleKinds.delete(id);
-          else visibleKinds.add(id);
+          if (visibleKinds.has(kind.id)) visibleKinds.delete(kind.id);
+          else visibleKinds.add(kind.id);
           rerender(mount);
         },
       }, [
-        KIND_GROUPS[id].label,
-        el('span.kind-toggle__count', {}, String(counts[id])),
+        kind.label,
+        el('span.kind-toggle__count', {}, String(kind.count)),
       ])
     ),
 
     !showingAll
       ? el('span.kind-toggles__note', {},
-          `showing ${[...visibleKinds].map((id) => KIND_GROUPS[id].label.toLowerCase()).join(' and ')} only`)
+          `showing ${present
+            .filter((kind) => visibleKinds.has(kind.id))
+            .map((kind) => kind.label.toLowerCase())
+            .join(' and ')} only`)
       : null,
   ].filter(Boolean));
 }

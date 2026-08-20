@@ -452,3 +452,11 @@
   color: var(--ink-faint);
   margin-top: var(--s1);
 }
+
+.empty__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+  justify-content: center;
+  margin-top: var(--s4);
+}

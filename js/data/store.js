@@ -237,17 +237,63 @@ export function updateBook(id, patch) {
   return { ok: true, book: merged };
 }
 
+/**
+ * How many deleted books keep a full copy of themselves.
+ *
+ * A tombstone only needs an id and a time to do its job in sync. Keeping the
+ * record too is what makes a deletion undoable tomorrow rather than only for
+ * the eight seconds the toast is on screen — but the records live in the same
+ * few megabytes as the library, so the archive is capped. Older tombstones
+ * stay as tombstones, without the body.
+ */
+const ARCHIVE_LIMIT = 40;
+
 export function removeBook(id) {
   const book = getBook(id);
   if (!book) return { ok: false };
+
   commit(() => {
     state.books = state.books.filter((entry) => entry.id !== id);
-    state.deleted = [
-      ...(state.deleted ?? []).filter((entry) => entry.id !== id),
-      { id, at: new Date().toISOString() },
-    ];
+
+    const kept = (state.deleted ?? []).filter((entry) => entry.id !== id);
+    const next = [...kept, { id, at: new Date().toISOString(), book }];
+
+    // Trim the bodies, oldest first, keeping every tombstone. Dropping the
+    // tombstone instead would resurrect the book on the next sync.
+    const withBodies = next.filter((entry) => entry.book);
+    const surplus = withBodies.length - ARCHIVE_LIMIT;
+    const strip = new Set(surplus > 0 ? withBodies.slice(0, surplus).map((e) => e.id) : []);
+
+    state.deleted = next.map((entry) =>
+      strip.has(entry.id) ? { id: entry.id, at: entry.at } : entry
+    );
   });
+
   return { ok: true, book };
+}
+
+/** Books deleted recently enough to still have a copy kept, newest first. */
+export const recentlyDeleted = () =>
+  (state.deleted ?? [])
+    .filter((entry) => entry.book?.title)
+    .sort((a, b) => String(b.at).localeCompare(String(a.at)));
+
+/** Put one back from the archive. */
+export function restoreDeleted(id) {
+  const entry = (state.deleted ?? []).find((candidate) => candidate.id === id);
+  if (!entry?.book) return { ok: false };
+  restoreBook(entry.book);
+  return { ok: true, book: entry.book };
+}
+
+/** Forget a deleted book for good, freeing the space its copy takes. */
+export function forgetDeleted(id) {
+  commit(() => {
+    state.deleted = (state.deleted ?? []).map((entry) =>
+      entry.id === id ? { id: entry.id, at: entry.at } : entry
+    );
+  });
+  return { ok: true };
 }
 
 /** Restore a removed book in place — powers undo on delete. */
@@ -591,10 +637,20 @@ export function applyRemote(next) {
 }
 
 /** Replace the whole library — used by seeding and, later, import. */
-export function replaceAll(books, { settings, readingOrders } = {}) {
+export function replaceAll(books, { settings, readingOrders, deleted } = {}) {
   commit(() => {
     state.books = books.map(normalizeBook);
     if (settings) state.settings = { ...state.settings, ...settings };
     if (readingOrders) state.readingOrders = readingOrders.map(normalizeOrder);
+
+    if (Array.isArray(deleted)) {
+      state.deleted = deleted;
+    } else {
+      // A tombstone for a book that is now here again would delete it on the
+      // next sync — the restored library would quietly lose exactly the books
+      // it had previously been asked to forget.
+      const present = new Set(state.books.map((book) => book.id));
+      state.deleted = (state.deleted ?? []).filter((entry) => !present.has(entry.id));
+    }
   });
 }

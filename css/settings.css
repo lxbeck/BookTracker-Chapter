@@ -252,3 +252,66 @@
 }
 
 .link-btn.is-danger { color: var(--overdue); }
+
+
+/* --- Keyboard sheet ------------------------------------------------------- */
+
+.shortcut-group { margin-top: var(--s4); }
+
+.shortcut-list {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--s2) var(--s4);
+  align-items: baseline;
+  margin: 0;
+}
+
+.shortcut-list dt { margin: 0; }
+.shortcut-list dd { margin: 0; font-size: var(--size-sm); }
+
+kbd {
+  font-family: var(--face-slip);
+  font-size: var(--size-xs);
+  padding: 2px 7px;
+  border: 1px solid var(--control-edge);
+  border-bottom-width: 2px;
+  border-radius: var(--r-control);
+  background: var(--field);
+  color: var(--ink);
+}
+
+/* Deleting a saved theme, tucked into its own card rather than given a row. */
+.theme-card { position: relative; }
+
+.theme-card__remove {
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  padding: 0 4px;
+  border-radius: 2px;
+  color: var(--ink-faint);
+  cursor: pointer;
+  line-height: 1.2;
+}
+
+.theme-card__remove:hover {
+  color: var(--overdue);
+  background: var(--slip-shade);
+}
+
+.dupes__undo {
+  display: flex;
+  gap: var(--s3);
+  align-items: center;
+  flex-wrap: wrap;
+  padding: var(--s3);
+  margin-bottom: var(--s3);
+  background: var(--stamp-wash);
+  border-radius: var(--r-control);
+  font-size: var(--size-sm);
+}
+
+.dupes__count {
+  margin: 0 0 var(--s2);
+  font-size: var(--size-md);
+}

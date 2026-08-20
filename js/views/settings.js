@@ -9,7 +9,7 @@ import { el, fill, toast } from '../lib/dom.js';
 import { showModal } from './modal.js';
 import {
   allBooks, getSettings, updateSettings, replaceAll, mergeBooks,
-  allOrders, removeOrder,
+  allOrders, removeOrder, restoreBook, recentlyDeleted, restoreDeleted, forgetDeleted,
   storageStatus, requestPersistentStorage,
 } from '../data/store.js';
 import {
@@ -26,10 +26,11 @@ import { fillMissing, matchExisting } from '../data/fill.js';
 import { auditCovers, VERDICTS, VERDICT_ORDER } from '../data/coverAudit.js';
 import { findDuplicates, mergePlan } from '../data/duplicates.js';
 import {
-  THEMES, THEME_COLOURS, normalizeTheme, resolveTheme, applyTheme, isColour,
+  THEME_COLOURS, availableThemes, normalizeTheme, resolveTheme, applyTheme, isColour,
 } from '../data/theme.js';
 import { allKinds, customKinds, normalizeKinds, idFromLabel } from '../data/kinds.js';
 import { buildSnapshot } from '../data/snapshot.js';
+import { buildIcs, icsEventCount } from '../data/ics.js';
 import {
   storeLocalCoverOnServer, storeCoverOnServer, storeUploadedCoverOnServer,
   cachedCoverUrl, isLocalCover, hasServer, LOCAL_COVER,
@@ -59,6 +60,7 @@ export function renderSettings(mount) {
     storageSection(redraw),
     coverStorageSection(books, redraw),
     duplicatesSection(books, redraw),
+    deletedSection(redraw),
     snapshotSection(),
     goalSection(books, settings, redraw),
     offlineSection(books),
@@ -124,18 +126,18 @@ function goalSection(books, settings, redraw) {
  * changing one moves its whole family and nothing ends up mismatched.
  */
 function appearanceSection(settings, redraw) {
-  const theme = normalizeTheme(settings.theme);
+  const theme = normalizeTheme(settings.theme, settings);
 
   const save = (next) => {
     updateSettings({ theme: next });
     // Painted immediately rather than on the next render, because the whole
     // point of the control is seeing the answer.
-    applyTheme(next);
+    applyTheme(next, { ...settings, theme: next });
     redraw();
   };
 
-  const swatches = el('div.theme-grid', {}, THEMES.map((preset) => {
-    const colours = resolveTheme({ preset: preset.id });
+  const swatches = el('div.theme-grid', {}, availableThemes(settings).map((preset) => {
+    const colours = resolveTheme({ preset: preset.id }, settings);
 
     return el('button.theme-card', {
       type: 'button',
@@ -157,11 +159,29 @@ function appearanceSection(settings, redraw) {
       ]),
       el('span.theme-card__label', {}, preset.label),
       el('span.theme-card__hint', {}, preset.hint),
-    ]);
+      preset.saved
+        ? el('span.theme-card__remove', {
+            role: 'button',
+            tabindex: '0',
+            title: `Delete ${preset.label}`,
+            onClick: (event) => {
+              event.stopPropagation();
+              if (!confirm(`Delete the saved theme "${preset.label}"?`)) return;
+              updateSettings({
+                savedThemes: (settings.savedThemes ?? []).filter(
+                  (entry) => `saved:${String(entry.id ?? entry.label).toLowerCase().replace(/[^a-z0-9]+/g, '-')}` !== preset.id
+                ),
+              });
+              if (theme.preset === preset.id) save({ preset: 'slip', overrides: {} });
+              else redraw();
+            },
+          }, '\u00d7')
+        : null,
+    ].filter(Boolean));
   }));
 
   const pickers = THEME_COLOURS.map((colour) => {
-    const current = resolveTheme(theme)[colour.id];
+    const current = resolveTheme(theme, settings)[colour.id];
     const overridden = Boolean(theme.overrides[colour.id]);
 
     const input = el('input.colour-input', {
@@ -199,10 +219,46 @@ function appearanceSection(settings, redraw) {
       el('summary', {}, customCount ? `Individual colours (${customCount} changed)` : 'Individual colours'),
       el('div.colour-list', {}, pickers),
       customCount
-        ? el('button.btn.btn--quiet.btn--sm', {
-            type: 'button',
-            onClick: () => save({ preset: theme.preset, overrides: {} }),
-          }, 'Reset all to the scheme')
+        ? el('div.settings__row', {}, [
+            // Without this, an evening of picking colours is one preset click
+            // from gone: overrides sit on top of a scheme, and switching
+            // scheme necessarily discards them.
+            el('button.btn.btn--stamp.btn--sm', {
+              type: 'button',
+              onClick: () => {
+                const label = prompt('Name this theme:', 'My scheme')?.trim();
+                if (!label) return;
+
+                const hint = prompt('Describe it in a few words (optional):', '')?.trim();
+                const colours = resolveTheme(theme, settings);
+
+                updateSettings({
+                  savedThemes: [
+                    ...(settings.savedThemes ?? []),
+                    {
+                      label,
+                      hint,
+                      colours: Object.fromEntries(
+                        THEME_COLOURS.map((entry) => [entry.id, colours[entry.id]])
+                      ),
+                    },
+                  ],
+                });
+
+                // Switch onto the saved copy, so the colours on screen are now
+                // a theme in their own right rather than edits to another one.
+                save({
+                  preset: `saved:${label.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40)}`,
+                  overrides: {},
+                });
+                toast(`Saved "${label}".`);
+              },
+            }, 'Save as a theme'),
+            el('button.btn.btn--quiet.btn--sm', {
+              type: 'button',
+              onClick: () => save({ preset: theme.preset, overrides: {} }),
+            }, 'Reset to the scheme'),
+          ])
         : null,
     ].filter(Boolean)),
   ]);
@@ -788,6 +844,54 @@ async function showOrphans(redraw) {
   });
 }
 
+/* --- Recently deleted ------------------------------------------------------- */
+
+/**
+ * Books you deleted, and a way back.
+ *
+ * Undo used to last exactly as long as the toast, which is fine for the
+ * deletion you notice immediately and no use at all for the one you notice on
+ * Thursday. Deleting already left a tombstone behind so other devices would
+ * agree the book was gone; keeping the record alongside it costs a little
+ * space and turns a permanent action into a recoverable one.
+ *
+ * The archive is capped, so this is honest about being recent rather than
+ * pretending to be a full history.
+ */
+function deletedSection(redraw) {
+  const gone = recentlyDeleted();
+  if (!gone.length) return null;
+
+  return section('Recently deleted', [
+    el('p.settings__hint', {},
+      'The last few books you deleted, kept so a mistake can be put right later rather than only while the message is on screen. Restoring brings back its reading log, shelves and progress.'),
+    el('ul.plain-list', {}, gone.slice(0, 20).map((entry) =>
+      el('li.plain-list__row', {}, [
+        el('span.plain-list__name', {},
+          `${entry.book.title}${entry.book.author ? ` \u00b7 ${entry.book.author}` : ''}`),
+        el('span.plain-list__aside', {}, [
+          el('span', {}, new Date(entry.at).toLocaleDateString()),
+          el('button.link-btn', {
+            type: 'button',
+            onClick: () => {
+              const result = restoreDeleted(entry.id);
+              toast(result.ok ? `${entry.book.title} restored.` : 'That book could not be restored.');
+              redraw();
+            },
+          }, 'Restore'),
+          el('button.link-btn.is-danger', {
+            type: 'button',
+            onClick: () => {
+              if (!confirm(`Forget "${entry.book.title}" for good? It cannot be restored afterwards.`)) return;
+              forgetDeleted(entry.id);
+              redraw();
+            },
+          }, 'Forget'),
+        ]),
+      ]))),
+  ]);
+}
+
 /* --- The same book twice --------------------------------------------------- */
 
 /**
@@ -809,13 +913,15 @@ function duplicatesSection(books, redraw) {
       el('button.btn.btn--quiet.btn--sm', {
         type: 'button',
         onClick: () => {
-          const groups = findDuplicates(books);
+          const groups = findDuplicates(books, {
+            dismissed: getSettings().dismissedDuplicates ?? [],
+          });
           if (!groups.length) {
             summary.textContent = `No duplicates among ${books.length} books.`;
             return;
           }
           summary.textContent = '';
-          showDuplicates(groups, redraw);
+          showDuplicates(redraw);
         },
       }, 'Check for duplicates'),
     ]),
@@ -829,30 +935,67 @@ const REASON_TEXT = {
   title: 'Same title, and only one of them names an author.',
 };
 
-function showDuplicates(groups, redraw) {
+function showDuplicates(redraw) {
   const body = el('div.dupes');
+  const heading = el('h3.dupes__count');
+
+  /**
+   * The last merge, kept so it can be undone.
+   *
+   * A merge deletes records, and "these two are the same book" is a judgement
+   * that can be wrong — two volumes of a series with identical titles, a
+   * reissue you deliberately catalogue separately. Deleting on a judgement
+   * with no way back is the part of a duplicate finder that makes people not
+   * use it.
+   */
+  let lastMerge = null;
 
   const draw = () => {
-    // Recomputed against the live library so a merged group disappears rather
-    // than sitting there offering to merge records that are already gone.
-    const remaining = findDuplicates(allBooks()).filter(
-      (group) => !group.books.every((book) => dismissed.has(book.id))
-    );
+    const remaining = findDuplicates(allBooks(), {
+      dismissed: getSettings().dismissedDuplicates ?? [],
+    });
 
-    fill(body, remaining.length
-      ? remaining.map((group) => duplicateGroup(group, () => {
-          draw();
-          redraw();
-        }))
-      : el('p.settings__note', {}, 'Nothing left to merge.'));
+    // Recomputed and re-labelled together. The count used to be captured when
+    // the dialog opened and never touched again, so clearing every duplicate
+    // left the title still claiming there were six.
+    heading.textContent = remaining.length
+      ? `${remaining.length} possible ${remaining.length === 1 ? 'duplicate' : 'duplicates'}`
+      : 'No duplicates left';
+
+    fill(body, [
+      lastMerge
+        ? el('div.dupes__undo', {}, [
+            el('span', {}, `Merged ${lastMerge.absorbed.length + 1} records into "${lastMerge.survivor.title}".`),
+            el('button.btn.btn--quiet.btn--sm', {
+              type: 'button',
+              onClick: () => {
+                const result = undoMerge(lastMerge);
+                toast(result.ok ? 'Merge undone.' : 'That merge could not be undone.');
+                lastMerge = null;
+                draw();
+                redraw();
+              },
+            }, 'Undo that merge'),
+          ])
+        : null,
+
+      ...(remaining.length
+        ? remaining.map((group) => duplicateGroup(group, (merged) => {
+            if (merged) lastMerge = merged;
+            draw();
+            redraw();
+          }))
+        : [el('p.settings__note', {}, 'Nothing here looks like the same book twice.')]),
+    ].filter(Boolean));
   };
 
   draw();
 
   const modal = showModal({
     eyebrow: 'Duplicates',
-    title: `${groups.length} possible ${groups.length === 1 ? 'duplicate' : 'duplicates'}`,
+    title: 'The same book twice',
     body: [
+      heading,
       el('p.settings__note', {},
         'Merging keeps the fullest record, fills its empty fields from the others, and combines every reading session. Nothing you have already entered is overwritten.'),
       body,
@@ -861,22 +1004,36 @@ function showDuplicates(groups, redraw) {
   });
 }
 
+/**
+ * Put a merge back.
+ *
+ * The absorbed records are restored from the copies taken before they were
+ * deleted, and the survivor is returned to the state it was in. Reading orders
+ * are left pointing at the survivor: rebuilding which list held which copy is
+ * guesswork, and a list naming the book that still exists is right either way.
+ */
+function undoMerge(merge) {
+  const restored = merge.absorbed.map((book) => restoreBook(book));
+  const back = updateBook(merge.survivor.id, merge.survivor);
+  return { ok: back.ok && restored.every((result) => result.ok !== false) };
+}
+
 function duplicateGroup(group, done) {
   const plan = mergePlan(group.books);
 
   return el('div.dupes__group', {}, [
     el('p.dupes__reason', {}, REASON_TEXT[group.reason] ?? 'These look like the same book.'),
-    el('ul.plain-list', {}, plan.survivor
-      ? [plan.survivor, ...plan.absorbed].map((book, index) =>
-          el('li.plain-list__row', { class: index === 0 ? 'is-keeping' : '' }, [
-            el('span', {}, `${book.title}${book.author ? ` \u00b7 ${book.author}` : ''}`),
-            el('span.plain-list__aside', {},
-              [
-                index === 0 ? 'kept' : 'merged in',
-                `${book.sessions.length} ${book.sessions.length === 1 ? 'session' : 'sessions'}`,
-              ].join(' \u00b7 ')),
-          ]))
-      : []),
+    el('ul.plain-list', {},
+      [plan.survivor, ...plan.absorbed].map((book, index) =>
+        el('li.plain-list__row', { class: index === 0 ? 'is-keeping' : '' }, [
+          el('span.plain-list__name', {},
+            `${book.title}${book.author ? ` \u00b7 ${book.author}` : ''}`),
+          el('span.plain-list__aside', {},
+            [
+              index === 0 ? 'kept' : 'merged in',
+              `${book.sessions.length} ${book.sessions.length === 1 ? 'session' : 'sessions'}`,
+            ].join(' \u00b7 ')),
+        ]))),
 
     plan.gains.length
       ? el('p.settings__note', {}, `The kept record gains: ${plan.gains.join(', ')}.`)
@@ -886,37 +1043,42 @@ function duplicateGroup(group, done) {
       el('button.btn.btn--stamp.btn--sm', {
         type: 'button',
         onClick: () => {
+          // Copies taken before anything is destroyed, so the merge can be
+          // undone from what was actually there rather than from a guess.
+          const before = {
+            survivor: { ...plan.survivor },
+            absorbed: plan.absorbed.map((book) => ({ ...book })),
+          };
+
           const result = mergeBooks(
             plan.survivor.id,
             plan.absorbed.map((book) => book.id),
             plan.patch
           );
+
           toast(result.ok
             ? `Merged into ${plan.survivor.title}.`
             : Object.values(result.errors ?? {})[0] ?? 'That merge could not be applied.');
-          done();
+
+          done(result.ok ? before : null);
         },
       }, `Merge into "${plan.survivor.title}"`),
       el('button.btn.btn--quiet.btn--sm', {
         type: 'button',
         onClick: () => {
-          // A title collision between two genuinely different books is a
-          // real thing; there has to be a way to say so.
-          group.books.forEach((book) => dismissed.add(book.id));
-          done();
+          // Written to settings rather than held in memory: a title collision
+          // between two genuinely different books is permanent, and being
+          // asked about it again after every reload is its own annoyance.
+          const dismissed = getSettings().dismissedDuplicates ?? [];
+          updateSettings({ dismissedDuplicates: [...new Set([...dismissed, group.key])] });
+          toast('Noted \u2014 those two will not be raised again.');
+          done(null);
         },
       }, 'Not duplicates'),
     ]),
   ]);
 }
 
-/**
- * Groups the person has said are not duplicates.
- *
- * Session-scoped rather than stored: a persisted "ignore" list is a second
- * thing to keep in sync and to explain, and re-running the check is cheap.
- */
-const dismissed = new Set();
 
 /* --- Offline -------------------------------------------------------------- */
 
@@ -1034,6 +1196,21 @@ function dataSection(books, redraw) {
     el('div.settings__row', {}, [
       exportButton,
       el('label.bulk-check', { for: 'backup-covers' }, [withCovers, el('span', {}, 'Include cover art')]),
+      el('button.btn.btn--quiet.btn--sm', {
+        type: 'button',
+        onClick: () => {
+          const scheduled = icsEventCount(books);
+          if (!scheduled) {
+            toast('Nothing is scheduled yet, so there is nothing to put in a calendar.');
+            return;
+          }
+          download(
+            backupFilename('ics'),
+            buildIcs(books, { name: getSettings().libraryName?.trim() || 'Reading plan' })
+          );
+          toast(`${scheduled} scheduled ${scheduled === 1 ? 'book' : 'books'} exported.`);
+        },
+      }, 'Export calendar (.ics)'),
       el('button.btn.btn--quiet.btn--sm', {
         type: 'button',
         onClick: () => download(backupFilename('csv'), exportCsv(), 'text/csv'),
@@ -1248,7 +1425,9 @@ function reclaimButton(redraw) {
           ? `Moved ${moved} ${moved === 1 ? 'cover' : 'covers'} out of browser storage, freeing about ${Math.round(freedBytes / 1024)} KB. Nothing was lost.`
           : heavy
             ? 'Those covers could not be moved — this browser is blocking its image store.'
-            : 'Nothing to reclaim; no images are being kept in browser storage.'
+            // Almost always the answer now, and worth saying why rather than
+            // leaving it reading like the button did nothing.
+            : 'Nothing to reclaim \u2014 no cover images are being kept in browser storage. Uploads go straight to the image store, which does not count against this budget.'
       );
       redraw();
     },

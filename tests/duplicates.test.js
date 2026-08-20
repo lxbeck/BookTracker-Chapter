@@ -289,3 +289,42 @@ test('an import never fills a field the reader decided', () => {
     );
   }
 });
+
+/* --- Judgements that have to outlive the session --------------------------- */
+
+import { groupKey } from '../js/data/duplicates.js';
+
+test('a dismissed pair stays dismissed', () => {
+  // Held only in memory, "not duplicates" survived until the next reload and
+  // then asked again — which is worse than never having asked.
+  const pair = [
+    book({ id: 'a', title: 'Persuasion', author: 'Jane Austen' }),
+    book({ id: 'b', title: 'Persuasion', author: '' }),
+  ];
+
+  const [group] = findDuplicates(pair);
+  assert.ok(group.key, 'a group needs a name to be dismissed by');
+
+  assert.deepEqual(findDuplicates(pair, { dismissed: [group.key] }), []);
+});
+
+test('a dismissal is about the records, not their titles', () => {
+  // Editing a title afterwards must not bring the question back.
+  const first = [book({ id: 'a', title: 'Persuasion' }), book({ id: 'b', title: 'Persuasion' })];
+  const renamed = [book({ id: 'a', title: 'Persuasion (1817)' }), book({ id: 'b', title: 'Persuasion (1817)' })];
+
+  assert.equal(groupKey(first), groupKey(renamed));
+});
+
+test('a dismissal does not silence a different pair', () => {
+  const library = [
+    book({ id: 'a', title: 'Persuasion', author: 'Jane Austen' }),
+    book({ id: 'b', title: 'Persuasion', author: '' }),
+    book({ id: 'c', title: 'Emma', author: 'Jane Austen' }),
+    book({ id: 'd', title: 'Emma', author: '' }),
+  ];
+
+  const groups = findDuplicates(library);
+  assert.equal(groups.length, 2);
+  assert.equal(findDuplicates(library, { dismissed: [groups[0].key] }).length, 1);
+});

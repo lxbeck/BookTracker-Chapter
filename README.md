@@ -296,6 +296,39 @@ one line of that work to the top level of either file and it becomes
 `undefined` at import time and a blank screen naming neither module usefully.
 The shared state now lives in `dayCursor.js`, a leaf both can import.
 
+## Keyboard shortcuts
+
+`1`–`6` and `0` move between the views, `n` adds a book, `/` focuses the search
+field, and `?` lists them all. Nothing uses a modifier, so every browser and
+accessibility shortcut keeps working, and nothing fires while the cursor is in
+a text field — a single-letter shortcut that steals a keystroke mid-title is
+not a shortcut, it is a bug that eats text.
+
+## The plan as a calendar file
+
+Settings exports the reading plan as `.ics`: one all-day event per scheduled
+book, spanning its planned dates. A plan that lives only in this app is one you
+have to remember to look at, and everyone already has a calendar they check
+without deciding to.
+
+Exported rather than subscribed to, since a subscription needs a URL reachable
+from wherever the calendar app runs, which for a library in a browser tab is
+usually nowhere. Each event carries a stable id, so re-importing after a
+replan updates the entries instead of doubling them.
+
+## Undo that outlives the message
+
+Deleting a book has always left a tombstone so other devices agree it is gone.
+It now keeps the record alongside it, so Settings can list what you deleted and
+put any of it back — with its reading log, shelves and progress intact. Undo
+used to last exactly as long as the toast, which is fine for the deletion you
+notice immediately and no use at all for the one you notice on Thursday.
+
+The archive is capped at the last 40 records. Older entries keep the tombstone
+and drop the copy: dropping the tombstone instead would free more space and
+resurrect the book on the next sync, which is the one outcome worse than losing
+the archive.
+
 ## Making it yours
 
 **Appearance.** Seven colour schemes, and every colour in them editable. The

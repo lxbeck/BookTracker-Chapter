@@ -579,6 +579,11 @@ function bulkBar(visible) {
       ...STATUS_ORDER.map((id) => el('option', { value: id }, STATUSES[id].label)),
     ]),
 
+    el('button.btn.btn--quiet.btn--sm', {
+      type: 'button',
+      onClick: () => numberSeries(chosen(), rerender),
+    }, 'Number as a series'),
+
     el('select.select.bulk-bar__select', {
       'aria-label': 'Set format for selected books',
       onChange: (event) => {
@@ -667,6 +672,54 @@ function bulkBar(visible) {
       },
     }, 'Remove'),
   ]);
+}
+
+/**
+ * Number a run of books 1..n in the order they are on screen.
+ *
+ * Typing volume numbers one book at a time is the single most tedious thing in
+ * cataloguing a series, and it is entirely mechanical: the order is already
+ * decided by whatever sort is applied, and the numbers are just 1 to n.
+ *
+ * The screen order is the input, deliberately. Sort by title and a run of
+ * "Vol. 1..12" numbers itself correctly; sort by date added and it follows the
+ * order you shelved them. Both are things someone might mean, and neither is
+ * something this should second-guess.
+ */
+function numberSeries(books, done) {
+  if (books.length < 2) {
+    toast('Select the run of books first.', { variant: 'error' });
+    return;
+  }
+
+  const existing = books.find((book) => book.series.name)?.series.name ?? '';
+  const name = prompt(
+    `Number these ${books.length} books 1 to ${books.length}, in the order shown.\n\nSeries name:`,
+    existing
+  )?.trim();
+
+  if (name === undefined || name === null) return;
+
+  const from = Number.parseFloat(
+    prompt('Start numbering at:', '1') ?? '1'
+  );
+  if (!Number.isFinite(from)) return;
+
+  books.forEach((book, index) => {
+    updateBook(book.id, {
+      series: {
+        ...book.series,
+        name: name || book.series.name,
+        // Whole steps from the starting point, so beginning at 4.5 gives
+        // 4.5, 5.5, 6.5 rather than something nobody asked for.
+        number: Math.round((from + index) * 100) / 100,
+        total: books.length,
+      },
+    });
+  });
+
+  toast(`Numbered ${books.length} books${name ? ` in ${name}` : ''}.`);
+  done();
 }
 
 function openShelfDialog(books, done) {
@@ -1082,15 +1135,62 @@ function emptyLibrary() {
   ]);
 }
 
+/**
+ * Nothing to show, and a way back.
+ *
+ * The dead end this fixes: filter to a genre held by one book, delete that
+ * book, and the filter bars vanish with it — they only render for the books
+ * currently on screen, and there are none. The filter stays on, every shelf
+ * looks empty, and nothing on the page can turn it off. The only way out was
+ * a page reload.
+ *
+ * So the empty state names every filter still applied and offers to drop them.
+ * An empty view has more reason to explain itself than a full one, not less.
+ */
 function emptyShelf() {
+  const rerender = () => renderLibrary(document.querySelector('#view'));
+
+  const applied = [
+    filters.query ? { label: `search "${filters.query}"`, clear: () => { filters.query = ''; } } : null,
+    filters.tag ? { label: `shelf "${filters.tag}"`, clear: () => { filters.tag = null; } } : null,
+    filters.genre ? { label: `genre "${filters.genre}"`, clear: () => { filters.genre = null; } } : null,
+    filters.category
+      ? { label: `kind "${kindLabel(filters.category)}"`, clear: () => { filters.category = null; } }
+      : null,
+    filters.format
+      ? { label: `format "${FORMATS[filters.format]?.label ?? filters.format}"`, clear: () => { filters.format = null; } }
+      : null,
+    filters.order ? { label: 'a reading list', clear: () => { filters.order = null; } } : null,
+    filters.need ? { label: 'a "needs work" filter', clear: () => { filters.need = null; } } : null,
+  ].filter(Boolean);
+
   return el('div.empty', {}, [
-    el('h3', {}, 'This shelf is empty'),
-    el(
-      'p',
-      {},
-      filters.query
-        ? 'Nothing here matches that search. Try a different term, or another shelf.'
-        : 'Move a book here by changing its status, or add a new one.'
-    ),
-  ]);
+    el('h3', {}, applied.length ? 'Nothing matches those filters' : 'This shelf is empty'),
+    el('p', {},
+      applied.length
+        ? `Still filtering by ${applied.map((entry) => entry.label).join(', ')}.`
+        : 'Move a book here by changing its status, or add a new one.'),
+
+    applied.length
+      ? el('div.empty__actions', {}, [
+          ...applied.map((entry) =>
+            el('button.btn.btn--quiet.btn--sm', {
+              type: 'button',
+              onClick: () => {
+                entry.clear();
+                rerender();
+              },
+            }, `Clear ${entry.label}`)),
+          applied.length > 1
+            ? el('button.btn.btn--stamp.btn--sm', {
+                type: 'button',
+                onClick: () => {
+                  for (const entry of applied) entry.clear();
+                  rerender();
+                },
+              }, 'Clear all filters')
+            : null,
+        ].filter(Boolean))
+      : null,
+  ].filter(Boolean));
 }

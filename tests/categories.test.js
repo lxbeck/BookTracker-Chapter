@@ -123,35 +123,33 @@ test('every category has a plural, so sentences read properly', () => {
 
 /* --- kind groups (calendar toggles) --------------------------------------- */
 
-test('the calendar groups six categories into three switches', async () => {
-  const { KIND_GROUPS, KIND_GROUP_ORDER, kindGroupOf, CATEGORY_ORDER } =
-    await import('../js/data/schema.js');
+test('the calendar filters by kind, not by collapsed groups', async () => {
+  const { matchesKinds } = await import('../js/data/schema.js');
+  const paper = book({ category: 'researchPaper' });
+  const comic = book({ category: 'comic' });
+  const novel = book({ category: 'graphicNovel' });
 
-  assert.deepEqual(KIND_GROUP_ORDER, ['books', 'comics', 'manga']);
-
-  // Every category must land in exactly one group, or a book would vanish from
-  // the calendar when a filter is on.
-  const assigned = KIND_GROUP_ORDER.flatMap((id) => KIND_GROUPS[id].categories);
-  assert.equal(new Set(assigned).size, assigned.length, 'a category is in two groups');
-  for (const category of CATEGORY_ORDER) {
-    assert.ok(assigned.includes(category), `${category} belongs to no group`);
-  }
+  // Graphic novels used to be filed under comics and non-fiction under books,
+  // which left a custom kind with nowhere to appear and no way to see it alone.
+  assert.ok(matchesKinds(paper, new Set(['researchPaper'])));
+  assert.ok(!matchesKinds(paper, new Set(['comic'])));
+  assert.ok(!matchesKinds(novel, new Set(['comic'])), 'graphic novels stand on their own');
+  assert.ok(matchesKinds(comic, new Set(['comic'])));
 });
 
-test('non-fiction and anthologies read as books, graphic novels as comics', async () => {
-  const { kindGroupOf } = await import('../js/data/schema.js');
-  assert.equal(kindGroupOf('book'), 'books');
-  assert.equal(kindGroupOf('nonfiction'), 'books');
-  assert.equal(kindGroupOf('anthology'), 'books');
-  assert.equal(kindGroupOf('comic'), 'comics');
-  assert.equal(kindGroupOf('graphicNovel'), 'comics');
-  assert.equal(kindGroupOf('manga'), 'manga');
+test('no selection means everything, so the calendar can never go blank', async () => {
+  const { matchesKinds } = await import('../js/data/schema.js');
+  assert.ok(matchesKinds(book({ category: 'manga' }), new Set()));
+  assert.ok(matchesKinds(book({ category: 'manga' }), null));
 });
 
-test('an unknown category falls back to books rather than disappearing', async () => {
-  const { kindGroupOf } = await import('../js/data/schema.js');
-  assert.equal(kindGroupOf('nonsense'), 'books');
-  assert.equal(kindGroupOf(undefined), 'books');
+test('a kind with no toggle of its own is still shown', async () => {
+  // With per-kind filtering there is no "other" bucket to fall into, so the
+  // safety net is that an unselected kind is only hidden when a selection is
+  // actually in force.
+  const { matchesKinds } = await import('../js/data/schema.js');
+  assert.ok(matchesKinds(book({ category: 'somethingNew' }), new Set()));
+  assert.ok(!matchesKinds(book({ category: 'somethingNew' }), new Set(['book'])));
 });
 
 /* --- reading with gaps ---------------------------------------------------- */

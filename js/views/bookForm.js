@@ -97,6 +97,28 @@ export function openBookForm({ book = null, defaultStart = null, onSaved } = {})
     type: 'number', min: '1', value: draft.series.total ?? '', placeholder: '4',
   });
 
+  /**
+   * Why a book was set down.
+   *
+   * Only shown once the status says it was, because for every other book the
+   * field is a blank prompt for something that never happened. Kept if the
+   * status changes back: a book abandoned once and picked up again is a more
+   * interesting record with the first attempt still in it.
+   */
+  const dnfInput = input('dnfReason', {
+    value: draft.dnfReason ?? '',
+    placeholder: 'Lost the thread around page 200',
+    maxlength: '300',
+  });
+
+  const dnfField = el('div', { hidden: draft.status !== 'dnf' }, [
+    el('label.field', {}, [
+      el('span.field__label', {}, 'Why you stopped'),
+      dnfInput,
+      el('span.field__hint', {}, 'Optional, and only for you.'),
+    ]),
+  ]);
+
   const shelvesInput = input('shelves', {
     value: draft.shelves.join(', '),
     placeholder: '2026 goal, book club, rereads',
@@ -249,7 +271,16 @@ export function openBookForm({ book = null, defaultStart = null, onSaved } = {})
 
   const statusSelect = el(
     'select.select',
-    { id: 'f-status', name: 'status' },
+    {
+      id: 'f-status',
+      name: 'status',
+      onChange: () => {
+        // Revealed by the status rather than always present: for every book
+        // that was not set down, the field is a prompt for something that
+        // never happened.
+        if (dnfField) dnfField.hidden = statusSelect.value !== 'dnf';
+      },
+    },
     STATUS_ORDER.map((id) =>
       el('option', { value: id, selected: draft.status === id }, STATUSES[id].label)
     )
@@ -396,6 +427,7 @@ export function openBookForm({ book = null, defaultStart = null, onSaved } = {})
       field('genre', 'Genre', genreInput),
     ]),
     field('status', 'Status', statusSelect),
+    dnfField,
     el('div.field', {}, [
       el('label.field__label', { for: 'f-description', text: 'Description' }),
       descriptionInput,
@@ -519,6 +551,7 @@ export function openBookForm({ book = null, defaultStart = null, onSaved } = {})
       formats: readFormats(),
       category: categorySelect.value,
       status: statusSelect.value,
+      dnfReason: dnfInput.value,
       cover: draft.cover,
       description: descriptionInput.value,
       series: {

@@ -14,7 +14,7 @@
  * Bump CACHE_VERSION to ship an update; old caches are dropped on activate.
  */
 
-const CACHE_VERSION = 'chapter-v12';
+const CACHE_VERSION = 'chapter-v13';
 const SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const IMAGE_CACHE = `${CACHE_VERSION}-images`;
 
@@ -51,6 +51,7 @@ const SHELL = [
   './js/data/fill.js',
   './js/data/coverAudit.js',
   './js/data/duplicates.js',
+  './js/data/ics.js',
   './js/data/theme.js',
   './js/data/kinds.js',
   './js/data/enrich.js',
@@ -65,6 +66,7 @@ const SHELL = [
   './js/views/cover.js',
   './js/views/coverPicker.js',
   './js/views/coverDrop.js',
+  './js/views/shortcuts.js',
   './js/views/bookForm.js',
   './js/views/library.js',
   './js/views/calendar.js',

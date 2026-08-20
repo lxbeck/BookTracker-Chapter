@@ -16,7 +16,7 @@ import { PROVIDERS } from '../data/providers.js';
 import { acceptCoverDrop } from './coverDrop.js';
 import {
   cacheCover, storeCoverOnServer, storeUploadedCover, storeUploadedCoverOnServer,
-  cachedIds, removeCachedCover, deleteCoverOnServer, hasServer, LOCAL_COVER,
+  cachedIds, cachedCoverUrl, removeCachedCover, deleteCoverOnServer, hasServer, LOCAL_COVER,
 } from '../data/coverCache.js';
 
 const SOURCE_LABEL = {
@@ -96,7 +96,50 @@ export function coverPicker({ draft, readForm, onPick }) {
     whereNote.textContent = cached.length
       ? 'Held in this browser only \u2014 not in the covers folder.'
       : 'Linked from the web, not saved \u2014 it will go blank if the source does.';
+
+    // Only offered when there is something to do about it: a cover already in
+    // the folder needs no button, and without a server there is no folder.
+    saveToFolder.hidden = !hasServer();
   }
+
+  /**
+   * Turn a borrowed cover into a file you own.
+   *
+   * The per-book counterpart of the sweep in Settings. Told here rather than
+   * only in a report, because "this one is only an address" is most actionable
+   * at the moment you are looking at the cover it describes.
+   */
+  const saveToFolder = el('button.btn.btn--quiet.btn--sm', {
+    type: 'button',
+    hidden: true,
+    onClick: async () => {
+      if (!draft.id || !cover.url) return;
+      saveToFolder.disabled = true;
+      status.textContent = 'Saving to the covers folder\u2026';
+
+      const title = readForm().title || draft.title;
+      const stored = cover.url === LOCAL_COVER
+        ? await cachedCoverUrl(draft.id)
+            .then((url) => (url ? fetch(url).then((r) => r.blob()) : null))
+            .then((blob) => (blob ? blobToDataUrl(blob) : null))
+            .then((dataUrl) => (dataUrl ? storeUploadedCoverOnServer(draft.id, dataUrl, title) : false))
+            .catch(() => false)
+        : await storeCoverOnServer(draft.id, cover.url, title).catch(() => false);
+
+      saveToFolder.disabled = false;
+      status.textContent = stored
+        ? 'Saved to the covers folder.'
+        : 'That image could not be saved \u2014 the source did not answer.';
+      describeWhere();
+    },
+  }, 'Save to covers folder');
+
+  const blobToDataUrl = (blob) => new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => resolve(null);
+    reader.readAsDataURL(blob);
+  });
 
   function setCover(next, meta) {
     cover = next;
@@ -287,7 +330,7 @@ export function coverPicker({ draft, readForm, onPick }) {
   return el('div.cover-picker', {}, [
     preview,
     el('div.cover-picker__controls', {}, [
-      el('div.cover-picker__actions', {}, buttons),
+      el('div.cover-picker__actions', {}, [...buttons, saveToFolder]),
       el('div.cover-picker__url-row', {}, [
         urlInput,
         el('button.btn.btn--quiet.btn--sm', {

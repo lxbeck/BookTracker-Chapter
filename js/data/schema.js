@@ -51,29 +51,6 @@ export const CATEGORIES = {
 export const CATEGORY_ORDER = ['book', 'nonfiction', 'comic', 'graphicNovel', 'manga', 'anthology'];
 
 /**
- * The three switches the calendar filters by.
- *
- * Six categories is the right granularity for a record and far too many for a
- * row of toggles, so they collapse: non-fiction and anthologies are books,
- * graphic novels are comics, manga stands alone. Every category belongs to
- * exactly one group — a category in none would make books silently vanish
- * whenever a filter was on.
- */
-export const KIND_GROUPS = {
-  books: { id: 'books', label: 'Books', categories: ['book', 'nonfiction', 'anthology'] },
-  comics: { id: 'comics', label: 'Comics', categories: ['comic', 'graphicNovel'] },
-  manga: { id: 'manga', label: 'Manga', categories: ['manga'] },
-};
-
-export const KIND_GROUP_ORDER = ['books', 'comics', 'manga'];
-
-/** Which switch a category answers to. Unknown kinds read as books. */
-export function kindGroupOf(category) {
-  const match = KIND_GROUP_ORDER.find((id) => KIND_GROUPS[id].categories.includes(category));
-  return match ?? 'books';
-}
-
-/**
  * Whether a book passes the current selection.
  *
  * An empty selection, or one with everything in it, means no filtering —
@@ -81,8 +58,13 @@ export function kindGroupOf(category) {
  * turning the last one off can never leave an empty calendar with no way back.
  */
 export function matchesKinds(book, selected) {
-  if (!selected || selected.size === 0 || selected.size === KIND_GROUP_ORDER.length) return true;
-  return selected.has(kindGroupOf(book.category));
+  if (!selected || selected.size === 0) return true;
+  // Categories, not groups. Collapsing graphic novels into comics and
+  // non-fiction into books was a reasonable simplification when there were six
+  // fixed kinds and no way to add more; it stops being reasonable the moment
+  // someone shelves research papers and finds them filed as "Books" with no
+  // way to see them on their own.
+  return selected.has(book.category);
 }
 
 export const FORMATS = {

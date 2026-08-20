@@ -107,20 +107,27 @@
   padding-bottom: var(--s2);
 }
 
+/* Every square outlined, including the empty ones. Without a stroke a day
+   with nothing logged is the same colour as the panel behind it, so the grid
+   has holes in it and you have to hover a blank space to learn it is a day.
+   The ramp is mixed from the card toward the accent, so it follows the theme
+   instead of being three hardcoded blues. */
 .chart__heat {
-  fill: var(--slip-shade);
+  fill: var(--heat-0, var(--slip-shade));
+  stroke: var(--heat-edge, var(--slip-edge));
+  stroke-width: 0.5px;
 }
 .chart__heat--1 {
-  fill: #c3cef0;
+  fill: var(--heat-1, #c3cef0);
 }
 .chart__heat--2 {
-  fill: #8da2e4;
+  fill: var(--heat-2, #8da2e4);
 }
 .chart__heat--3 {
-  fill: #5a75cc;
+  fill: var(--heat-3, #5a75cc);
 }
 .chart__heat--4 {
-  fill: var(--stamp-deep);
+  fill: var(--heat-4, var(--stamp-deep));
 }
 
 /* --- Goal panel ----------------------------------------------------------- */

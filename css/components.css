@@ -47,18 +47,21 @@
 
 .btn--quiet {
   color: var(--ink-soft);
-  border-color: var(--slip-edge);
+  /* Not --slip-edge: that is the hairline between two cards, and at that
+     weight a button has no visible outline on any scheme. */
+  border-color: var(--control-edge, #c9c2ae);
   background: var(--slip);
 }
 
 .btn--quiet:hover {
   color: var(--ink);
-  border-color: var(--ink-faint);
+  border-color: var(--control-edge-strong, var(--ink-faint));
+  background: var(--slip-shade);
 }
 
 .btn--danger {
   color: var(--overdue);
-  border-color: transparent;
+  border-color: var(--overdue);
 }
 
 .btn--danger:hover {
@@ -121,8 +124,8 @@
 .input,
 .select,
 .textarea {
-  background: #fbfaf5;
-  border: 1px solid var(--slip-edge);
+  background: var(--field, #fbfaf5);
+  border: 1px solid var(--control-edge, #c9c2ae);
   border-radius: var(--r-control);
   padding: var(--s2) var(--s3);
   color: var(--ink);

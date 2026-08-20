@@ -283,9 +283,8 @@ function shelvesBlock(books, redraw) {
     shelves.length
       ? el('ul.plain-list', {}, shelves.map(([shelf, count]) =>
           el('li.plain-list__row', {}, [
-            el('span', {}, shelf),
+            el('span.plain-list__name', {}, shelf),
             el('span.plain-list__aside', {}, [
-              `${count} ${count === 1 ? 'book' : 'books'}`,
               el('button.link-btn', {
                 type: 'button',
                 onClick: () => {
@@ -328,9 +327,8 @@ function listsBlock(redraw) {
     lists.length
       ? el('ul.plain-list', {}, lists.map((order) =>
           el('li.plain-list__row', {}, [
-            el('span', {}, order.name),
+            el('span.plain-list__name', {}, order.name),
             el('span.plain-list__aside', {}, [
-              `${order.bookIds.length} ${order.bookIds.length === 1 ? 'book' : 'books'}`,
               el('button.link-btn.is-danger', {
                 type: 'button',
                 onClick: () => {
@@ -406,11 +404,9 @@ function kindsBlock(books, redraw) {
       `Built in: ${allKinds().filter((kind) => !mine.some((entry) => entry.id === kind.id)).map((kind) => kind.label).join(', ')}.`),
     mine.length
       ? el('ul.plain-list', {}, mine.map((kind) => {
-          const count = books.filter((book) => book.category === kind.id).length;
           return el('li.plain-list__row', {}, [
-            el('span', {}, kind.label),
+            el('span.plain-list__name', {}, kind.label),
             el('span.plain-list__aside', {}, [
-              `${count} ${count === 1 ? 'book' : 'books'}`,
               el('button.link-btn', { type: 'button', onClick: () => remove(kind) }, 'Remove'),
             ]),
           ]);

@@ -117,13 +117,28 @@ const niceMax = (value) => {
  * Vertical bars. The workhorse: books per month, pages per month.
  * @param {{label: string, value: number}[]} data
  */
-export function barChart(data, { height = 190, label = 'Bar chart', format = (v) => v } = {}) {
+export function barChart(
+  data,
+  {
+    height = 190,
+    label = 'Bar chart',
+    format = (v) => v,
+    // As with the line chart: the readout can afford "4 books", the axis
+    // cannot. A right-anchored label at a fixed 34px inset ran straight off
+    // the left edge of the panel.
+    axisFormat = (v) => v.toLocaleString(),
+  } = {}
+) {
   const width = 640;
-  const padding = { top: 16, right: 8, bottom: 30, left: 34 };
-  const plotW = width - padding.left - padding.right;
-  const plotH = height - padding.top - padding.bottom;
 
   const max = niceMax(Math.max(...data.map((d) => d.value), 0));
+
+  const axisLabels = [0, 0.5, 1].map((fraction) => axisFormat(Math.round(max * fraction)));
+  const gutter = Math.max(...axisLabels.map((text) => text.length)) * 6.2 + 12;
+
+  const padding = { top: 16, right: 8, bottom: 30, left: Math.max(34, Math.ceil(gutter)) };
+  const plotW = width - padding.left - padding.right;
+  const plotH = height - padding.top - padding.bottom;
   const slot = plotW / Math.max(data.length, 1);
   const barW = Math.min(slot * 0.62, 46);
 
@@ -138,7 +153,7 @@ export function barChart(data, { height = 190, label = 'Bar chart', format = (v)
       }),
       svgEl('text', {
         x: padding.left - 6, y: y + 4, class: 'chart__axis', 'text-anchor': 'end',
-      }, format(Math.round(max * fraction)))
+      }, axisFormat(Math.round(max * fraction)))
     );
   }
 

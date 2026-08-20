@@ -14,7 +14,7 @@
  * Bump CACHE_VERSION to ship an update; old caches are dropped on activate.
  */
 
-const CACHE_VERSION = 'chapter-v11';
+const CACHE_VERSION = 'chapter-v12';
 const SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const IMAGE_CACHE = `${CACHE_VERSION}-images`;
 
@@ -30,6 +30,7 @@ const SHELL = [
   './css/dayview.css',
   './css/sessions.css',
   './css/stats.css',
+  './css/settings.css',
   './js/app.js',
   './js/lib/dom.js',
   './js/lib/dates.js',

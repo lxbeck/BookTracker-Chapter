@@ -17,6 +17,20 @@
   --slip-shade: #e7e2d5; /* card stock, one step down */
   --slip-edge: #d4ccb8; /* hairline rule on card stock */
 
+  /* Controls need a heavier line than the hairline between two cards: at
+     --slip-edge weight a button reads as bare text on every scheme. */
+  --control-edge: #b7b0a0;
+  --control-edge-strong: #8b8578;
+  --field: #fbfaf5; /* form fields, a shade off the card they sit on */
+
+  /* Heat map ramp, card to accent. Overridden per theme at runtime. */
+  --heat-0: #e7e2d5;
+  --heat-1: #c3cef0;
+  --heat-2: #8da2e4;
+  --heat-3: #5a75cc;
+  --heat-4: #29408f;
+  --heat-edge: #cdc6b5;
+
   /* --- Ink -------------------------------------------------------------- */
   --ink: #171c22;
   --ink-soft: #515a63;

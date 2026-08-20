@@ -88,6 +88,9 @@ export function renderStats(mount) {
         {
           label: 'Minutes logged by month',
           format: (v) => (v >= 60 ? `${Math.round(v / 60)}h` : `${v}m`),
+          // Hours on the axis too: the default is a plain number, and "1,200"
+          // where the panel says hours is worse than a narrow gutter.
+          axisFormat: (v) => (v >= 60 ? `${Math.round(v / 60)}h` : `${v}m`),
         }
       )
     ),

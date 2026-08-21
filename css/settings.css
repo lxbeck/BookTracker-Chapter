@@ -109,7 +109,7 @@
 
 .theme-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(150px, 100%), 1fr));
   gap: var(--s3);
   margin-top: var(--s3);
 }
@@ -239,7 +239,7 @@
 
 .needs-toggles {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(180px, 100%), 1fr));
   gap: var(--s2);
   margin-top: var(--s2);
 }

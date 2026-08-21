@@ -96,14 +96,35 @@ export function renderDay(mount) {
  * into slivers and a sideways scrollbar.
  */
 function gridShape(count) {
-  if (count <= 1) return { '--day-cols': '1', '--day-rows': '1' };
-  if (count === 2) return { '--day-cols': '2', '--day-rows': '1' };
-  if (count <= 4) return { '--day-cols': '2', '--day-rows': '2' };
-  if (count <= 6) return { '--day-cols': '3', '--day-rows': '2' };
-  if (count <= 9) return { '--day-cols': '3', '--day-rows': '3' };
-  if (count <= 12) return { '--day-cols': '4', '--day-rows': '3' };
-  if (count <= 16) return { '--day-cols': '4', '--day-rows': '4' };
-  return { '--day-cols': '5', '--day-rows': String(Math.ceil(count / 5)) };
+  const cap = columnCap();
+  const shape = (cols, rows) => {
+    const used = Math.min(cols, cap);
+    return { '--day-cols': String(used), '--day-rows': String(Math.max(rows, Math.ceil(count / used))) };
+  };
+
+  if (count <= 1) return shape(1, 1);
+  if (count === 2) return shape(2, 1);
+  if (count <= 4) return shape(2, 2);
+  if (count <= 6) return shape(3, 2);
+  if (count <= 9) return shape(3, 3);
+  if (count <= 12) return shape(4, 3);
+  if (count <= 16) return shape(4, 4);
+  return shape(5, Math.ceil(count / 5));
+}
+
+/**
+ * The most columns this screen can hold a legible cover in.
+ *
+ * Counted here rather than in the stylesheet because the number of columns is
+ * an integer, and `repeat()` will not take a `min()` — the media query that
+ * tried to clamp it that way was quietly invalid, which left a phone showing
+ * a five-across day of thumbnails.
+ */
+function columnCap() {
+  const width = globalThis.innerWidth ?? 1200;
+  if (width <= 560) return 1;
+  if (width <= 900) return 2;
+  return 5;
 }
 
 function move(delta, mount) {

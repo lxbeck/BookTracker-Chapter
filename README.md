@@ -1,12 +1,8 @@
 # Chapter
 
-A reading tracker. Helps to sort your books, plan them onto a calendar, and see
-your reading plan day by day.
+A reading tracker. Helps to sort your books, plan them onto a calendar, and see your reading plan day by day.
 
-Part of a small ecosystem of trackers — Quest (games), Chapter (books),
-Waypoint.
-
-No build step, no dependencies, no account. It runs from a folder of files and
+It runs from a folder of files and
 keeps your library in your browser, or in a folder on your own machine if you
 start the little sync server.
 
@@ -74,6 +70,14 @@ design does not solve.
 The server is plain HTTP with no authentication. It is meant for your own
 network. Don't port-forward it.
 
+**On a narrow screen the forms are one field per line.** A form control's
+natural width is about twenty characters, and a grid item refuses by default to
+shrink below its contents — so a three-across row of fields kept its full width
+on a phone, pushed the dialog wider than the screen, and left the right-hand
+column off the edge with the page scrolling sideways to reach it. Fields now
+collapse to a single column below 560px, the dialog runs nearly edge to edge,
+and its footer buttons wrap instead of widening the panel.
+
 </details>
 
 <details>
@@ -95,7 +99,8 @@ The server says as much on first run when it finds no library.
 <details>
 <summary><strong>The four views</strong> — What each screen is for</summary>
 
-- **Calendar** — a month, covers on the days they're scheduled.
+- **Calendar** — a month, covers on the days they're scheduled, or on the days
+  you actually read. Two calendars behind one switch; see *Scheduled and read*.
 - **Day** — one date filling the screen. Cards wrap into a grid sized to how
   many books there are: two side by side, four as a 2x2, nine as a 3x3. Nothing
   scrolls sideways, and covers keep their proportions rather than being
@@ -149,17 +154,54 @@ the page count.
 </details>
 
 <details>
+<summary><strong>Scheduled and read</strong> — Two calendars, because they answer different questions</summary>
+
+Above the grid: **Scheduled** and **Read**. Same month, same covers, two
+different facts.
+
+- **Scheduled** is the plan. A book set to run 16–22 August sits on all seven
+  of those days, whether or not you kept them. Days already gone by on a book
+  you are reading are marked as reading; the rest is still an intention.
+- **Read** is the record. Only the days with a sitting logged against them, so
+  the same book — read on the 16th and the 18th — appears exactly twice, and
+  nothing at all after today, because nothing has happened there yet. A book
+  read without ever being scheduled shows up here too.
+
+They used to be one grid, which meant the plan and the log were painted in the
+same covers and told apart only by the colour of a two-pixel underline. Neither
+question was really being answered.
+
+Books with no log fall back to the span between their recorded start and finish
+dates in the **Read** calendar. That is weaker evidence than a sitting, but it
+is evidence, and dropping those books would show an empty calendar to anyone
+who records dates without logging sittings.
+
+Dragging a cover to reschedule belongs to **Scheduled** only. A logged day is a
+record of something that happened; dragging it would silently move the plan
+instead, which is not what the gesture looks like it does.
+
+Clicking a day still opens the whole day — plan and log together — whichever
+calendar you came from. The popup is where you log a sitting, and hiding half
+of what you might want to log against would make it worse at that.
+
+</details>
+
+<details>
 <summary><strong>Filtering the calendar by kind</strong> — Showing only what you are looking for</summary>
 
-Above the month grid: **Everything, Books, Comics, Manga**. Toggling is
-additive — comics and manga on together shows both and hides books. Turning
-everything off is treated as everything on, since an empty calendar with no
-obvious way back is a trap.
+Above the month grid: **Everything**, then one switch per kind actually
+scheduled in the month on screen — including kinds you invented in Settings.
+Toggling is additive: comics and manga on together shows both and hides books.
+Turning the last one off is treated as everything on, since an empty calendar
+with no obvious way back is a trap.
 
-Six categories is right for a record and far too many for a row of toggles, so
-they collapse: non-fiction and anthologies are books, graphic novels are
-comics, manga stands alone. Every category belongs to exactly one group — one
-belonging to none would make books silently vanish whenever a filter was on.
+**From Everything, a kind is a fresh choice rather than a deselection.** This
+matters in a sequence that is easy to fall into: with only books and comics
+scheduled, turning on comics and then books selects both, which is everything,
+so the row shows Everything — correctly. The next click on Comics used to
+*remove* comics from that set and leave you looking at books. Consistent with
+the state underneath, and unusable: the button said Comics and you got Books.
+Everything now clears the slate, so the click means what its label says.
 
 The toggles appear only when more than one kind is actually scheduled, and they
 are the real answer to a crowded day: hiding what you are not looking for beats
@@ -361,6 +403,14 @@ labels and shows something like `07-04`. The read-out spells out "4 July 2026"
 and adds what was actually read that day. Monthly bars name the month *and*
 year. Bars get a full-height hit area, because a two-pixel bar for a quiet
 month is impossible to hover and is exactly the month worth inspecting.
+
+**A bar only carries a label if there is room for one.** Twelve months fit
+twelve labels; ninety days do not, and drawing all ninety turned the bottom of
+the pages-per-day chart into a grey smear that read as damage rather than as
+dates. Labels are now spaced from the widest one and the width of a bar's slot,
+so a daily chart names roughly one day a week, counted back from the most
+recent — the day you are most likely to be looking for is always named. Every
+bar in between still gives its exact date to the read-out.
 
 </details>
 

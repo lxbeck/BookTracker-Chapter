@@ -6,7 +6,7 @@
 
 .stat-row {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(170px, 100%), 1fr));
   gap: var(--s3);
   margin-bottom: var(--s4);
 }
@@ -58,7 +58,7 @@
 
 .stat-split {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr));
   gap: var(--s4);
 }
 
@@ -645,11 +645,13 @@
   letter-spacing: 2px;
 }
 
+/* Below this width the board stops being one fixed rectangle and becomes a
+   column of readable cards. The column *count* is capped in day.js, not here:
+   `repeat()` takes an integer and refuses a `min()`, so the rule that used to
+   clamp it in CSS was invalid and did nothing at all — which is how a phone
+   ended up showing five thumbnails across. */
 @media (max-width: 900px) {
-  /* Below this width the computed column count is too many to read; two is
-     the most that fits with a legible cover. */
   .day-board {
-    grid-template-columns: repeat(min(var(--day-cols, 2), 2), minmax(0, 1fr));
     grid-template-rows: none;
     grid-auto-rows: minmax(220px, 1fr);
     height: auto;
@@ -985,7 +987,7 @@
 
 .category-legend {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(160px, 100%), 1fr));
   gap: var(--s1) var(--s4);
   margin: 0;
 }

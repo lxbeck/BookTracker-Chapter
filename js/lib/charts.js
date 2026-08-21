@@ -109,6 +109,23 @@ const niceMax = (value) => {
   return Math.ceil(value / magnitude) * magnitude;
 };
 
+/** Roughly the width of one character at the 10px axis size. */
+const LABEL_CHAR_W = 5.6;
+
+/**
+ * A label under a bar, nudged inside the frame at the ends.
+ *
+ * A centred label on the first or last bar hangs half its width off the side
+ * of the chart, where the panel clips it.
+ */
+function axisLabel(text, centre, y, width) {
+  const half = (String(text).length * LABEL_CHAR_W) / 2;
+  const anchor = centre - half < 2 ? 'start' : centre + half > width - 2 ? 'end' : 'middle';
+  const x = anchor === 'start' ? 2 : anchor === 'end' ? width - 2 : centre;
+
+  return svgEl('text', { x, y, class: 'chart__label', 'text-anchor': anchor }, text);
+}
+
 /**
  * Vertical bars. The workhorse: books per month, pages per month.
  * @param {{label: string, value: number}[]} data
@@ -137,6 +154,17 @@ export function barChart(
   const plotH = height - padding.top - padding.bottom;
   const slot = plotW / Math.max(data.length, 1);
   const barW = Math.min(slot * 0.62, 46);
+
+  // How often a bar can afford to carry its own label.
+  //
+  // Twelve months fit twelve labels; ninety days do not, and the chart drew
+  // all ninety anyway — "2 3 4 5 6" ran together into a grey smear along the
+  // bottom that read as damage rather than as dates. Labels are dropped rather
+  // than shrunk, because there is no font size at which ninety dates are
+  // legible in 600 pixels, and the readout still gives the exact day for any
+  // bar you point at.
+  const widest = Math.max(...data.map((d) => String(d.label).length), 1) * LABEL_CHAR_W;
+  const every = Math.max(1, Math.ceil((widest + 8) / slot));
 
   const svg = frame(width, height, `${label}. ${data.map((d) => `${d.label}: ${format(d.value)}`).join(', ')}`);
 
@@ -177,9 +205,12 @@ export function barChart(
     });
     svg.append(hit);
 
-    svg.append(svgEl('text', {
-      x: x + barW / 2, y: height - 10, class: 'chart__label', 'text-anchor': 'middle',
-    }, point.label));
+    // Counted back from the last bar, so the most recent day is always named:
+    // a run of dates ending on an unlabelled one leaves you counting forwards
+    // from a label to work out where "today" is.
+    if ((data.length - 1 - index) % every === 0) {
+      svg.append(axisLabel(point.label, x + barW / 2, height - 10, width));
+    }
   });
 
   return svg;

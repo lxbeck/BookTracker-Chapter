@@ -16,14 +16,14 @@
 import { el, fill, toast } from '../lib/dom.js';
 import { allBooks, getSettings, rescheduleBook, getBook } from '../data/store.js';
 import { monthGrid, monthName, weekdayLabels, today, addDays, formatLong, toKey } from '../lib/dates.js';
-import { groupByDay, DAY_STATE_LABEL } from '../logic/schedule.js';
+import { groupByDay, DAY_STATE_LABEL, CALENDAR_MODES } from '../logic/schedule.js';
 import { matchesKinds } from '../data/schema.js';
-import { kindsPresent } from '../data/kinds.js';
+import { kindsPresent, kindLabel } from '../data/kinds.js';
 import { coverThumb } from './cover.js';
 import { openBookForm } from './bookForm.js';
 import { loadSampleLibrary } from '../data/seed.js';
 import { attachHoverCard, hide as hideHoverCard } from './hoverCard.js';
-import { libraryTotals, formatDuration } from '../logic/sessions.js';
+import { libraryTotals, formatDuration, allSessions } from '../logic/sessions.js';
 import { openDayPopup } from './dayPopup.js';
 import { goToDay } from './dayCursor.js';
 
@@ -102,11 +102,33 @@ let cursor = null;
 const visibleKinds = new Set();
 
 /**
+ * Which calendar this is: the plan, or the record.
+ *
+ * Two questions were sharing one grid. "A book runs the 16th to the 22nd" and
+ * "I read on the 16th and the 18th" are both true, and a view that painted the
+ * scheduled days and the read days in the same covers could not tell you which
+ * you were looking at. Now the plan is one calendar and the log is another,
+ * and the switch between them says which you are reading.
+ *
+ * Module state, like the month cursor: it belongs to this session, not to the
+ * library, and syncing it would make one device's view jump on another's.
+ *
+ * @type {'plan'|'log'}
+ */
+let calendarMode = 'plan';
+
+const MODE_LABEL = { plan: 'Scheduled', log: 'Read' };
+
+/**
  * Wired in step 4.5. Kept as hooks rather than direct imports so the grid
  * stays usable — and testable — without the popup and hover layers.
  */
 const calendarHooks = {
-  onDayOpen: (dayKey, entries) => openDayPopup(dayKey, entries),
+  // Deliberately without the grid's entries: those are filtered by kind and by
+  // whichever calendar is on screen, while the popup is the whole day — and a
+  // popup that opened showing three books and redrew itself showing five, the
+  // moment you logged a sitting, was worse than either.
+  onDayOpen: (dayKey) => openDayPopup(dayKey),
   attachHover: attachHoverCard,
 };
 
@@ -157,16 +179,20 @@ export function renderCalendar(mount) {
   lastTileCount = maxTiles;
   bindResize(mount);
   const cells = monthGrid(cursor.year, cursor.month, weekStartsOn);
-  const buckets = groupByDay(books, cells.map((cell) => cell.key), todayKey);
+  const buckets = groupByDay(books, cells.map((cell) => cell.key), todayKey, calendarMode);
 
   const scheduled = books.filter((b) => b.schedule.start).length;
+  const daysLogged = loggedDaysInView(books);
   const totals = libraryTotals(everything, todayKey);
+  const isLog = calendarMode === 'log';
 
   fill(mount, [
     el('div.view-head.view-head--calendar', {}, [
       el('div', {}, [
         el('h2.view-title', {}, `${monthName(cursor.month)} ${cursor.year}`),
-        el('p.view-sub', {}, `${scheduled} book${scheduled === 1 ? '' : 's'} on the schedule`),
+        el('p.view-sub', {}, isLog
+          ? `${daysLogged} day${daysLogged === 1 ? '' : 's'} read this month`
+          : `${scheduled} book${scheduled === 1 ? '' : 's'} on the schedule`),
       ]),
       totals.streak.current > 0 || totals.minutesThisWeek > 0 ? streakStrip(totals) : null,
       el('div.cal-nav', {}, [
@@ -176,9 +202,14 @@ export function renderCalendar(mount) {
       ]),
     ]),
 
-    kindToggles(everything, mount),
+    el('div.cal-filters', {}, [
+      modeSwitch(mount),
+      kindToggles(everything, mount),
+    ].filter(Boolean)),
 
-    scheduled === 0 ? emptyCalendar() : null,
+    isLog
+      ? (daysLogged === 0 ? emptyLog() : null)
+      : (scheduled === 0 ? emptyCalendar() : null),
 
     el('div.cal', {}, [
       el(
@@ -199,11 +230,13 @@ export function renderCalendar(mount) {
     ]),
 
     el('p.cal__legend', {}, [
-      legendKey('reading', 'Reading now'),
-      legendKey('planned', 'Planned'),
+      legendKey('reading', isLog ? 'Read that day' : 'Reading now'),
+      isLog ? null : legendKey('planned', 'Planned'),
       legendKey('finished', 'Finished that day'),
-      el('span.cal__legend-hint', {}, 'Click a day for details, the date for the full day view \u00b7 drag a cover to reschedule'),
-    ]),
+      el('span.cal__legend-hint', {}, isLog
+        ? 'Only days with a sitting logged \u00b7 click a day to log another'
+        : 'Click a day for details, the date for the full day view \u00b7 drag a cover to reschedule'),
+    ].filter(Boolean)),
   ]);
 }
 
@@ -225,6 +258,70 @@ function streakStrip(totals) {
       ? el('span', {}, [el('b', {}, formatDuration(totals.minutesThisWeek)), ' this week'])
       : null,
   ].filter(Boolean));
+}
+
+/**
+ * The switch between the two calendars.
+ *
+ * Two buttons rather than a checkbox: "Scheduled" and "Read" name what you get,
+ * where a checkbox labelled "show logged reading only" would make you work out
+ * what the unticked state means.
+ */
+function modeSwitch(mount) {
+  return el('div.cal-modes', { role: 'group', 'aria-label': 'What the calendar shows' },
+    CALENDAR_MODES.map((mode) =>
+      el('button.cal-mode', {
+        type: 'button',
+        class: calendarMode === mode ? 'is-on' : '',
+        'aria-pressed': String(calendarMode === mode),
+        title: mode === 'plan'
+          ? 'Every day a book is scheduled for'
+          : 'Only the days you logged a sitting',
+        onClick: () => {
+          if (calendarMode === mode) return;
+          calendarMode = mode;
+          rerender(mount);
+        },
+      }, MODE_LABEL[mode])
+    ));
+}
+
+/** Days in the visible month with at least one sitting logged. */
+function loggedDaysInView(books) {
+  const first = toKey(new Date(cursor.year, cursor.month, 1));
+  const last = toKey(new Date(cursor.year, cursor.month + 1, 0));
+
+  const days = new Set();
+  for (const { session } of allSessions(books)) {
+    if (session.date >= first && session.date <= last) days.add(session.date);
+  }
+  return days.size;
+}
+
+/**
+ * What the kind filter becomes when one kind is clicked.
+ *
+ * From "Everything", a kind is a fresh choice rather than a deselection.
+ * Selecting every kind one at a time lands back on Everything — correctly,
+ * since that is what it shows — but the set underneath still held them all,
+ * so the next click on Comics *removed* comics and left you looking at books.
+ * Technically consistent, and unusable: the button said Comics and you got
+ * Books. Everything now clears the slate, so the next click means what it says.
+ *
+ * Pure, and exported, because it is the rule worth testing about this row.
+ *
+ * @param {Set<string>} selected
+ * @param {string} id
+ * @param {boolean} showingAll
+ * @returns {Set<string>}
+ */
+export function nextVisibleKinds(selected, id, showingAll) {
+  if (showingAll) return new Set([id]);
+
+  const next = new Set(selected);
+  if (next.has(id)) next.delete(id);
+  else next.add(id);
+  return next;
 }
 
 /**
@@ -264,8 +361,9 @@ function kindToggles(books, mount) {
         class: !showingAll && visibleKinds.has(kind.id) ? 'is-on' : '',
         'aria-pressed': String(!showingAll && visibleKinds.has(kind.id)),
         onClick: () => {
-          if (visibleKinds.has(kind.id)) visibleKinds.delete(kind.id);
-          else visibleKinds.add(kind.id);
+          const next = nextVisibleKinds(visibleKinds, kind.id, showingAll);
+          visibleKinds.clear();
+          for (const id of next) visibleKinds.add(id);
           rerender(mount);
         },
       }, [
@@ -274,12 +372,13 @@ function kindToggles(books, mount) {
       ])
     ),
 
+    // Named from the selection, not from what this month happens to hold: a
+    // filter set in September and carried back to August, where that kind
+    // isn't scheduled, would otherwise leave an empty grid under the words
+    // "showing  only".
     !showingAll
       ? el('span.kind-toggles__note', {},
-          `showing ${present
-            .filter((kind) => visibleKinds.has(kind.id))
-            .map((kind) => kind.label.toLowerCase())
-            .join(' and ')} only`)
+          `showing ${[...visibleKinds].map((id) => kindLabel(id).toLowerCase()).join(' and ')} only`)
       : null,
   ].filter(Boolean));
 }
@@ -354,7 +453,7 @@ function dayCell(cell, entries, todayKey, mount, maxTiles) {
 
   node.addEventListener('click', (event) => {
     if (event.target.closest('.cal__tile, .cal__date, .cal__more')) return;
-    openDay(cell.key, entries, mount);
+    openDay(cell.key, mount);
   });
 
   const items = [
@@ -364,7 +463,7 @@ function dayCell(cell, entries, todayKey, mount, maxTiles) {
           'button.cal__more',
           {
             type: 'button',
-            onClick: () => openDay(cell.key, entries, mount),
+            onClick: () => openDay(cell.key, mount),
             'aria-label': `${overflow} more on ${formatLong(cell.key)}`,
           },
           `+${overflow}`
@@ -385,11 +484,15 @@ function dayCell(cell, entries, todayKey, mount, maxTiles) {
 
 function coverTile(entry, dayKey, mount) {
   const { book, state } = entry;
+  // A logged day is a record of something that happened. Dragging it would
+  // move the *plan*, which is not what the gesture looks like it does here, so
+  // rescheduling belongs to the scheduled calendar only.
+  const canMove = calendarMode !== 'log';
 
   const tile = el('button.cal__tile', {
     class: `cal__tile--${state}`,
     type: 'button',
-    draggable: 'true',
+    draggable: canMove ? 'true' : null,
     dataset: { bookId: book.id, state },
     'aria-label': `${book.title} — ${DAY_STATE_LABEL[state].toLowerCase()}`,
     onClick: (event) => {
@@ -397,6 +500,11 @@ function coverTile(entry, dayKey, mount) {
       openBookForm({ book });
     },
   }, coverThumb(book, { width: '100%', alt: '' }));
+
+  if (!canMove) {
+    calendarHooks.attachHover?.(tile, book, dayKey);
+    return tile;
+  }
 
   tile.addEventListener('dragstart', (event) => {
     event.dataTransfer.setData('text/plain', book.id);
@@ -491,12 +599,25 @@ function announceMove(book, mount) {
  * Step 4 opens the add form pre-dated to the clicked day. Step 4.5 replaces
  * this with the full day popup by setting `calendarHooks.onDayOpen`.
  */
-function openDay(dayKey, entries, mount) {
+function openDay(dayKey, mount) {
   if (calendarHooks.onDayOpen) {
-    calendarHooks.onDayOpen(dayKey, entries, () => rerender(mount));
+    calendarHooks.onDayOpen(dayKey, () => rerender(mount));
     return;
   }
   openBookForm({ defaultStart: dayKey });
+}
+
+function emptyLog() {
+  return el('div.empty.empty--inline', {}, [
+    el('h3', {}, 'Nothing logged this month'),
+    el('p', {}, 'This calendar shows the days you actually read. Log a sitting against a book and the day it happened fills in here.'),
+    el('div.empty__actions', {}, [
+      el('button.btn.btn--ghost', {
+        type: 'button',
+        onClick: () => goToDay(today()),
+      }, 'Log today\u2019s reading'),
+    ]),
+  ]);
 }
 
 function emptyCalendar() {

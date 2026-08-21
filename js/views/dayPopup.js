@@ -15,10 +15,15 @@ import { allBooks } from '../data/store.js';
 import { goToDay } from './dayCursor.js';
 
 /**
+ * The whole of one day — plan and log together, whichever calendar you came
+ * from. The grid used to hand its own entries over for the first paint, but
+ * those are filtered by kind and by which calendar is on screen, so the popup
+ * opened showing a subset and then redrew itself with everything the moment
+ * you logged a sitting. It computes its own now.
+ *
  * @param {string} dayKey
- * @param {{book: object, state: string}[]} [entries] - precomputed by the grid
  */
-export function openDayPopup(dayKey, entries) {
+export function openDayPopup(dayKey) {
   const todayKey = today();
   const body = el('div.day-popup');
 
@@ -58,17 +63,7 @@ export function openDayPopup(dayKey, entries) {
     ],
   });
 
-  // The initial paint can reuse the entries the grid already computed.
-  if (entries?.length) {
-    fill(body, entries.map((entry) =>
-      dayRow(entry, dayKey, todayKey, {
-        redraw: draw,
-        beforeOpenRecord: () => modal.close(),
-        size: 'compact',
-      })));
-  } else {
-    draw();
-  }
+  draw();
 
   return modal;
 }

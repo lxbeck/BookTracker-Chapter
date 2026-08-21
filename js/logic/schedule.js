@@ -22,6 +22,24 @@ export const DAY_STATE_LABEL = {
 };
 
 /**
+ * What a calendar is being asked to show.
+ *
+ * `plan` is the diary: the days you set aside for a book, whether or not you
+ * kept them. `log` is the record: the days you actually read, and nothing
+ * else — no future, because nothing has happened there yet. They answer
+ * different questions ("am I on track?" against "what did I do?"), and a
+ * single view that splits the difference answers neither cleanly, which is
+ * why the calendar offers both rather than blending them.
+ *
+ * `both` is that blend, and it is still the right answer for the day view and
+ * the popup, where a day is examined one at a time and every fact about it
+ * belongs on screen at once.
+ *
+ * @typedef {'both'|'plan'|'log'} CalendarMode
+ */
+export const CALENDAR_MODES = ['plan', 'log'];
+
+/**
  * The state a book is in on a given day, or null if it doesn't belong there.
  *
  * Precedence matters: a book finished on the 12th shows as *finished* on the
@@ -30,9 +48,13 @@ export const DAY_STATE_LABEL = {
  * @param {object} book
  * @param {string} dayKey
  * @param {string} [todayKey]
+ * @param {CalendarMode} [mode]
  * @returns {DayState|null}
  */
-export function dayState(book, dayKey, todayKey = today()) {
+export function dayState(book, dayKey, todayKey = today(), mode = 'both') {
+  if (mode === 'plan') return plannedState(book, dayKey, todayKey);
+  if (mode === 'log') return loggedState(book, dayKey, todayKey);
+
   const { schedule, actual, status } = book;
 
   // 1. The day it was finished — the strongest signal there is.
@@ -74,17 +96,69 @@ export function dayState(book, dayKey, todayKey = today()) {
   return null;
 }
 
+/**
+ * The plan as written, log or no log.
+ *
+ * A book scheduled from the 16th to the 22nd sits on all seven days here, even
+ * the ones you skipped: the question this mode answers is what you meant to
+ * do, and a plan with holes punched in it by the log is no longer a plan.
+ */
+function plannedState(book, dayKey, todayKey) {
+  const { schedule, actual, status } = book;
+
+  if (actual.finishedAt === dayKey) return 'finished';
+  if (!schedule.start) return null;
+  if (!withinRange(dayKey, schedule.start, schedule.end ?? schedule.start)) return null;
+
+  // A finished book's plan is spent — its finish day above is the last thing
+  // it has to say. Leaving it painted across the rest of the span would make
+  // every past month look like a month of unfinished business.
+  if (status === 'finished') return null;
+
+  // Days already gone by on a book you are reading were days at the book; the
+  // rest of the span is still only an intention.
+  if (status === 'reading' && dayKey <= todayKey) return 'reading';
+
+  return 'planned';
+}
+
+/**
+ * Only what actually happened.
+ *
+ * Sessions are the evidence, so a book scheduled across a week but read on two
+ * of its days appears twice and nowhere else — and never past today, because
+ * the future has nothing logged in it.
+ */
+function loggedState(book, dayKey, todayKey) {
+  const { actual } = book;
+
+  if (actual.finishedAt === dayKey) return 'finished';
+
+  const sessions = book.sessions ?? [];
+  if (sessions.length) {
+    return sessions.some((session) => session.date === dayKey) ? 'reading' : null;
+  }
+
+  // No log at all. The recorded span is weaker evidence than a session, but it
+  // is evidence, and dropping these books would empty the view for anyone who
+  // records start and finish dates without logging sittings.
+  if (!actual.startedAt) return null;
+  const to = actual.finishedAt ?? (book.status === 'reading' ? todayKey : actual.startedAt);
+  return withinRange(dayKey, actual.startedAt, to) ? 'reading' : null;
+}
+
 /** Reading first, then planned, then finished — most actionable at the top. */
 const STATE_WEIGHT = { reading: 0, planned: 1, finished: 2 };
 
 /**
  * Every book on one day, ordered so the first four are the four worth showing.
+ * @param {CalendarMode} [mode]
  * @returns {{book: object, state: DayState}[]}
  */
-export function entriesForDay(books, dayKey, todayKey = today()) {
+export function entriesForDay(books, dayKey, todayKey = today(), mode = 'both') {
   return books
     .map((book) => {
-      const state = dayState(book, dayKey, todayKey);
+      const state = dayState(book, dayKey, todayKey, mode);
       return state ? { book, state } : null;
     })
     .filter(Boolean)
@@ -104,9 +178,11 @@ export function entriesForDay(books, dayKey, todayKey = today()) {
  *
  * @param {object[]} books
  * @param {string[]} dayKeys - the grid's days, in order
+ * @param {string} [todayKey]
+ * @param {CalendarMode} [mode]
  * @returns {Map<string, {book: object, state: DayState}[]>}
  */
-export function groupByDay(books, dayKeys, todayKey = today()) {
+export function groupByDay(books, dayKeys, todayKey = today(), mode = 'both') {
   const buckets = new Map(dayKeys.map((key) => [key, []]));
   if (!dayKeys.length) return buckets;
 
@@ -115,10 +191,16 @@ export function groupByDay(books, dayKeys, todayKey = today()) {
 
   for (const book of books) {
     // Widest window this book could possibly touch, clipped to the grid.
-    const starts = [book.schedule.start, book.actual.startedAt].filter(Boolean);
-    const ends = [book.schedule.end, book.schedule.start, book.actual.finishedAt, todayKey].filter(
-      Boolean
-    );
+    //
+    // Session dates are part of that window, not a detail: a sitting logged
+    // before a book's plan begins, or on a book with no plan at all, is a real
+    // day read, and a window drawn only from the schedule would step straight
+    // over it.
+    const logged = (book.sessions ?? []).map((session) => session.date).filter(Boolean).sort();
+    const starts = [book.schedule.start, book.actual.startedAt, logged[0]].filter(Boolean);
+    const ends = [
+      book.schedule.end, book.schedule.start, book.actual.finishedAt, logged.at(-1), todayKey,
+    ].filter(Boolean);
     if (!starts.length) continue;
 
     const from = [...starts].sort()[0];
@@ -128,7 +210,7 @@ export function groupByDay(books, dayKeys, todayKey = today()) {
     if (clippedFrom > clippedTo) continue;
 
     for (const key of eachDay(clippedFrom, clippedTo)) {
-      const state = dayState(book, key, todayKey);
+      const state = dayState(book, key, todayKey, mode);
       if (state) buckets.get(key)?.push({ book, state });
     }
   }

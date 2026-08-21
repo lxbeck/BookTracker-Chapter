@@ -97,10 +97,16 @@
 
 /* --- Fields --------------------------------------------------------------- */
 
+/* `min-width: 0` is not decoration here. A form control's intrinsic width is
+   about twenty characters, and a grid or flex item defaults to refusing to
+   shrink below its content — so on a phone every field in a row insisted on
+   ~190px, the row overflowed the modal, and the page grew a sideways
+   scrollbar with the right-hand column half off the screen. */
 .field {
   display: flex;
   flex-direction: column;
   gap: var(--s1);
+  min-width: 0;
 }
 
 .field__label {
@@ -124,6 +130,8 @@
 .input,
 .select,
 .textarea {
+  min-width: 0;
+  max-width: 100%;
   background: var(--field, #fbfaf5);
   border: 1px solid var(--control-edge, #c9c2ae);
   border-radius: var(--r-control);
@@ -162,6 +170,19 @@
   display: grid;
   gap: var(--s4);
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+
+.field-row > * {
+  min-width: 0;
+}
+
+/* Two 150px columns of date pickers is not a row, it is two clipped fields.
+   Below this width a form is one field per line. */
+@media (max-width: 560px) {
+  .field-row {
+    grid-template-columns: 1fr;
+    gap: var(--s3);
+  }
 }
 
 /* --- Status chips --------------------------------------------------------- */
@@ -357,6 +378,36 @@
 
 .modal__foot .spacer {
   margin-right: auto;
+}
+
+/* The dialog is the whole screen on a phone, near enough. Edge padding that
+   reads as generous on a laptop is a quarter of the width here, and a footer
+   of three buttons has to be allowed to wrap rather than push the panel
+   wider than the viewport. */
+@media (max-width: 560px) {
+  .modal {
+    padding: var(--s2);
+  }
+  .modal__panel,
+  .modal__panel--wide {
+    width: 100%;
+    max-height: calc(100vh - 2 * var(--s2));
+    max-height: calc(100dvh - 2 * var(--s2));
+  }
+  .modal__head {
+    padding: var(--s4) var(--s4) var(--s3);
+  }
+  .modal__body {
+    padding: var(--s4);
+  }
+  .modal__foot {
+    padding: var(--s3) var(--s4);
+    flex-wrap: wrap;
+  }
+  .modal__foot .spacer {
+    margin-right: 0;
+    width: 100%;
+  }
 }
 
 .icon-btn {

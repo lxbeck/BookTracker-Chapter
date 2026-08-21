@@ -83,6 +83,51 @@ test('the day view is one fixed rectangle, matching the calendar board', () => {
   assert.match(card, /min-height:\s*0/);
 });
 
+test('the day board never asks repeat() to do arithmetic', () => {
+  // `repeat()` takes an integer, not a math function. `repeat(min(var(--x),2))`
+  // parses as invalid and is dropped whole — silently — so the clamp that was
+  // supposed to hold a phone to two columns did nothing, and a busy day was
+  // five thumbnails across. The cap lives in day.js now.
+  assert.doesNotMatch(stats, /repeat\(\s*(min|max|calc|clamp)\(/,
+    'a column count has to be an integer');
+
+  const day = read('js/views/day.js');
+  assert.match(day, /function columnCap\(\)/, 'the cap has to be counted somewhere');
+});
+
+test('a form field can shrink below the width of its own contents', () => {
+  // A control's intrinsic width is about twenty characters and a grid item
+  // will not shrink below its content by default, so a row of three fields
+  // pushed the dialog wider than a phone and the page scrolled sideways.
+  const components = read('css/components.css');
+  assert.match(rule(components, '.field'), /min-width:\s*0/);
+  assert.match(rule(components, '.field-row > *'), /min-width:\s*0/);
+  assert.match(components, /\.input,\s*\.select,\s*\.textarea\s*\{[^}]*min-width:\s*0/);
+});
+
+test('narrow screens get one field per line and an edge-to-edge dialog', () => {
+  const components = read('css/components.css');
+  const narrow = components.match(/@media \(max-width: 560px\)\s*\{[\s\S]*?\n\}/g) ?? [];
+  const text = narrow.join('\n');
+
+  assert.match(text, /\.field-row\s*\{[^}]*grid-template-columns:\s*1fr/);
+  assert.match(text, /\.modal__panel[^{]*\{[^}]*width:\s*100%/);
+});
+
+test('page-level grids shrink below their track floor rather than overflowing', () => {
+  // `minmax(320px, 1fr)` on a 300px-wide phone is a 320px column in a 300px
+  // container: the panel hangs off the side. `min(320px, 100%)` cannot.
+  for (const [name, css] of [['stats', stats], ['calendar', calendar]]) {
+    // Columns only: a row track of 220px is a height, and heights are free to
+    // exceed the width of the screen.
+    const columns = [...css.matchAll(/grid-template-columns:[^;]*minmax\((\d+)px/g)]
+      .map((match) => Number(match[1]));
+
+    assert.deepEqual(columns.filter((px) => px > 100), [],
+      `${name}.css has a fixed track floor wide enough to overflow a phone`);
+  }
+});
+
 test('the navigation wraps rather than scrolling its tabs out of sight', () => {
   const base = read('css/base.css');
   assert.match(rule(base, '.app-nav'), /flex-wrap:\s*wrap/);

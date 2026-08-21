@@ -349,7 +349,7 @@ body.is-rescheduling .cal__day {
 
 .year-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr));
   gap: var(--s4);
 }
 
@@ -449,7 +449,7 @@ body.is-rescheduling .cal__day {
 
 @media (max-width: 600px) {
   .year-grid {
-    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr));
     gap: var(--s3);
   }
   .year-day {
@@ -685,4 +685,64 @@ body.is-rescheduling .cal__day {
 
 .kind-toggle--all {
   font-weight: 700;
+}
+
+/* --- Which calendar: the plan, or the record ------------------------------ */
+
+/* The mode switch and the kind switches are the same kind of control — "what
+   is on this grid" — so they share a line, and wrap onto two only when the
+   screen makes them. */
+.cal-filters {
+  display: flex;
+  align-items: center;
+  gap: var(--s4);
+  flex-wrap: wrap;
+  margin-bottom: var(--s3);
+  flex: none;
+}
+
+.cal-filters:empty {
+  display: none;
+  margin-bottom: 0;
+}
+
+.cal-filters .kind-toggles {
+  margin-bottom: 0;
+}
+
+/* One control, two halves: a joined pair reads as a switch between two states,
+   where two separate pills read as two independent things you could have both
+   of — which is exactly what the kind toggles beside them are. */
+.cal-modes {
+  display: inline-flex;
+  border: 1px solid rgba(241, 244, 247, 0.16);
+  border-radius: 999px;
+  background: rgba(241, 244, 247, 0.05);
+  padding: 2px;
+  gap: 2px;
+  flex: none;
+}
+
+.cal-mode {
+  font-family: var(--face-slip);
+  font-size: var(--size-xs);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-inverse-soft);
+  background: none;
+  border: 0;
+  border-radius: 999px;
+  padding: var(--s1) var(--s4);
+  cursor: pointer;
+  transition: color var(--fast) var(--ease), background var(--fast) var(--ease);
+}
+
+.cal-mode:hover {
+  color: var(--ink-inverse);
+}
+
+.cal-mode.is-on {
+  background: rgba(58, 87, 189, 0.55);
+  color: var(--ink-inverse);
+  box-shadow: inset 0 0 0 1px rgba(157, 180, 247, 0.7);
 }

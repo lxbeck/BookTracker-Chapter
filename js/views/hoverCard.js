@@ -12,7 +12,7 @@
  */
 
 import { el, fill } from '../lib/dom.js';
-import { paceFor, paceStanding, projectedFinish } from '../logic/pacing.js';
+import { paceFor, paceStanding, projectedFinish, dayDemand } from '../logic/pacing.js';
 import { dayState, DAY_STATE_LABEL } from '../logic/schedule.js';
 import { formatShort, today } from '../lib/dates.js';
 import { formatUnit } from '../data/schema.js';
@@ -102,6 +102,10 @@ function cardBody(book, dayKey) {
 
     el('p.hovercard__lead', { class: `is-${state}` }, headline(book, pace, state, dayKey, todayKey)),
 
+    dayDemand(book, dayKey, state, todayKey).note
+      ? el('p.hovercard__catchup', {}, dayDemand(book, dayKey, state, todayKey).note)
+      : null,
+
     pace.ok ? el('dl.hovercard__facts', {}, facts(book, pace, unit)) : null,
 
     standing(book, todayKey),
@@ -110,13 +114,7 @@ function cardBody(book, dayKey) {
 
 /** The single sentence the card exists to deliver. */
 function headline(book, pace, state, dayKey, todayKey) {
-  if (state === 'finished') return 'Finished on this day';
-  if (!pace.ok) return pace.reason;
-  if (!pace.inPlan) return 'Outside this book\u2019s plan';
-
-  const noun = pace.unit === 'minutes' ? 'minutes' : 'pages';
-  const verb = dayKey < todayKey ? 'were due' : dayKey === todayKey ? 'to read today' : 'due that day';
-  return `${pace.todayTarget} ${noun} ${verb}`;
+  return dayDemand(book, dayKey, state, todayKey).lead;
 }
 
 function facts(book, pace, unit) {

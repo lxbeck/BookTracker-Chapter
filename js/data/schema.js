@@ -158,9 +158,19 @@ export function blankBook(overrides = {}) {
     status: 'planned',
     series: { name: '', number: null, total: null },
     cover: { url: null, source: null },
+    // Where the copy came from — bought, borrowed, a gift, the library. Not to
+    // be confused with `cover.source`, which is the catalogue the art came
+    // from. Free text is an id from the settings list, or '' for unstated.
+    source: '',
     // `rebase` is what "catch me up" writes: from that day, the remaining
     // pages are spread over the remaining days instead of the original plan.
-    schedule: { start: null, end: null, rebase: null },
+    //
+    // `history` is every plan this book has had before the current one, oldest
+    // first: `{start, end, at}`, where `at` is the day the plan was replaced.
+    // Kept because a plan that has been moved twice is a fact about how the
+    // reading went, and because a chart of "what the plan asked for" is a lie
+    // if it only knows the plan that happens to be current.
+    schedule: { start: null, end: null, rebase: null, history: [] },
     actual: { startedAt: null, finishedAt: null },
     progress: { page: 0, percent: 0 },
     sessions: [],
@@ -355,6 +365,24 @@ const toSeriesNumber = (value) => {
 
 const cleanKey = (value) => (isValidKey(value) ? value : null);
 
+/**
+ * Previous plans, cleaned.
+ *
+ * Capped, because this grows every time a plan moves and nobody needs the
+ * fortieth revision of a schedule — the last dozen is more history than any
+ * chart can usefully draw.
+ */
+function cleanPlanHistory(history) {
+  return (Array.isArray(history) ? history : [])
+    .map((entry) => ({
+      start: cleanKey(entry?.start),
+      end: cleanKey(entry?.end),
+      at: cleanKey(entry?.at),
+    }))
+    .filter((entry) => entry.start && entry.at)
+    .slice(-12);
+}
+
 /** A rebase is only meaningful with both a day and a page to start from. */
 function cleanRebase(rebase) {
   const at = cleanKey(rebase?.at);
@@ -419,7 +447,13 @@ export function normalizeBook(input = {}, todayKey = today()) {
       url: input.cover?.url || null,
       source: input.cover?.source || null,
     },
-    schedule: { start, end, rebase: cleanRebase(input.schedule?.rebase) },
+    source: cleanCategory(input.source),
+    schedule: {
+      start,
+      end,
+      rebase: cleanRebase(input.schedule?.rebase),
+      history: cleanPlanHistory(input.schedule?.history),
+    },
     actual: {
       startedAt: cleanKey(input.actual?.startedAt),
       finishedAt: cleanKey(input.actual?.finishedAt),

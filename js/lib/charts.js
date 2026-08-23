@@ -462,6 +462,18 @@ export function trailChart(points, { height = 190, label = 'Progress', total = 0
     return runs;
   };
 
+  // A faint rule on every day the plan was replaced. Without it the plan line
+  // has an unexplained kink in it, and the kink is the most interesting thing
+  // on the chart: it is the day you decided this was not going to happen the
+  // way you had written it down.
+  points.forEach((point, index) => {
+    if (!point.replanned) return;
+    svg.append(svgEl('line', {
+      x1: x(index), x2: x(index), y1: padding.top, y2: padding.top + plotH,
+      class: 'chart__replan',
+    }, svgEl('title', {}, `${point.fullLabel ?? point.label}: the plan was moved`)));
+  });
+
   for (const run of series((point) => point.planned)) {
     if (run.length > 1) svg.append(svgEl('polyline', { class: 'chart__line chart__line--plan', points: run.join(' ') }));
   }

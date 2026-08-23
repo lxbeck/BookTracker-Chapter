@@ -10,7 +10,7 @@ import { el, toast } from '../lib/dom.js';
 import { showModal } from './modal.js';
 import { coverThumb } from './cover.js';
 import { sessionLog } from './sessionLog.js';
-import { paceFor, paceStanding, projectedFinish } from '../logic/pacing.js';
+import { paceFor, paceStanding, projectedFinish, dayDemand } from '../logic/pacing.js';
 import { observedPace, bookTotals, formatDuration } from '../logic/sessions.js';
 import { formatShort, formatLong, addDays, spanLength, isValidKey } from '../lib/dates.js';
 import { formatUnit, STATUSES } from '../data/schema.js';
@@ -30,18 +30,8 @@ export function dayRow({ book, state }, dayKey, todayKey, { redraw, beforeOpenRe
   const large = size === 'large';
   const pace = paceFor(book, dayKey, todayKey);
   const unit = formatUnit(book);
-  const noun = unit === 'minutes' ? 'minutes' : 'pages';
 
-  const lead =
-    state === 'finished'
-      ? 'Finished on this day'
-      : !pace.ok
-        ? pace.reason
-        : !pace.inPlan
-          ? 'Outside this book\u2019s plan'
-          : `${pace.todayTarget} ${noun} ${
-              dayKey < todayKey ? 'were due' : dayKey === todayKey ? 'to read today' : 'due that day'
-            }`;
+  const demand = dayDemand(book, dayKey, state, todayKey);
 
   return el('article.day-row', { class: large ? 'day-row--large' : '' }, [
     coverThumb(book, { width: large ? '150px' : '76px', alt: '', fit: 'whole' }),
@@ -61,7 +51,8 @@ export function dayRow({ book, state }, dayKey, todayKey, { redraw, beforeOpenRe
         el('span', { class: `chip chip--${book.status}` }, STATUSES[book.status].label),
       ]),
 
-      el('p.day-row__lead', { class: `is-${state}` }, lead),
+      el('p.day-row__lead', { class: `is-${state}` }, demand.lead),
+      demand.note ? el('p.day-row__catchup', {}, demand.note) : null,
 
       large && book.description
         ? el('p.day-row__description', {}, book.description)

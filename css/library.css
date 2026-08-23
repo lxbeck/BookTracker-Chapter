@@ -410,3 +410,12 @@
   text-transform: uppercase;
   color: var(--ink-inverse-soft);
 }
+
+/* Where the copy came from, when the record says. */
+.shelf-card__source {
+  font-family: var(--face-slip);
+  font-size: 0.625rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}

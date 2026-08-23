@@ -17,8 +17,9 @@ import { el, fill, toast } from '../lib/dom.js';
 import { allBooks, getSettings, updateSettings, rescheduleBook, getBook } from '../data/store.js';
 import { monthGrid, monthName, weekdayLabels, today, addDays, formatLong, toKey } from '../lib/dates.js';
 import { groupByDay, DAY_STATE_LABEL, CALENDAR_MODES } from '../logic/schedule.js';
-import { matchesKinds } from '../data/schema.js';
+import { FORMATS, FORMAT_PRIORITY, hasFormat } from '../data/schema.js';
 import { kindsPresent, kindLabel } from '../data/kinds.js';
+import { sourcesPresent, sourceLabel } from '../data/sources.js';
 import { coverThumb } from './cover.js';
 import { openBookForm } from './bookForm.js';
 import { loadSampleLibrary } from '../data/seed.js';
@@ -93,13 +94,74 @@ function chunkByPlan(items) {
 let cursor = null;
 
 /**
- * Which kinds are on show. Empty means everything.
+ * What is on show. An empty set means everything of that sort.
  *
- * Filtering by kind is the real answer to a crowded day: hiding what you
- * aren't looking for beats a "+4" chip, because the chip tells you something
- * is missing without telling you what.
+ * Filtering is the real answer to a crowded day: hiding what you aren't
+ * looking for beats a "+4" chip, because the chip tells you something is
+ * missing without telling you what.
+ *
+ * Three separate questions, because they are genuinely independent — "the
+ * comics" and "the audiobooks" and "the ones from the library" can each be
+ * asked on their own or together. Within a row the toggles are additive
+ * (comics *or* manga); across rows they narrow (comics *and* audiobook), which
+ * is the only reading that makes sense: a book is one kind but may be several
+ * formats, and asking for comics-or-audiobooks would be a search, not a filter.
  */
 const visibleKinds = new Set();
+const visibleFormats = new Set();
+const visibleSources = new Set();
+
+/** Every filter row, so adding a fourth is a row in this table. */
+const FILTER_ROWS = [
+  {
+    id: 'kinds',
+    label: 'Kind',
+    aria: 'Kinds shown',
+    selected: () => visibleKinds,
+    // Every kind actually scheduled *in the month on screen*, including kinds
+    // invented in Settings. Offering a toggle for an anthology planned for
+    // November while you are looking at August is offering to filter a grid
+    // down to nothing.
+    present: (books) => kindsPresent(books),
+    matches: (book, selected) => selected.has(book.category),
+    name: (id) => kindLabel(id),
+  },
+  {
+    id: 'formats',
+    label: 'Format',
+    aria: 'Formats shown',
+    selected: () => visibleFormats,
+    present: (books) =>
+      FORMAT_PRIORITY
+        .map((id) => ({
+          id,
+          label: FORMATS[id].label,
+          count: books.filter((book) => hasFormat(book, id)).length,
+        }))
+        .filter((entry) => entry.count > 0),
+    // A book read on paper with the audiobook playing answers to both, because
+    // it genuinely is both.
+    matches: (book, selected) => [...selected].some((id) => hasFormat(book, id)),
+    name: (id) => FORMATS[id]?.label ?? id,
+  },
+  {
+    id: 'sources',
+    label: 'Where from',
+    aria: 'Sources shown',
+    selected: () => visibleSources,
+    present: (books) => sourcesPresent(books),
+    matches: (book, selected) => selected.has(book.source),
+    name: (id) => sourceLabel(id),
+  },
+];
+
+/** Does this book survive every filter row currently narrowing the grid? */
+function matchesFilters(book) {
+  return FILTER_ROWS.every((row) => {
+    const selected = row.selected();
+    return selected.size === 0 || row.matches(book, selected);
+  });
+}
 
 /**
  * Which calendar this is: the plan, or the record.
@@ -145,18 +207,22 @@ export function parseCalendarHash(hash) {
   const mode = params.get('mode');
   if (CALENDAR_MODES.includes(mode)) state.mode = mode;
 
-  if (params.has('kinds')) {
-    state.kinds = params.get('kinds').split(',').map((id) => id.trim()).filter(Boolean);
+  for (const row of FILTER_ROWS) {
+    if (!params.has(row.id)) continue;
+    state[row.id] = params.get(row.id).split(',').map((id) => id.trim()).filter(Boolean);
   }
 
   return state;
 }
 
 /** The address for a given view state. Defaults are left out, not spelled out. */
-export function calendarHash({ mode = 'plan', kinds = [] } = {}) {
+export function calendarHash({ mode = 'plan', kinds = [], formats = [], sources = [] } = {}) {
   const params = new URLSearchParams();
   if (mode !== 'plan') params.set('mode', mode);
-  if (kinds.length) params.set('kinds', kinds.join(','));
+
+  for (const [id, values] of [['kinds', kinds], ['formats', formats], ['sources', sources]]) {
+    if (values.length) params.set(id, values.join(','));
+  }
 
   const query = params.toString();
   return `#/calendar${query ? `?${query}` : ''}`;
@@ -186,14 +252,22 @@ function readUrlState() {
   const state = parseCalendarHash(location.hash);
 
   if (state.mode) calendarMode = state.mode;
-  if (state.kinds) {
-    visibleKinds.clear();
-    for (const id of state.kinds) visibleKinds.add(id);
+
+  for (const row of FILTER_ROWS) {
+    if (!state[row.id]) continue;
+    const selected = row.selected();
+    selected.clear();
+    for (const id of state[row.id]) selected.add(id);
   }
 }
 
 function writeUrlState() {
-  const next = calendarHash({ mode: calendarMode, kinds: [...visibleKinds] });
+  const next = calendarHash({
+    mode: calendarMode,
+    kinds: [...visibleKinds],
+    formats: [...visibleFormats],
+    sources: [...visibleSources],
+  });
   writtenHash = next;
 
   // replaceState rather than assigning to location.hash: this is a repaint of
@@ -249,7 +323,7 @@ export function renderCalendar(mount) {
   hideHoverCard();
   readUrlState();
   const everything = allBooks();
-  const books = everything.filter((book) => matchesKinds(book, visibleKinds));
+  const books = everything.filter(matchesFilters);
   const todayKey = today();
   const { weekStartsOn } = getSettings();
 
@@ -291,7 +365,7 @@ export function renderCalendar(mount) {
 
     el('div.cal-filters', {}, [
       modeSwitch(mount),
-      kindToggles(everything, mount),
+      ...(filterToggles(everything, mount) ?? []),
     ].filter(Boolean)),
 
     isLog
@@ -412,50 +486,60 @@ export function nextVisibleKinds(selected, id, showingAll) {
 }
 
 /**
- * One switch per kind, plus an explicit "Everything".
+ * One row of switches per thing worth narrowing by, each with an explicit
+ * "Everything".
  *
- * Toggling is additive: comics and manga on together shows both and hides
- * books. Turning everything off is treated as everything on rather than an
- * empty calendar, since an empty grid with no visible way back is a trap.
+ * Toggling within a row is additive: comics and manga on together shows both
+ * and hides books. Turning everything off in a row is treated as everything on
+ * rather than an empty calendar, since an empty grid with no visible way back
+ * is a trap.
+ *
+ * The rows are built from one table (see FILTER_ROWS) rather than written out
+ * three times, because three near-identical copies of this is how the second
+ * one quietly stops matching the first.
  */
-function kindToggles(books, mount) {
-  // Every kind actually scheduled *in the month on screen*, including kinds
-  // invented in Settings. Offering a toggle for an anthology that is planned
-  // for November while you are looking at August is offering to filter a grid
-  // down to nothing — and since the row is rebuilt on every render, arrowing
-  // to another month re-reads it.
-  const present = kindsPresent(booksInView(books));
+function filterToggles(books, mount) {
+  const inView = booksInView(books);
 
-  // Nothing to choose between when only one kind is scheduled.
+  const rows = FILTER_ROWS.map((row) => filterRow(row, inView, mount)).filter(Boolean);
+  return rows.length ? rows : null;
+}
+
+function filterRow(row, inView, mount) {
+  const present = row.present(inView);
+
+  // Nothing to choose between when everything in view answers the same way.
   if (present.length < 2) return null;
 
-  const showingAll = visibleKinds.size === 0 || visibleKinds.size === present.length;
+  const selected = row.selected();
+  const showingAll = selected.size === 0 || selected.size === present.length;
 
-  return el('div.kind-toggles', { role: 'group', 'aria-label': 'Kinds shown' }, [
+  const apply = (next) => {
+    selected.clear();
+    for (const id of next) selected.add(id);
+    rerender(mount);
+  };
+
+  return el('div.kind-toggles', { role: 'group', 'aria-label': row.aria }, [
+    // Three rows need saying apart; one did not.
+    el('span.kind-toggles__title', {}, row.label),
+
     el('button.kind-toggle.kind-toggle--all', {
       type: 'button',
       class: showingAll ? 'is-on' : '',
       'aria-pressed': String(showingAll),
-      onClick: () => {
-        visibleKinds.clear();
-        rerender(mount);
-      },
+      onClick: () => apply([]),
     }, 'Everything'),
 
-    ...present.map((kind) =>
+    ...present.map((entry) =>
       el('button.kind-toggle', {
         type: 'button',
-        class: !showingAll && visibleKinds.has(kind.id) ? 'is-on' : '',
-        'aria-pressed': String(!showingAll && visibleKinds.has(kind.id)),
-        onClick: () => {
-          const next = nextVisibleKinds(visibleKinds, kind.id, showingAll);
-          visibleKinds.clear();
-          for (const id of next) visibleKinds.add(id);
-          rerender(mount);
-        },
+        class: !showingAll && selected.has(entry.id) ? 'is-on' : '',
+        'aria-pressed': String(!showingAll && selected.has(entry.id)),
+        onClick: () => apply(nextVisibleKinds(selected, entry.id, showingAll)),
       }, [
-        kind.label,
-        el('span.kind-toggle__count', {}, String(kind.count)),
+        entry.label,
+        el('span.kind-toggle__count', {}, String(entry.count)),
       ])
     ),
 
@@ -465,7 +549,7 @@ function kindToggles(books, mount) {
     // "showing  only".
     !showingAll
       ? el('span.kind-toggles__note', {},
-          `showing ${[...visibleKinds].map((id) => kindLabel(id).toLowerCase()).join(' and ')} only`)
+          `${[...selected].map((id) => row.name(id).toLowerCase()).join(' and ')} only`)
       : null,
   ].filter(Boolean));
 }

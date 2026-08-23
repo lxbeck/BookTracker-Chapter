@@ -104,6 +104,8 @@ const CSV_COLUMNS = [
   ['format', (b) => b.format],
   ['formats', (b) => b.formats.join('; ')],
   ['status', (b) => b.status],
+  ['kind', (b) => b.category],
+  ['source', (b) => b.source ?? ''],
   ['genre', (b) => b.genre],
   ['shelves', (b) => b.shelves.join('; ')],
   ['series', (b) => b.series.name],
@@ -113,6 +115,9 @@ const CSV_COLUMNS = [
   ['percent', (b) => (b.progress.percent ? Math.round(b.progress.percent) : '')],
   ['planned_start', (b) => b.schedule.start ?? ''],
   ['planned_end', (b) => b.schedule.end ?? ''],
+  // How often the plan moved, which is a fact about the reading and not just
+  // about the record.
+  ['times_rescheduled', (b) => b.schedule.history?.length ?? 0],
   ['started', (b) => b.actual.startedAt ?? ''],
   ['finished', (b) => b.actual.finishedAt ?? ''],
   ['sessions', (b) => b.sessions.length],

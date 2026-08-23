@@ -13,7 +13,7 @@ import { libraryTotals, formatDuration } from '../logic/sessions.js';
 import { today, addDays, formatLong, relativeDay, formatShort } from '../lib/dates.js';
 import { openBookForm } from './bookForm.js';
 import { coverThumb } from './cover.js';
-import { paceFor, paceStanding } from '../logic/pacing.js';
+import { paceFor, paceStanding, dayDemand } from '../logic/pacing.js';
 import { DAY_STATE_LABEL } from '../logic/schedule.js';
 import { formatUnit } from '../data/schema.js';
 import { setStatus } from '../data/store.js';
@@ -199,19 +199,9 @@ function weekStrip(books, dayKey, todayKey, mount) {
 function dayCard({ book, state }, dayKey, todayKey, redraw) {
   const pace = paceFor(book, dayKey, todayKey);
   const unit = formatUnit(book);
-  const noun = unit === 'minutes' ? 'minutes' : 'pages';
   const standing = paceStanding(book, todayKey);
 
-  const lead =
-    state === 'finished'
-      ? 'Finished on this day'
-      : !pace.ok
-        ? pace.reason
-        : !pace.inPlan
-          ? 'Outside this book\u2019s plan'
-          : `${pace.todayTarget} ${noun} ${
-              dayKey < todayKey ? 'were due' : dayKey === todayKey ? 'to read today' : 'due that day'
-            }`;
+  const demand = dayDemand(book, dayKey, state, todayKey);
 
   return el('article.day-card', {}, [
     // Clicking the cover opens the book, the same as it does on the calendar.
@@ -228,7 +218,9 @@ function dayCard({ book, state }, dayKey, todayKey, redraw) {
       el('p.day-card__state', { class: `is-${state}` }, DAY_STATE_LABEL[state]),
       el('h3.day-card__title', {}, book.title),
       el('p.day-card__author', {}, book.author || 'Unknown author'),
-      el('p.day-card__lead', {}, lead),
+      el('p.day-card__lead', {}, demand.lead),
+      // Why today's number is not the number the plan was written with.
+      demand.note ? el('p.day-card__meta', {}, demand.note) : null,
       pace.ok
         ? el('p.day-card__meta', {},
             `Day ${Math.min(Math.max(pace.dayIndex, 1), pace.days)} of ${pace.days} \u00b7 target ${unit === 'minutes' ? '' : 'page '}${pace.cumulative}`.trim())

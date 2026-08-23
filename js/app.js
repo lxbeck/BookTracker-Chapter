@@ -14,6 +14,7 @@ import { warmCoverCache, setServerCovers, evacuateDataUrls } from './data/coverC
 import { configureSources } from './data/covers.js';
 import { applyTheme } from './data/theme.js';
 import { configureKinds } from './data/kinds.js';
+import { configureSourceList } from './data/sources.js';
 import { guardStrayDrops } from './views/coverDrop.js';
 import { installShortcuts } from './views/shortcuts.js';
 import { renderLibrary } from './views/library.js';
@@ -98,15 +99,20 @@ function paintSaveStatus() {
   // shared. Sync failing while the local write succeeds is a warning, not an
   // error — nothing has been lost.
   const failing = !status.saving;
+  // Which library, when it isn't the only one: the indicator is the one thing
+  // on screen that can say "these books, in this browser" without being asked.
+  const libraries = store.allLibraries();
+  const named = libraries.libraries.length > 1 ? ` \u00b7 ${store.activeLibrary().name}` : '';
+
   const label = failing
     ? 'Not saving'
     : sync.mode === 'syncing'
-      ? 'Synced'
+      ? `Synced${named}`
       : sync.mode === 'offline'
-        ? 'Saved here, offline'
+        ? `Saved here, offline${named}`
         : time
-          ? `Saved ${time}`
-          : 'Saved locally';
+          ? `Saved ${time}${named}`
+          : `Saved locally${named}`;
 
   slot.className = `save-status ${failing ? 'is-failing' : sync.mode === 'offline' ? 'is-waiting' : 'is-ok'}`;
   slot.title = failing
@@ -141,6 +147,9 @@ function paintSaveStatus() {
 function applySettings(settings) {
   configureSources(settings.sources);
   configureKinds(settings.kinds);
+  // `sources` is the lookup catalogues; `bookSources` is where a copy came
+  // from. Two different settings, and the older one had the better name first.
+  configureSourceList(settings.bookSources);
   applyTheme(settings.theme, settings);
 
   const name = String(settings.libraryName ?? '').trim();

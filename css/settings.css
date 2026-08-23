@@ -354,3 +354,21 @@ kbd {
 .settings-block__body {
   margin-top: var(--s3);
 }
+
+/* The library that is open, in the list of libraries. */
+.plain-list__row.is-current {
+  background: var(--stamp-wash);
+  border-radius: var(--r-control);
+}
+
+.plain-list__tag {
+  font-family: var(--face-slip);
+  font-size: 0.5625rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--stamp-deep);
+  border: 1px solid currentColor;
+  border-radius: var(--r-control);
+  padding: 0 5px;
+  margin-left: var(--s2);
+}

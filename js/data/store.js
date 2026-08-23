@@ -19,12 +19,160 @@ import {
   validateOrder,
   resolveProgress,
 } from './schema.js';
-import { addDays, daysBetween } from '../lib/dates.js';
+import { addDays, daysBetween, today } from '../lib/dates.js';
 
-const STORAGE_KEY = 'chapter.library.v1';
+/* --- Which library ---------------------------------------------------------
 
-/** @type {{version: number, books: Object[], settings: Object}} */
-let state = {
+   More than one library on one device: a shared household shelf and a private
+   one, work reading and everything else, a real catalogue and a sandbox to
+   try an import in. Each is a separate value under its own key, and only one
+   is open at a time — they are separate libraries, not filtered views of one,
+   so nothing leaks between them.
+
+   The first library keeps the original key. Anyone who has been using Chapter
+   since before this existed has exactly one library, under exactly the key it
+   has always been under, and never has to know any of this happened.
+   ---------------------------------------------------------------------------- */
+
+const BASE_KEY = 'chapter.library.v1';
+
+/** Which libraries exist, and which one is open. Its own key, deliberately. */
+const CATALOGUE_KEY = 'chapter.libraries.v1';
+
+const DEFAULT_LIBRARY = { id: 'main', name: 'My library' };
+
+let catalogue = { active: DEFAULT_LIBRARY.id, libraries: [{ ...DEFAULT_LIBRARY }] };
+
+/** The storage key for one library. The first is the original, unprefixed. */
+const keyFor = (id) => (id === DEFAULT_LIBRARY.id ? BASE_KEY : `${BASE_KEY}.${id}`);
+
+let STORAGE_KEY = BASE_KEY;
+
+function loadCatalogue() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(CATALOGUE_KEY) ?? 'null');
+    const libraries = (Array.isArray(parsed?.libraries) ? parsed.libraries : [])
+      .map((entry) => ({
+        id: String(entry?.id ?? '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40),
+        name: String(entry?.name ?? '').trim().slice(0, 60) || 'Untitled library',
+      }))
+      .filter((entry) => entry.id);
+
+    if (!libraries.some((entry) => entry.id === DEFAULT_LIBRARY.id)) {
+      libraries.unshift({ ...DEFAULT_LIBRARY });
+    }
+
+    const active = libraries.some((entry) => entry.id === parsed?.active)
+      ? parsed.active
+      : DEFAULT_LIBRARY.id;
+
+    catalogue = { active, libraries };
+  } catch {
+    catalogue = { active: DEFAULT_LIBRARY.id, libraries: [{ ...DEFAULT_LIBRARY }] };
+  }
+
+  STORAGE_KEY = keyFor(catalogue.active);
+}
+
+function saveCatalogue() {
+  try {
+    localStorage.setItem(CATALOGUE_KEY, JSON.stringify(catalogue));
+  } catch {
+    /* the library itself matters more; a failed write is already surfaced */
+  }
+}
+
+/** @returns {{active: string, libraries: {id: string, name: string}[]}} */
+export const allLibraries = () => ({
+  active: catalogue.active,
+  libraries: catalogue.libraries.map((entry) => ({ ...entry })),
+});
+
+/** The one that is open. */
+export const activeLibrary = () =>
+  catalogue.libraries.find((entry) => entry.id === catalogue.active) ?? { ...DEFAULT_LIBRARY };
+
+/** True when the library on screen is the one the sync server holds. */
+export const isDefaultLibrary = () => catalogue.active === DEFAULT_LIBRARY.id;
+
+/**
+ * Open a different library.
+ *
+ * The current one is already written after every change, so there is nothing
+ * to flush: this swaps the key and reloads from storage. Callers re-render,
+ * because everything on screen belongs to the library that was open a moment
+ * ago.
+ */
+export function switchLibrary(id) {
+  if (!catalogue.libraries.some((entry) => entry.id === id)) return { ok: false };
+  if (id === catalogue.active) return { ok: true, library: activeLibrary() };
+
+  catalogue.active = id;
+  STORAGE_KEY = keyFor(id);
+  saveCatalogue();
+
+  state = blankState();
+  load();
+  for (const listener of listeners) listener(state);
+
+  return { ok: true, library: activeLibrary() };
+}
+
+export function createLibrary(name) {
+  const clean = String(name ?? '').trim().slice(0, 60);
+  if (!clean) return { ok: false, error: 'Give the library a name.' };
+
+  const base = clean.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 24)
+    || 'library';
+  let id = base;
+  let n = 2;
+  while (catalogue.libraries.some((entry) => entry.id === id)) id = `${base}-${n++}`;
+
+  catalogue.libraries.push({ id, name: clean });
+  saveCatalogue();
+  return { ok: true, library: { id, name: clean } };
+}
+
+export function renameLibrary(id, name) {
+  const clean = String(name ?? '').trim().slice(0, 60);
+  const entry = catalogue.libraries.find((library) => library.id === id);
+  if (!entry || !clean) return { ok: false };
+
+  entry.name = clean;
+  saveCatalogue();
+  return { ok: true, library: { ...entry } };
+}
+
+/**
+ * Delete a library and everything in it.
+ *
+ * The first one cannot be deleted: it is where a device that has never heard
+ * of any of this keeps its books, and there has to be somewhere to land.
+ */
+export function deleteLibrary(id) {
+  if (id === DEFAULT_LIBRARY.id) return { ok: false, error: 'The first library cannot be deleted.' };
+  if (!catalogue.libraries.some((entry) => entry.id === id)) return { ok: false };
+
+  catalogue.libraries = catalogue.libraries.filter((entry) => entry.id !== id);
+  try {
+    localStorage.removeItem(keyFor(id));
+  } catch {
+    /* nothing to do: the entry is gone from the catalogue either way */
+  }
+
+  if (catalogue.active === id) {
+    catalogue.active = DEFAULT_LIBRARY.id;
+    STORAGE_KEY = keyFor(catalogue.active);
+    state = blankState();
+    load();
+  }
+
+  saveCatalogue();
+  for (const listener of listeners) listener(state);
+  return { ok: true };
+}
+
+const blankState = () => ({
   version: SCHEMA_VERSION,
   books: [],
   settings: { weekStartsOn: 0 },
@@ -33,7 +181,10 @@ let state = {
   deleted: [],
   readingOrders: [],
   settingsUpdatedAt: undefined,
-};
+});
+
+/** @type {{version: number, books: Object[], settings: Object}} */
+let state = blankState();
 
 /** @type {Set<(state: object) => void>} */
 const listeners = new Set();
@@ -173,6 +324,7 @@ export function subscribe(listener) {
 }
 
 export function init() {
+  loadCatalogue();
   load();
   return state;
 }
@@ -221,7 +373,7 @@ export function updateBook(id, patch) {
     ...defined,
     series: { ...existing.series, ...defined.series },
     cover: { ...existing.cover, ...defined.cover },
-    schedule: { ...existing.schedule, ...defined.schedule },
+    schedule: recordPlanChange(existing, { ...existing.schedule, ...defined.schedule }),
     actual: { ...existing.actual, ...defined.actual },
     progress: { ...existing.progress, ...defined.progress },
     id: existing.id,
@@ -305,6 +457,53 @@ export function restoreBook(book) {
     }
     state.deleted = (state.deleted ?? []).filter((entry) => entry.id !== book.id);
   });
+}
+
+/**
+ * Keep the plan a book used to have.
+ *
+ * Every route that moves a plan comes through `updateBook` — dragging a cover,
+ * the Move dialog, a bulk shift, catching up, editing the dates by hand — so
+ * this is the one place that can see a plan change at all. Two things were
+ * lost without it: the chart of "what the plan asked for" redrew itself around
+ * whatever plan was current, so a book you had rescheduled looked like it was
+ * *ahead*; and there was no way to know a book had been moved four times,
+ * which is the most useful thing the record can tell you about it.
+ *
+ * A plan is only filed away when the dates actually change. Saving a record
+ * without touching them is not a reschedule.
+ */
+function recordPlanChange(existing, next) {
+  const was = existing.schedule ?? {};
+  const moved = was.start !== next.start || was.end !== next.end;
+
+  if (!moved || !was.start) return next;
+
+  // A moved plan is a plan for what is left.
+  //
+  // Reschedule an audiobook you are eighty per cent through to finish it
+  // tomorrow, and the plan used to ask for the whole 310 minutes again — it
+  // spread the book's full length across the new span as though the seven
+  // sittings behind it had not happened. A rebase is exactly the record for
+  // "from here, this much remains", already written by Catch me up; moving a
+  // plan for a part-read book means the same thing, so it writes one too.
+  //
+  // Only where there is progress to account for. A book nobody has started
+  // has nothing to count from, and a rebase at page zero is just noise on the
+  // record.
+  const done = Math.min(existing.progress?.page ?? 0, existing.pageCount ?? Infinity);
+  const rebase = done > 0 && next.start
+    ? { at: next.start, page: done, originalStart: was.rebase?.originalStart ?? was.start }
+    : next.rebase;
+
+  return {
+    ...next,
+    rebase,
+    history: [
+      ...(was.history ?? []),
+      { start: was.start, end: was.end ?? was.start, at: today() },
+    ].slice(-12),
+  };
 }
 
 /**

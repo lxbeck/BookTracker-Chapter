@@ -9,7 +9,7 @@
  */
 
 import { today, daysBetween, addDays } from '../lib/dates.js';
-import { sessionPages } from '../data/schema.js';
+import { sessionPages, formatUnit } from '../data/schema.js';
 
 /**
  * Totals for one book's log.
@@ -102,6 +102,18 @@ export function readingStreak(books, todayKey = today()) {
  *   minutesPerPage: number|null, elapsed: number, source: string}}
  */
 export function observedPace(book, todayKey = today()) {
+  // "Since you started" only means something while you are still reading.
+  // Everything here measures elapsed time against `todayKey` — the real,
+  // ever-advancing today — which is exactly right for a book in progress and
+  // exactly wrong for one that isn't: a finished book with nothing logged kept
+  // dividing its page count by "days since it was started", a number that
+  // grows every single day it sits on the shelf, so the reported pace quietly
+  // approached zero the longer ago it was actually finished. A paused or
+  // abandoned book has the same problem in the other direction — the plan it
+  // was dropped from keeps sliding later relative to a "today" it is no
+  // longer measured against.
+  if (book.status !== 'reading') return { ok: false, source: 'none' };
+
   const totals = bookTotals(book);
   const start = totals.firstDay ?? book.actual.startedAt ?? book.schedule.start;
 
@@ -217,4 +229,75 @@ export function historySummary(book) {
     `, with ${history.gaps.length} break${history.gaps.length === 1 ? '' : 's'}` +
     ` (longest ${history.longestGap} days)`
   );
+}
+
+/**
+ * What finishing a book actually took.
+ *
+ * A finished record used to say "finished" and stop, which throws away the
+ * interesting part: a book read in four sittings over a fortnight and the same
+ * book ground through over eight months are the same row on a shelf and
+ * completely different reading. Everything here is counted from the log and
+ * the dates, so it stays true if a session is corrected later.
+ *
+ * @param {object} book
+ * @returns {{ok: boolean, from?: string, to?: string, days?: number,
+ *   readingDays?: number, sessions?: number, minutes?: number, pages?: number,
+ *   pagesPerHour?: number|null, pagesPerReadingDay?: number|null}}
+ */
+export function finishedSummary(book) {
+  const totals = bookTotals(book);
+  const days = readingDaysFor(book);
+
+  const from = book.actual.startedAt ?? days[0] ?? null;
+  const to = book.actual.finishedAt ?? days.at(-1) ?? null;
+  if (!from || !to) return { ok: false };
+
+  const pages = book.pageCount ?? totals.pages;
+  const span = Math.max(1, daysBetween(from, to) + 1);
+  const unit = formatUnit(book);
+
+  /**
+   * Speed, measured only over the sittings that were actually timed.
+   *
+   * Dividing the whole book by the whole log is wrong the moment one sitting
+   * was logged without minutes — which is most logs, because the minutes are
+   * optional and often unknown. The old sum said a 310-minute audiobook was
+   * read at "266 minutes an hour", which is both impossible and, read closely,
+   * the arithmetic admitting it had divided a whole book by an hour of it.
+   */
+  const timed = (book.sessions ?? []).filter((session) => (session.minutes ?? 0) > 0);
+  const timedMinutes = timed.reduce((sum, session) => sum + session.minutes, 0);
+  const timedUnits = timed.reduce((sum, session) => sum + sessionPages(session), 0);
+
+  // An audiobook's "pages" are minutes of audio, so units per hour is a
+  // playback speed, not a reading rate — and "266 minutes an hour" is not a
+  // sentence about anything. Said as a multiple of the clock instead.
+  const perHour = timedMinutes && timedUnits ? (timedUnits / timedMinutes) * 60 : null;
+  const listening = unit === 'minutes';
+
+  return {
+    ok: true,
+    from,
+    to,
+    unit,
+    // Inclusive: a book started and finished on the same day took a day.
+    days: span,
+    readingDays: days.length,
+    sessions: totals.sessions,
+    timedSessions: timed.length,
+    minutes: totals.minutes,
+    pages,
+    pagesPerHour: !listening && perHour ? Math.round(perHour) : null,
+    // Anything outside half to five times the clock is a mis-logged position
+    // rather than a listening habit, and a confident "4.4x" would be worse
+    // than saying nothing.
+    listenedAt: listening && perHour && perHour / 60 >= 0.5 && perHour / 60 <= 5
+      ? Math.round((perHour / 60) * 10) / 10
+      : null,
+    // Said out loud, because a rate computed from two of five sittings is a
+    // real number about a partial log and reads as a claim about the whole.
+    partiallyTimed: timed.length > 0 && timed.length < totals.sessions,
+    pagesPerReadingDay: days.length ? Math.round(pages / days.length) : null,
+  };
 }

@@ -1,5 +1,8 @@
-# Runtime data written by server.mjs — your library, not the project's
-data/
+# Runtime data written by server.mjs — your library, not the project's.
+# Anchored to the root: an unanchored `data/` also matches `js/data/`, which
+# silently kept a new module in there out of every commit until someone cloned
+# the repo and found the app broken.
+/data/
 
 node_modules/
 .DS_Store

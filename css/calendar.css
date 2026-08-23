@@ -573,6 +573,25 @@ body.is-rescheduling .cal__day {
 
 .cal-filters .kind-toggles {
   margin-bottom: 0;
+  /* `flex: none` on the base rule was fine when this was the only row sitting
+     beside the mode switch. With a label and up to six switches in it, a row
+     that refuses to shrink runs off the side of a phone instead of wrapping —
+     and `min-width: 0` alone cannot help, because flex-shrink: 0 means the
+     item is never asked to shrink in the first place. */
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* Three rows of switches need saying apart; one did not. The label reads as a
+   quiet prefix to its row rather than as another button in it. */
+.kind-toggles__title {
+  font-family: var(--face-slip);
+  font-size: var(--size-xs);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-inverse-soft);
+  opacity: 0.75;
+  margin-right: calc(-1 * var(--s1));
 }
 
 /* One control, two halves: a joined pair reads as a switch between two states,

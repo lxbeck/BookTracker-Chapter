@@ -11,6 +11,7 @@ import {
   allBooks, getSettings, updateSettings, replaceAll, mergeBooks,
   allOrders, removeOrder, restoreOrder, restoreBook, recentlyDeleted, restoreDeleted, forgetDeleted,
   storageStatus, requestPersistentStorage,
+  allLibraries, createLibrary, renameLibrary, deleteLibrary, switchLibrary,
 } from '../data/store.js';
 import {
   exportJson, exportJsonWithCovers, exportCsv, exportSessionsCsv,
@@ -29,6 +30,7 @@ import {
   THEME_COLOURS, availableThemes, normalizeTheme, resolveTheme, applyTheme, isColour,
 } from '../data/theme.js';
 import { allKinds, customKinds, kindLabel, idFromLabel } from '../data/kinds.js';
+import { allSources, customSources, sourcesPresent } from '../data/sources.js';
 import { buildSnapshot } from '../data/snapshot.js';
 import { buildIcs, icsEventCount } from '../data/ics.js';
 import { showShortcuts } from './shortcuts.js';
@@ -55,6 +57,7 @@ export function renderSettings(mount) {
     ]),
 
     appearanceSection(settings, redraw),
+    librariesSection(redraw),
     librarySection(settings, books, redraw),
     syncSection(),
     sourcesSection(settings, redraw),
@@ -344,7 +347,9 @@ function librarySection(settings, books, redraw) {
       el('button.btn.btn--stamp.btn--sm', { type: 'button', onClick: saveName }, 'Save name'),
     ]),
     kindsBlock(books, redraw),
+    bookSourcesBlock(books, redraw),
     filterRowsBlock(settings, redraw),
+    hiddenNeedsBlock(settings, redraw),
     el('div.settings__block', {}, [
       el('h4.settings__subtitle', {}, 'Keyboard'),
       el('p.settings__hint', {},
@@ -356,7 +361,6 @@ function librarySection(settings, books, redraw) {
     ]),
     shelvesBlock(books, redraw),
     listsBlock(redraw),
-    hiddenNeedsBlock(settings, redraw),
   ]);
 }
 
@@ -410,6 +414,7 @@ function filterRowsBlock(settings, redraw) {
 /** Kept in step with the rows rendered by the library view. */
 const FILTER_ROWS = [
   ['kind', 'Kind'],
+  ['sources', 'Where from'],
   ['genre', 'Genre'],
   ['format', 'Format'],
   ['shelves', 'Shelves'],
@@ -544,6 +549,182 @@ function listsBlock(redraw) {
  * record and by the calendar's kind groups, so removing one strands books
  * rather than freeing them.
  */
+/**
+ * More than one library on this device.
+ *
+ * Two libraries, not two views of one: a shared household shelf and a private
+ * one, work reading and everything else, a real catalogue and somewhere to try
+ * an import before it touches anything. Switching swaps the whole thing —
+ * books, lists, shelves, settings — because a filtered view would leak, and
+ * leaking is the one thing separate libraries are for.
+ */
+function librariesSection(redraw) {
+  const { active, libraries } = allLibraries();
+
+  const nameInput = el('input.input', {
+    type: 'text',
+    placeholder: 'Work reading',
+    maxlength: '60',
+    'aria-label': 'Name for a new library',
+  });
+
+  const add = () => {
+    const result = createLibrary(nameInput.value);
+    if (!result.ok) {
+      toast(result.error ?? 'That name will not do.', { variant: 'error' });
+      return;
+    }
+    nameInput.value = '';
+    toast(`${result.library.name} created. Switch to it when you want it.`);
+    redraw();
+  };
+
+  const open = (id) => {
+    const result = switchLibrary(id);
+    if (result.ok) toast(`Now showing ${result.library.name}.`);
+    redraw();
+  };
+
+  const drop = async (library) => {
+    const sure = await confirmAction({
+      title: `Delete "${library.name}" and everything in it?`,
+      body: 'Every book, list and shelf in that library goes with it. Export a backup from it first if you might want it back.',
+      confirmLabel: 'Delete the library',
+    });
+    if (!sure) return;
+
+    const result = deleteLibrary(library.id);
+    toast(result.ok ? `${library.name} deleted.` : (result.error ?? 'That library could not be deleted.'),
+      { variant: result.ok ? 'info' : 'error' });
+    redraw();
+  };
+
+  return section('Libraries', [
+    el('p.settings__hint', {}, 'Separate collections on this device. One is open at a time, and nothing crosses between them.'),
+
+    el('ul.plain-list', {}, libraries.map((library) =>
+      el('li.plain-list__row', { class: library.id === active ? 'is-current' : '' }, [
+        el('span.plain-list__name', {}, [
+          library.name,
+          library.id === active ? el('span.plain-list__tag', {}, 'open') : null,
+        ].filter(Boolean)),
+        el('span.plain-list__aside', {}, [
+          library.id === active
+            ? null
+            : el('button.link-btn', { type: 'button', onClick: () => open(library.id) }, 'Switch to it'),
+          el('button.link-btn', {
+            type: 'button',
+            onClick: () => {
+              const next = prompt(`Rename "${library.name}" to:`, library.name);
+              if (!next?.trim()) return;
+              renameLibrary(library.id, next);
+              redraw();
+            },
+          }, 'Rename'),
+          library.id === 'main'
+            ? null
+            : el('button.link-btn.is-danger', { type: 'button', onClick: () => drop(library) }, 'Delete'),
+        ].filter(Boolean)),
+      ]))),
+
+    el('div.settings__row', {}, [
+      nameInput,
+      el('button.btn.btn--stamp.btn--sm', { type: 'button', onClick: add }, 'Add a library'),
+    ]),
+
+    // Said here rather than discovered later: the server holds one library,
+    // and pushing a second one at it would merge two collections into one.
+    el('p.settings__note', {},
+      'The sync server holds one library — the first. Any library you add here stays in this browser, '
+      + 'and the save indicator says which one you are looking at.'),
+  ]);
+}
+
+/**
+ * Where copies come from.
+ *
+ * The same shape as kinds, for the same reason: the built-in list is a guess,
+ * and a reading copy from a publisher or a book found in a hotel is a real
+ * answer that no fixed list was ever going to contain.
+ */
+function bookSourcesBlock(books, redraw) {
+  const input = el('input.input', {
+    type: 'text',
+    placeholder: 'Review copy',
+    maxlength: '40',
+    'aria-label': 'New source',
+  });
+
+  const add = () => {
+    const label = input.value.trim();
+    if (!label) return;
+
+    const id = idFromLabel(label);
+    if (!id) {
+      toast('That name has no letters or numbers in it.', { variant: 'error' });
+      return;
+    }
+    if (allSources().some((source) => source.id === id)) {
+      toast(`There is already a source called ${label}.`, { variant: 'error' });
+      return;
+    }
+
+    updateSettings({ bookSources: [...customSources(), { id, label }] });
+    input.value = '';
+    toast(`${label} added.`);
+    redraw();
+  };
+
+  const remove = async (source) => {
+    const inUse = books.filter((book) => book.source === source.id).length;
+    if (inUse) {
+      const sure = await confirmAction({
+        title: `Remove the source "${source.label}"?`,
+        body: `${inUse} ${inUse === 1 ? 'book is' : 'books are'} filed as ${source.label}, and they stay `
+          + 'filed under a name this library no longer lists.',
+        confirmLabel: 'Remove it',
+      });
+      if (!sure) return;
+    }
+
+    updateSettings({ bookSources: customSources().filter((entry) => entry.id !== source.id) });
+    toast(`${source.label} removed.`);
+    redraw();
+  };
+
+  const mine = customSources();
+  const counts = sourcesPresent(books);
+  const unstated = books.filter((book) => !book.source).length;
+
+  return el('div.settings__block', {}, [
+    el('h4.settings__subtitle', {}, 'Where books come from'),
+    el('p.settings__hint', {}, 'Bought, borrowed, a gift, the library. Set it on a record under \u201cWhere from\u201d; add your own for anything else \u2014 a review copy, an inheritance, a hand-me-down.'),
+    el('p.settings__note', {},
+      `Built in: ${allSources().filter((source) => !mine.some((entry) => entry.id === source.id)).map((source) => source.label).join(', ')}.`),
+
+    counts.length
+      ? el('p.settings__note', {},
+          `In use: ${counts.map((entry) => `${entry.label} (${entry.count})`).join(', ')}`
+          + `${unstated ? ` \u00b7 ${unstated} not stated` : ''}.`)
+      : null,
+
+    mine.length
+      ? el('ul.plain-list', {}, mine.map((source) =>
+          el('li.plain-list__row', {}, [
+            el('span.plain-list__name', {}, source.label),
+            el('span.plain-list__aside', {}, [
+              el('button.link-btn', { type: 'button', onClick: () => remove(source) }, 'Remove'),
+            ]),
+          ])))
+      : null,
+
+    el('div.settings__row', {}, [
+      input,
+      el('button.btn.btn--stamp.btn--sm', { type: 'button', onClick: add }, 'Add a source'),
+    ]),
+  ].filter(Boolean));
+}
+
 function kindsBlock(books, redraw) {
   const input = el('input.input', {
     type: 'text',

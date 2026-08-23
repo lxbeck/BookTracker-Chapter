@@ -246,3 +246,12 @@
   outline: 2px solid var(--stamp);
   outline-offset: 3px;
 }
+
+/* Why today's number is not the number the plan was written with. Quiet: it is
+   an explanation, and it only appears on the days it is needed. */
+.day-row__catchup,
+.hovercard__catchup {
+  font-size: var(--size-xs);
+  color: var(--ink-faint);
+  margin: calc(-1 * var(--s2)) 0 var(--s3);
+}

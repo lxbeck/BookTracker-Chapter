@@ -59,6 +59,7 @@ const SHELL = [
   './js/data/ics.js',
   './js/data/theme.js',
   './js/data/kinds.js',
+  './js/data/sources.js',
   './js/data/enrich.js',
   './js/data/snapshot.js',
   './js/data/merge.js',

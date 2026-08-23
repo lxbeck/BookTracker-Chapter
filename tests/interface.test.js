@@ -196,3 +196,139 @@ test('the year can be taken away as text', () => {
   assert.match(stats, /clipboard\.writeText/);
   assert.match(stats, /openReviewText/, 'with a fallback when the clipboard is refused');
 });
+
+/* --- Planning ---------------------------------------------------------------- */
+
+test('the three day surfaces ask for the same number', () => {
+  // They used to build the sentence themselves and had already drifted by a
+  // word; now a missed evening has to change all three or none.
+  for (const view of ['js/views/day.js', 'js/views/dayRow.js', 'js/views/hoverCard.js']) {
+    assert.match(read(view), /dayDemand\(/, `${view} builds its own day sentence`);
+  }
+  assert.match(read('js/logic/pacing.js'), /export function dayDemand/);
+});
+
+test('the plan a day was lived under is the one it is judged by', () => {
+  const pacing = read('js/logic/pacing.js');
+  assert.match(pacing, /function plannedPageOn/);
+  assert.match(pacing, /schedule\.history/);
+});
+
+test('moving a plan keeps the plan it replaced', () => {
+  const store = read('js/data/store.js');
+  assert.match(store, /function recordPlanChange/);
+  // Through updateBook, so every route that moves a plan is covered: dragging,
+  // the Move dialog, a bulk shift, catching up, editing the dates by hand.
+  assert.match(store, /schedule: recordPlanChange\(existing/);
+});
+
+test('a much-moved book is told about, not acted on', () => {
+  const form = read('js/views/bookForm.js');
+  assert.match(form, /function replanNote/);
+  assert.match(form, /Put it on hold/);
+  assert.doesNotMatch(form, /setStatus\([^)]*'on-hold'\s*\)\s*;?\s*\/\/ automatic/);
+});
+
+/* --- Settings --------------------------------------------------------------- */
+
+test('where books come from sits under kinds of book', () => {
+  const settings = read('js/views/settings.js');
+  const order = [...settings.matchAll(/(kindsBlock|bookSourcesBlock|filterRowsBlock|hiddenNeedsBlock)\(/g)]
+    .map((match) => match[1]);
+
+  const called = order.filter((name, index) => order.indexOf(name) === index);
+  assert.deepEqual(
+    called.slice(0, 2),
+    ['kindsBlock', 'bookSourcesBlock'],
+    `blocks are called in this order: ${called.join(', ')}`
+  );
+});
+
+test('the needs-work editor sits above the keyboard block', () => {
+  const settings = read('js/views/settings.js');
+  const section = settings.slice(settings.indexOf("return section('This library'"));
+  const body = section.slice(0, section.indexOf('\n}'));
+
+  assert.ok(body.indexOf('hiddenNeedsBlock') > -1, 'the needs-work editor is in this section');
+  assert.ok(
+    body.indexOf('hiddenNeedsBlock') < body.indexOf("'Keyboard'"),
+    'it should come before the keyboard block, not after the reading lists'
+  );
+});
+
+/* --- Libraries ---------------------------------------------------------------- */
+
+test('a second library cannot be pushed at a server that holds one', () => {
+  assert.match(read('js/data/sync.js'), /isDefaultLibrary\(\)/);
+});
+
+test('the first library keeps the key it has always had', () => {
+  const store = read('js/data/store.js');
+  assert.match(store, /const BASE_KEY = 'chapter\.library\.v1'/);
+  assert.match(store, /id === DEFAULT_LIBRARY\.id \? BASE_KEY/);
+});
+
+test('progress is asked for on its own, not inside the dates', () => {
+  // Saying "I am eighty per cent through" should not look like it needs a
+  // start date for a book that was never given one.
+  const form = read('js/views/bookForm.js');
+  const block = form.slice(form.indexOf("'How far in you are'"));
+
+  assert.ok(block.length > 0, 'progress should have its own block');
+  assert.ok(
+    block.indexOf('progressInput') < block.indexOf("'Reading plan'"),
+    'and it should sit above the plan that depends on it'
+  );
+});
+
+test('the library can filter by where a copy came from', () => {
+  const library = read('js/views/library.js');
+  assert.match(library, /function sourceBar/);
+  assert.match(library, /Not stated/, 'including the books with nothing stated');
+  assert.match(read('js/views/settings.js'), /\['sources', 'Where from'\]/,
+    'and the row can be switched off with the others');
+});
+
+test('an audiobook is never given an hourly page rate', () => {
+  const sessions = read('js/logic/sessions.js');
+  assert.match(sessions, /listenedAt/);
+  assert.match(sessions, /timedMinutes/, 'speed comes from the sittings that were timed');
+});
+
+test('"by plan date" leads with active books rather than hiding the rest', () => {
+  const library = read('js/views/library.js');
+  const block = library.slice(library.indexOf("label: 'By plan date'"), library.indexOf("added:"));
+
+  assert.match(block, /reading.*planned|planned.*reading/is, 'reading and planned should be the active bucket');
+  assert.doesNotMatch(block, /\.filter\(/, 'sorting must not also filter books out of Everything');
+});
+
+test('sources can be set on a batch of books, the same as status or kind', () => {
+  const library = read('js/views/library.js');
+  assert.match(library, /Set where these books came from|where these books came from/i);
+  assert.match(library, /Not stated/);
+});
+
+/* --- Pacing stops once a book is not being actively read ------------------- */
+
+test('observedPace and neededPerDay are gated on actually being read', () => {
+  const sessions = read('js/logic/sessions.js');
+  assert.match(sessions, /if \(book\.status !== 'reading'\) return \{ ok: false/);
+
+  const pacing = read('js/logic/pacing.js');
+  assert.match(pacing, /if \(book\.status !== 'reading'\) return null;/);
+  assert.match(pacing, /INACTIVE_STATUSES/);
+});
+
+test('a finished record no longer shows the redundant, misleading progress strip', () => {
+  const form = read('js/views/bookForm.js');
+  assert.match(form, /draft\.status !== 'finished' \? progressStrip/);
+});
+
+/* --- Mass-editing a genre ---------------------------------------------------- */
+
+test('genre can be set on a batch of books, the same as status or kind', () => {
+  const library = read('js/views/library.js');
+  assert.match(library, /function openGenreDialog/);
+  assert.match(library, /Set genre/);
+});

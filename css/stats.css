@@ -1242,3 +1242,19 @@
 .review__actions {
   margin-top: var(--s4);
 }
+
+/* The day a plan was moved. Quiet enough to ignore, present enough to explain
+   the kink in the line beside it. */
+.chart__replan {
+  stroke: var(--ink-faint);
+  stroke-width: 1;
+  stroke-dasharray: 2 3;
+  opacity: 0.55;
+}
+
+.chart-key i.is-replan {
+  width: 0;
+  height: 14px;
+  border-top: 0;
+  border-left: 1px dashed var(--ink-faint);
+}

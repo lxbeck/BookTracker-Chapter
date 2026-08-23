@@ -137,6 +137,15 @@ test('a row of controls wraps rather than running off the side', () => {
   assert.match(nav, /min-width:\s*0/);
 });
 
+test('the calendar filter rows shrink and wrap instead of running off a phone', () => {
+  // Three rows of switches, each up to six long. `flex: none` on the base rule
+  // meant they were never asked to shrink, so min-width alone could not save
+  // them: measured at 390px, a row hung 52px past the right edge.
+  const row = rule(calendar, '.cal-filters .kind-toggles');
+  assert.match(row, /flex:\s*1 1 auto/);
+  assert.match(row, /min-width:\s*0/);
+});
+
 test('the navigation wraps rather than scrolling its tabs out of sight', () => {
   const base = read('css/base.css');
   assert.match(rule(base, '.app-nav'), /flex-wrap:\s*wrap/);

@@ -20,11 +20,12 @@ import {
   blankBook, resolveProgress, formatUnit, hasFormat,
 } from '../data/schema.js';
 import { allKinds } from '../data/kinds.js';
+import { allSources, sourceLabel } from '../data/sources.js';
 import { formatShort } from '../lib/dates.js';
-import { addBook, updateBook, removeBook, restoreBook, getBook } from '../data/store.js';
+import { addBook, updateBook, removeBook, restoreBook, getBook, setStatus } from '../data/store.js';
 import { addDays } from '../lib/dates.js';
 import { fetchMissingDetails, missingFields } from '../data/enrich.js';
-import { historySummary } from '../logic/sessions.js';
+import { historySummary, finishedSummary, formatDuration } from '../logic/sessions.js';
 import { readingDaysFor } from '../logic/sessions.js';
 
 /**
@@ -212,6 +213,15 @@ export function openBookForm({ book = null, defaultStart = null, onSaved } = {})
     progressNote.textContent = `${percent}% \u00b7 page ${Math.round(page)} of ${total}`;
   }
 
+  /** Whatever is in the progress field, as units of the book. */
+  function progressAsUnits(total) {
+    const typed = Number.parseFloat(progressInput.value);
+    if (!Number.isFinite(typed)) return draft.progress.page || 0;
+    return progressUnit.value === 'percent' && total
+      ? Math.round((typed / 100) * total)
+      : Math.round(typed);
+  }
+
   progressInput.addEventListener('input', refreshProgressNote);
   pagesInput.addEventListener('input', refreshProgressNote);
   refreshProgressNote();
@@ -290,6 +300,24 @@ export function openBookForm({ book = null, defaultStart = null, onSaved } = {})
     )
   );
 
+  // Where this copy came from. Blank is a real answer — most records imported
+  // from anywhere will have it — so the list leads with "Not stated" rather
+  // than defaulting everything to Purchased and inventing a fact.
+  const sourceSelect = el(
+    'select.select',
+    { id: 'f-source', name: 'source' },
+    [
+      el('option', { value: '', selected: !draft.source }, 'Not stated'),
+      ...allSources().map((source) =>
+        el('option', { value: source.id, selected: draft.source === source.id }, source.label)),
+      // A source this device has not heard of yet must not be silently
+      // rewritten by opening the record and saving it.
+      draft.source && !allSources().some((source) => source.id === draft.source)
+        ? el('option', { value: draft.source, selected: true }, sourceLabel(draft.source))
+        : null,
+    ].filter(Boolean)
+  );
+
   const statusSelect = el(
     'select.select',
     {
@@ -338,13 +366,28 @@ export function openBookForm({ book = null, defaultStart = null, onSaved } = {})
       return;
     }
     const days = Math.round((new Date(end) - new Date(start)) / 86400000) + 1;
-    const perDay = Math.ceil(pages / days);
-    paceNote.textContent = `${days} day${days === 1 ? '' : 's'} — about ${perDay} ${unit} a day.`;
+
+    // What is *left*, not what the book is.
+    //
+    // Rescheduling a book you are eighty per cent through, to finish it
+    // tomorrow, used to read "1 day — about 310 minutes a day": the whole
+    // audiobook again, as though the seven sittings behind it had not
+    // happened. The plan is for the part you have not read.
+    const done = Math.min(progressAsUnits(pages), pages);
+    const left = Math.max(0, pages - done);
+    const perDay = Math.ceil((left || pages) / days);
+
+    paceNote.textContent = done > 0 && left > 0
+      ? `${days} day${days === 1 ? '' : 's'} \u2014 about ${perDay} ${unit} a day for the ${left} still to go.`
+      : left === 0 && done > 0
+        ? `${days} day${days === 1 ? '' : 's'} \u2014 nothing left to read.`
+        : `${days} day${days === 1 ? '' : 's'} \u2014 about ${perDay} ${unit} a day.`;
   }
 
-  [startInput, endInput, pagesInput].forEach((node) =>
+  [startInput, endInput, pagesInput, progressInput].forEach((node) =>
     node.addEventListener('input', refreshPaceNote)
   );
+  progressUnit.addEventListener('change', refreshPaceNote);
 
   // Picking a start date almost always means "and about a week". Filling the
   // finish date in saves the second date picker, and it stays editable, so the
@@ -432,7 +475,12 @@ export function openBookForm({ book = null, defaultStart = null, onSaved } = {})
   }, 'Get details');
 
   const body = [
-    isEdit ? progressStrip(draft) : null,
+    isEdit ? finishedStrip(draft) : null,
+    // Redundant once a book is finished: finishedStrip already says everything
+    // this could, and does it from the dates rather than from a today-relative
+    // average that has no "today" left to be relative to.
+    isEdit && draft.status !== 'finished' ? progressStrip(draft) : null,
+    isEdit ? replanNote(draft, { onChange: () => syncFromStore() }) : null,
     isEdit ? historyPanel(draft) : null,
     el('div.field', {}, [
       el('span.field__label', { text: 'Cover' }),
@@ -452,7 +500,10 @@ export function openBookForm({ book = null, defaultStart = null, onSaved } = {})
       field('pageCount', 'Length', pagesInput, 'Pages, or minutes for audio'),
       field('genre', 'Genre', genreInput),
     ]),
-    field('status', 'Status', statusSelect),
+    el('div.field-row', {}, [
+      field('status', 'Status', statusSelect),
+      field('source', 'Where from', sourceSelect, 'Bought, borrowed, a gift\u2026'),
+    ]),
     dnfField,
     el('div.field', {}, [
       el('label.field__label', { for: 'f-description', text: 'Description' }),
@@ -466,6 +517,24 @@ export function openBookForm({ book = null, defaultStart = null, onSaved } = {})
         field('series.total', 'Of how many', seriesTotalInput),
       ]),
     ]),
+    // How far in you are, on its own.
+    //
+    // It used to live inside "What actually happened", between the start and
+    // finish dates, which made it look like part of that record — so saying
+    // "I am eighty per cent through" seemed to require dates for a book that
+    // is not finished and may never have had a start date written down. It is
+    // its own fact, it sits above the plan that depends on it, and the plan's
+    // daily pace is worked out from what is left.
+    el('fieldset.plan-block', {}, [
+      el('legend.field__label', { text: 'How far in you are' }),
+      el('div.field', {}, [
+        el('span.field__label', {}, 'Currently at'),
+        el('div.progress-entry', {}, [progressInput, progressUnit]),
+        progressNote,
+      ]),
+      el('p.field__hint', {}, 'Page, minute or percentage \u2014 whichever you know. Nothing else has to be filled in for this to count.'),
+    ]),
+
     el('fieldset.plan-block', {}, [
       el('legend.field__label', { text: 'Reading plan' }),
       el('div.field-row', {}, [
@@ -479,11 +548,6 @@ export function openBookForm({ book = null, defaultStart = null, onSaved } = {})
       el('div.field-row', {}, [
         field('actual.startedAt', 'Started on', startedInput),
         field('actual.finishedAt', 'Finished on', finishedInput),
-      ]),
-      el('div.field', {}, [
-        el('span.field__label', {}, 'Currently at'),
-        el('div.progress-entry', {}, [progressInput, progressUnit]),
-        progressNote,
       ]),
       el('p.field__hint', {}, 'Marking a book finished fills the finish date in for you.'),
       historyLine(draft),
@@ -581,6 +645,7 @@ export function openBookForm({ book = null, defaultStart = null, onSaved } = {})
       genre: genreInput.value,
       formats: readFormats(),
       category: categorySelect.value,
+      source: sourceSelect.value,
       status: statusSelect.value,
       dnfReason: dnfInput.value,
       coAuthors: coAuthorsInput.value.split(',').map((name) => name.trim()).filter(Boolean),
@@ -750,6 +815,105 @@ export function openBookForm({ book = null, defaultStart = null, onSaved } = {})
  * entered, so there is nothing to edit and no field to keep in sync.
  */
 /**
+ * What finishing it actually took.
+ *
+ * A finished record used to say "finished" and stop. The same shelf row covers
+ * a book read in four sittings over a fortnight and one ground through over
+ * eight months, and the difference between those is most of what anyone would
+ * want to remember about reading them.
+ */
+function finishedStrip(book) {
+  if (book.status !== 'finished') return null;
+
+  const summary = finishedSummary(book);
+  if (!summary.ok) return null;
+
+  const unit = formatUnit(book) === 'minutes' ? 'minutes' : 'pages';
+
+  return el('div.finished-strip', {}, [
+    el('p.finished-strip__head', {}, [
+      el('b', {}, `${formatShort(summary.from)} \u2013 ${formatShort(summary.to)}`),
+      ` \u00b7 ${summary.days} day${summary.days === 1 ? '' : 's'} start to finish`,
+    ]),
+
+    el('dl.finished-strip__facts', {}, [
+      fact('Days actually read', summary.readingDays
+        ? `${summary.readingDays} of ${summary.days}`
+        : 'none logged'),
+      fact('Sittings', summary.sessions ? String(summary.sessions) : 'none logged'),
+      summary.minutes ? fact('Time at the page', formatDuration(summary.minutes)) : null,
+      summary.pagesPerHour
+        ? fact('Reading speed', `${summary.pagesPerHour} ${unit} an hour`)
+        : null,
+      summary.listenedAt
+        ? fact('Listened at', `${summary.listenedAt}\u00d7 the clock`)
+        : null,
+      summary.pagesPerReadingDay
+        ? fact('On a day you read', `${summary.pagesPerReadingDay} ${unit}`)
+        : null,
+    ].filter(Boolean)),
+
+    !summary.sessions
+      ? el('p.field__hint', {}, 'Nothing was logged for this one, so the dates are all there is to go on.')
+      : null,
+
+    // A rate from two of five sittings is a true number about a partial log,
+    // and reads as a claim about the whole book unless it says otherwise.
+    summary.partiallyTimed
+      ? el('p.field__hint', {},
+          `Speed is measured over the ${summary.timedSessions} of ${summary.sessions} sittings that have minutes on them.`)
+      : null,
+  ].filter(Boolean));
+}
+
+const fact = (label, value) =>
+  el('div.finished-strip__fact', {}, [el('dt', {}, label), el('dd', {}, value)]);
+
+/**
+ * A book that keeps being moved is telling you something.
+ *
+ * Three reschedules is not a failure and the app has no business acting on it
+ * — quietly putting a book on hold because it counted to three would be the
+ * app deciding how someone's reading is going. But it is worth saying out
+ * loud, once, with the two ways out within reach, because the alternative is a
+ * book that gets pushed forward a week at a time for six months.
+ */
+function replanNote(book, { onChange }) {
+  const moves = book.schedule.history?.length ?? 0;
+  if (moves < 3 || book.status === 'finished' || book.status === 'dnf' || book.status === 'on-hold') {
+    return null;
+  }
+
+  const first = book.schedule.history[0];
+
+  return el('div.replan-note', {}, [
+    el('p', {}, [
+      el('b', {}, `Moved ${moves} times`),
+      ` \u00b7 first planned for ${formatShort(first.start)}.`,
+    ]),
+    el('p.replan-note__aside', {}, 'Plans slip, and that is what rescheduling is for. If this one is not working out, it can wait somewhere honest instead.'),
+    el('div.replan-note__actions', {}, [
+      el('button.btn.btn--quiet.btn--sm', {
+        type: 'button',
+        onClick: () => {
+          setStatus(book.id, 'on-hold');
+          toast(`${book.title} put on hold. It keeps its plan and its log.`);
+          onChange?.();
+        },
+      }, 'Put it on hold'),
+      el('button.btn.btn--quiet.btn--sm', {
+        type: 'button',
+        onClick: () => {
+          setStatus(book.id, 'dnf');
+          toast(`${book.title} marked as did not finish.`);
+          onChange?.();
+        },
+      }, 'Did not finish'),
+    ]),
+  ]);
+}
+
+/**
  * This book's own history: the plan and the record on the same axes.
  *
  * The record already says "27 pages behind" and "finishes Friday", and both
@@ -777,7 +941,10 @@ function historyPanel(book) {
       el('p.chart-key', {}, [
         el('span', {}, [el('i', {}), 'What you have read']),
         el('span', {}, [el('i', { class: 'is-plan' }), 'What the plan asked for']),
-      ]),
+        trail.moves
+          ? el('span', {}, [el('i', { class: 'is-replan' }), `Rescheduled (${trail.moves})`])
+          : null,
+      ].filter(Boolean)),
     ]),
   ]);
 }

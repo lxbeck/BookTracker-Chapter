@@ -12,7 +12,7 @@
  */
 
 import { today, spanLength, daysBetween, addDays, eachDay, formatShort, formatLong } from '../lib/dates.js';
-import { formatUnit } from '../data/schema.js';
+import { formatUnit, STATUSES } from '../data/schema.js';
 import { observedPace, bookTotals, formatDuration } from './sessions.js';
 
 /**
@@ -33,6 +33,9 @@ import { observedPace, bookTotals, formatDuration } from './sessions.js';
  */
 
 const EMPTY = (reason) => ({ ok: false, reason });
+
+/** Statuses where "against the plan" no longer means anything current. */
+const INACTIVE_STATUSES = new Set(['finished', 'dnf', 'on-hold']);
 
 /**
  * Work out the pacing picture for one book on one day.
@@ -73,6 +76,10 @@ export function paceFor(book, dayKey = today(), todayKey = today()) {
   const remaining = Math.max(0, pageCount - done);
   const daysLeft = Math.max(1, daysBetween(todayKey, end) + 1);
 
+  // What is left, over the days that are left. Nothing left asks for nothing,
+  // which is not the same as the plan's daily share.
+  const spread = Math.min(remaining, Math.ceil(remaining / daysLeft));
+
   return {
     ok: true,
     reason: '',
@@ -91,6 +98,23 @@ export function paceFor(book, dayKey = today(), todayKey = today()) {
     adjusted: Math.ceil(remaining / daysLeft),
     delta: done - at(daysBetween(from, todayKey) + 1),
     overdue: todayKey > end && remaining > 0,
+    // What today actually asks for, which is not the same as what the plan
+    // asked for when it was written.
+    //
+    // 210 pages over seven days is thirty a day, right up until the evening
+    // you skip. From the next morning the plan is quietly wrong: it still says
+    // thirty, and thirty a day no longer finishes the book. The number here is
+    // the one that does — what is left, spread over the days that are left —
+    // so a missed evening condenses into the rest of the week by itself,
+    // without rewriting the plan or waiting to be asked.
+    //
+    // Only ever for today. Yesterday asked what it asked, and tomorrow's share
+    // depends on what happens tonight.
+    dueToday: dayKey === todayKey ? spread : todayTarget,
+    // True when the two disagree and there is something left to disagree
+    // about, so a view can explain the difference rather than silently showing
+    // a number the plan does not contain.
+    condensed: dayKey === todayKey && remaining > 0 && spread !== todayTarget,
   };
 }
 
@@ -98,6 +122,11 @@ const clamp = (n, min, max) => Math.min(max, Math.max(min, n));
 
 /** Remaining units divided by the days left in the plan, from today. */
 function neededPerDay(book, todayKey = today()) {
+  // Same reasoning as the status gate in observedPace: "days left" is a
+  // question about an active plan, and a paused or abandoned book's old
+  // schedule.end is not one, however overdue arithmetic would call it.
+  if (book.status !== 'reading') return null;
+
   const { schedule, pageCount, progress } = book;
   if (!schedule.start || !pageCount) return null;
 
@@ -122,7 +151,47 @@ export function paceHeadline(book, dayKey, todayKey = today()) {
   if (!pace.inPlan) return `Outside the plan for this book`;
 
   const noun = pace.unit === 'minutes' ? 'minutes' : 'pages';
-  return `${pace.todayTarget} ${noun} to read today`;
+  return `${pace.dueToday} ${noun} to read today`;
+}
+
+/**
+ * What to put in front of someone for one day, in words.
+ *
+ * Shared by the day view, the day popup and the hover card, which is three
+ * places that used to build this sentence themselves and had already drifted
+ * apart by a word or two. It also carries the reason today's number is not the
+ * plan's number, which is the part that would otherwise look like a bug: you
+ * were told thirty a day on Sunday and it says thirty-six on Tuesday.
+ *
+ * @returns {{lead: string, note: string|null}}
+ */
+export function dayDemand(book, dayKey, state, todayKey = today()) {
+  if (state === 'finished') return { lead: 'Finished on this day', note: null };
+
+  const pace = paceFor(book, dayKey, todayKey);
+  if (!pace.ok) return { lead: pace.reason, note: null };
+  if (!pace.inPlan) return { lead: 'Outside this book\u2019s plan', note: null };
+
+  // A day-state of 'reading' just means the day falls inside schedule.start–end
+  // or the logged/actual span (see dayState); it says nothing about whether
+  // that plan is still being kept today. Only *today* is at risk here — a past
+  // day's target is a fixed historical fact and stays true whether or not the
+  // book was later paused, but asking what's due *today* of a plan nobody is
+  // pursuing is a demand nobody made, and it would keep silently reappearing
+  // for as long as the book sat on hold.
+  if (dayKey === todayKey && INACTIVE_STATUSES.has(book.status)) {
+    return { lead: `${STATUSES[book.status].label} \u2014 not currently being paced`, note: null };
+  }
+
+  const noun = pace.unit === 'minutes' ? 'minutes' : 'pages';
+  const when = dayKey < todayKey ? 'were due' : dayKey === todayKey ? 'to read today' : 'due that day';
+
+  return {
+    lead: `${pace.dueToday} ${noun} ${when}`,
+    note: pace.condensed
+      ? `The plan asked for ${pace.todayTarget} a day; what is left now spreads to ${pace.dueToday} over the ${pace.daysLeft} day${pace.daysLeft === 1 ? '' : 's'} left.`
+      : null,
+  };
 }
 
 /**
@@ -132,7 +201,12 @@ export function paceHeadline(book, dayKey, todayKey = today()) {
  */
 export function paceStanding(book, todayKey = today()) {
   const pace = paceFor(book, todayKey, todayKey);
-  if (!pace.ok || book.status === 'finished') return null;
+  // A stray plan window doesn't mean a stray plan: a book that is finished,
+  // on hold or given up on can still have a schedule.start/end sitting on the
+  // record, and dayState will still draw it across those old days — so
+  // without this check, a paused book could get "27 pages behind, X a day
+  // catches up" measured against a plan nobody is trying to keep any more.
+  if (!pace.ok || INACTIVE_STATUSES.has(book.status)) return null;
 
   const noun = pace.unit === 'minutes' ? 'minutes' : 'pages';
 
@@ -445,8 +519,11 @@ export function progressTrail(book, todayKey = today()) {
   if (!start) return { ok: false, reason: 'This book has no plan and nothing logged.' };
   if (!book.pageCount) return { ok: false, reason: 'No length recorded, so there is nothing to measure against.' };
 
+  const history = book.schedule.history ?? [];
   const logged = sessions.map((session) => session.date).sort();
-  const from = [start, logged[0]].filter(Boolean).sort()[0];
+  const from = [start, logged[0], ...history.map((plan) => plan.start)]
+    .filter(Boolean)
+    .sort()[0];
   const finished = book.actual.finishedAt;
   const to = [book.schedule.end, book.schedule.start, logged.at(-1), finished ?? todayKey]
     .filter(Boolean)
@@ -468,17 +545,14 @@ export function progressTrail(book, todayKey = today()) {
   let running = 0;
   let everLogged = false;
 
+  const movedOn = new Set(history.map((plan) => plan.at));
+
   const points = eachDay(from, to).map((day) => {
     const reached = reachedBy.get(day);
     if (reached != null) {
       running = Math.max(running, reached);
       everLogged = true;
     }
-
-    const pace = paceFor(book, day, todayKey);
-    const planned = pace.ok && book.schedule.start
-      ? Math.min(pace.cumulative, book.pageCount)
-      : null;
 
     return {
       day,
@@ -487,10 +561,54 @@ export function progressTrail(book, todayKey = today()) {
       // Days before anything was logged have no reading to report, as distinct
       // from reporting a confident zero.
       actual: everLogged || day >= (book.actual.startedAt ?? from) ? running : null,
-      planned: day > (finished ?? to) ? null : planned,
+      planned: day > (finished ?? to) ? null : plannedPageOn(book, day, todayKey),
       logged: reached != null,
+      // The day a plan was replaced, so the chart can show where the line moved
+      // rather than leaving an unexplained kink in it.
+      replanned: movedOn.has(day),
     };
   });
 
-  return { ok: true, points, total: book.pageCount, unit: formatUnit(book) };
+  return {
+    ok: true,
+    points,
+    total: book.pageCount,
+    unit: formatUnit(book),
+    moves: history.length,
+  };
+}
+
+/**
+ * What the plan asked for on a given day — the plan that was actually in force
+ * then, not the one in force now.
+ *
+ * This is the difference between a chart that tells the truth and one that
+ * flatters: reschedule a book you have fallen behind on, and measuring every
+ * past day against the *new* plan shows you comfortably ahead on days you did
+ * not read at all. The plan a day was lived under is the only fair thing to
+ * judge that day by.
+ */
+function plannedPageOn(book, day, todayKey = today()) {
+  if (!book.pageCount) return null;
+
+  // History entries are stamped with the day they were replaced, so the plan
+  // in force on `day` is the earliest one replaced after it.
+  const older = (book.schedule.history ?? [])
+    .filter((plan) => plan.at > day)
+    .sort((a, b) => a.at.localeCompare(b.at))[0];
+
+  if (older) return spreadOver(older.start, older.end ?? older.start, book.pageCount, day);
+
+  if (!book.schedule.start) return null;
+
+  // The current plan goes through paceFor, which knows about catching up.
+  const pace = paceFor(book, day, todayKey);
+  return pace.ok ? Math.min(pace.cumulative, book.pageCount) : null;
+}
+
+/** A page count spread evenly across a span, as at `day`. */
+function spreadOver(start, end, pageCount, day) {
+  const days = spanLength(start, end);
+  const index = clamp(daysBetween(start, day) + 1, 0, days);
+  return Math.round((pageCount * index) / days);
 }

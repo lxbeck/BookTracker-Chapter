@@ -433,3 +433,80 @@
 .book-history__body {
   padding: 0 var(--s3) var(--s3);
 }
+
+/* --- What finishing it took ----------------------------------------------- */
+
+.finished-strip {
+  border: var(--rule);
+  border-left: 3px solid var(--shelved, var(--state-finished));
+  border-radius: var(--r-card);
+  background: var(--slip-shade);
+  padding: var(--s3) var(--s4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+}
+
+.finished-strip__head {
+  font-size: var(--size-sm);
+  color: var(--ink-soft);
+}
+
+/* The lead-in is set in the typewriter face rather than a bold body weight:
+   the body font is loaded at 400/500/600, so a `<b>` asks the browser to
+   synthesise a weight it does not have — which renders as nothing at all until
+   the webfont settles, and as a smeared approximation afterwards. */
+.finished-strip__head b,
+.replan-note b {
+  font-family: var(--face-slip);
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.finished-strip__facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(120px, 100%), 1fr));
+  gap: var(--s2) var(--s4);
+  margin: 0;
+}
+
+.finished-strip__fact dt {
+  font-family: var(--face-slip);
+  font-size: 0.5625rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.finished-strip__fact dd {
+  margin: 0;
+  font-size: var(--size-sm);
+  color: var(--ink);
+}
+
+/* --- A plan that keeps moving --------------------------------------------- */
+
+/* Said once, with the ways out to hand. The app counts; it does not decide. */
+.replan-note {
+  border: var(--rule);
+  border-left: 3px solid var(--state-planned, var(--stamp));
+  border-radius: var(--r-card);
+  background: var(--slip-shade);
+  padding: var(--s3) var(--s4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  font-size: var(--size-sm);
+  color: var(--ink);
+}
+
+.replan-note__aside {
+  font-size: var(--size-xs);
+  color: var(--ink-faint);
+}
+
+.replan-note__actions {
+  display: flex;
+  gap: var(--s2);
+  flex-wrap: wrap;
+}

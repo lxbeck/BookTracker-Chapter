@@ -19,6 +19,7 @@ import {
   formatUnit, hasFormat, formatLabel, FORMAT_PRIORITY,
 } from '../data/schema.js';
 import { allKinds, kindLabel, kindsPresent } from '../data/kinds.js';
+import { allSources, sourceLabel, sourcesPresent } from '../data/sources.js';
 import { coverThumb } from './cover.js';
 import { acceptCoverDrop } from './coverDrop.js';
 import { setCoverFromFile, setCoverFromUrl } from '../data/coverActions.js';
@@ -77,7 +78,22 @@ const NEEDS = {
 const SORTS = {
   planned: {
     label: 'By plan date',
-    compare: (a, b) => (a.schedule.start ?? '9999').localeCompare(b.schedule.start ?? '9999'),
+    // Active books — reading or planned — lead, in schedule order. Finished,
+    // abandoned, shelved or held books still carry the schedule.start they
+    // were last planned under, and a book finished weeks ago sorting ahead of
+    // the one you start tonight answered a different question than "what's
+    // next". Everything stays on the Everything shelf; this only changes
+    // where it sits. Ties within a group fall back to schedule date, then
+    // title, so books with no date at all — mostly the backlog — settle at
+    // the end of their group rather than jumping around.
+    compare: (a, b) => {
+      const active = (book) => (book.status === 'reading' || book.status === 'planned' ? 0 : 1);
+      return (
+        active(a) - active(b) ||
+        (a.schedule.start ?? '9999').localeCompare(b.schedule.start ?? '9999') ||
+        compareTitles(a.title, b.title)
+      );
+    },
   },
   added: { label: 'Recently added', compare: (a, b) => b.createdAt.localeCompare(a.createdAt) },
   title: { label: 'Title', compare: (a, b) => compareTitles(a.title, b.title) },
@@ -160,7 +176,7 @@ let anchorId = null;
 
 const filters = {
   shelf: 'reading', sort: 'planned', query: '', tag: null,
-  format: null, order: null, category: null, need: null, genre: null,
+  format: null, order: null, category: null, need: null, genre: null, source: null,
 };
 
 export function renderLibrary(mount) {
@@ -212,6 +228,7 @@ export function renderLibrary(mount) {
     books.length ? toolbar(counts) : null,
     books.length && showsRow('format') ? formatBar(inScope) : null,
     books.length && showsRow('kind') ? categoryBar(inScope) : null,
+    books.length && showsRow('sources') ? sourceBar(inScope) : null,
     books.length && showsRow('genre') ? genreBar(inScope) : null,
     books.length ? needsBar(books) : null,
     showsRow('orders') ? orderBar(inScope) : null,
@@ -246,6 +263,8 @@ function visibleBooks(books) {
     // filters, because it is genuinely both.
     .filter((book) => !filters.format || hasFormat(book, filters.format))
     .filter((book) => !filters.category || book.category === filters.category)
+    .filter((book) => !filters.source
+      || (filters.source === NO_SOURCE ? !book.source : book.source === filters.source))
     .filter((book) => !filters.genre || book.genre?.trim().toLowerCase() === filters.genre)
     .filter((book) => !filters.need || NEEDS[filters.need].match(book))
     .filter((book) => !filters.order || positionInOrder(filters.order, book.id) !== Infinity)
@@ -351,6 +370,7 @@ const SEARCHED = [
   (book) => book.shelves.join(' '),
   (book) => (book.quotes ?? []).map((quote) => quote.text).join(' '),
   (book) => (book.sessions ?? []).map((session) => session.note).filter(Boolean).join(' '),
+  (book) => sourceLabel(book.source),
 ];
 
 /** Everything on a book that is prose rather than a label. */
@@ -377,7 +397,10 @@ function showsRow(id) {
   const hidden = getSettings().hiddenRows ?? [];
   if (!hidden.includes(id)) return true;
 
-  const clears = { format: 'format', kind: 'category', genre: 'genre', orders: 'order', shelves: 'tag' };
+  const clears = {
+    format: 'format', kind: 'category', genre: 'genre', orders: 'order', shelves: 'tag',
+    sources: 'source',
+  };
   if (filters[clears[id]]) filters[clears[id]] = null;
   return false;
 }
@@ -539,6 +562,51 @@ function selectRange(fromId, toId) {
 
 /** Ids in the order they are displayed, for range selection. */
 let lastVisibleOrder = [];
+
+/**
+ * Where the copies on this shelf came from.
+ *
+ * The same control as the kind row, for the same reason: "which of these do I
+ * have to give back to the library" and "what did I actually buy this year"
+ * are questions about a set of books, and a set of books is what a filter row
+ * is for. Books with no source stated are offered as their own filter rather
+ * than hidden, because an unfilled field is the commonest state of an imported
+ * catalogue and finding them is how you fill them in.
+ */
+function sourceBar(books) {
+  const rerender = () => renderLibrary(document.querySelector('#view'));
+  const present = sourcesPresent(books);
+  const unstated = books.filter((book) => !book.source).length;
+
+  // Nothing to choose between when everything came from the same place.
+  if (present.length + (unstated ? 1 : 0) < 2) return null;
+
+  const pick = (value) => {
+    filters.source = filters.source === value ? null : value;
+    rerender();
+  };
+
+  return el('div.tag-bar', {}, [
+    el('span.tag-bar__label', {}, 'Where from'),
+    ...present.map((source) =>
+      el('button.tag', {
+        type: 'button',
+        'aria-pressed': String(filters.source === source.id),
+        onClick: () => pick(source.id),
+      }, `${source.label} (${source.count})`)
+    ),
+    unstated
+      ? el('button.tag', {
+          type: 'button',
+          'aria-pressed': String(filters.source === NO_SOURCE),
+          onClick: () => pick(NO_SOURCE),
+        }, `Not stated (${unstated})`)
+      : null,
+  ].filter(Boolean));
+}
+
+/** The filter value for "no source written down". */
+const NO_SOURCE = '\u0000none';
 
 function categoryBar(books) {
   const rerender = () => renderLibrary(document.querySelector('#view'));
@@ -813,6 +881,29 @@ function bulkBar(visible) {
       ...allKinds().map((kind) => el('option', { value: kind.id }, kind.label)),
     ]),
 
+    el('select.select.bulk-bar__select', {
+      'aria-label': 'Set where these books came from',
+      onChange: (event) => {
+        const source = event.target.value;
+        if (!source) return;
+        // '\u0000none' clears it — the same "not stated" a single record's
+        // blank option writes, so a batch of imported books can be corrected
+        // back to blank as easily as it can be set.
+        const value = source === NO_SOURCE ? '' : source;
+        for (const book of chosen()) updateBook(book.id, { source: value });
+        toast(`${count} books set to ${value ? sourceLabel(value).toLowerCase() : 'not stated'}.`);
+        rerender();
+      },
+    }, [
+      el('option', { value: '' }, 'Where from\u2026'),
+      ...allSources().map((source) => el('option', { value: source.id }, source.label)),
+      el('option', { value: NO_SOURCE }, 'Not stated'),
+    ]),
+
+    el('button.btn.btn--quiet.btn--sm', {
+      type: 'button', onClick: () => openGenreDialog(chosen(), rerender),
+    }, 'Set genre\u2026'),
+
     el('button.btn.btn--quiet.btn--sm', {
       type: 'button', onClick: () => openOrderDialog(chosen(), rerender),
     }, 'Add to list'),
@@ -909,6 +1000,47 @@ function numberSeries(books, done) {
 
   toast(`Numbered ${books.length} books${name ? ` in ${name}` : ''}.`);
   done();
+}
+
+/**
+ * Genre is one free-text field, not a list like shelves — a book has a genre,
+ * it doesn't have several — so this is simpler than the shelve dialog:
+ * one value, applied to every selected book, with the existing genres offered
+ * as a datalist so a batch import doesn't fragment "Fantasy" into a second
+ * near-miss spelling.
+ */
+function openGenreDialog(books, done) {
+  const input = el('input.input', {
+    placeholder: 'Fantasy',
+    'aria-label': 'Genre to set',
+    list: 'bulk-genre-suggestions',
+  });
+
+  const known = [...new Set(allBooks().map((book) => book.genre).filter(Boolean))].sort();
+
+  const apply = () => {
+    const genre = input.value.trim();
+    for (const book of books) updateBook(book.id, { genre });
+    modal.close();
+    toast(genre ? `${books.length} books set to ${genre}.` : `Genre cleared on ${books.length} books.`);
+    done();
+  };
+
+  const modal = showModal({
+    eyebrow: `${books.length} books`,
+    title: 'Set genre',
+    body: [
+      el('p', {}, 'Leave it blank and Set genre clears it on every selected book.'),
+      input,
+      el('datalist', { id: 'bulk-genre-suggestions' }, known.map((genre) => el('option', { value: genre }))),
+    ],
+    actions: [
+      el('button.btn.btn--quiet', { type: 'button', onClick: () => modal.close() }, 'Cancel'),
+      el('button.btn.btn--stamp', { type: 'button', onClick: apply }, 'Set genre'),
+    ],
+  });
+
+  return modal;
 }
 
 function openShelfDialog(books, done) {
@@ -1357,6 +1489,9 @@ function shelfCard(book) {
           book.formats.length > 1
             ? el('p.shelf-card__formats', {}, formatLabel(book))
             : null,
+          book.source
+            ? el('p.shelf-card__source', {}, sourceLabel(book.source))
+            : null,
           orderBadge(book),
           book.rating ? el('p.shelf-card__rating', { 'aria-label': `${book.rating} out of 5` }, '\u2605'.repeat(book.rating)) : null,
           book.description || book.notes || matchedInText(book, filters.query)
@@ -1460,6 +1595,14 @@ function emptyShelf() {
     filters.genre ? { label: `genre "${filters.genre}"`, clear: () => { filters.genre = null; } } : null,
     filters.category
       ? { label: `kind "${kindLabel(filters.category)}"`, clear: () => { filters.category = null; } }
+      : null,
+    filters.source
+      ? {
+          label: filters.source === NO_SOURCE
+            ? 'books with no source'
+            : `source "${sourceLabel(filters.source)}"`,
+          clear: () => { filters.source = null; },
+        }
       : null,
     filters.format
       ? { label: `format "${FORMATS[filters.format]?.label ?? filters.format}"`, clear: () => { filters.format = null; } }

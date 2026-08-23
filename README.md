@@ -70,6 +70,19 @@ design does not solve.
 The server is plain HTTP with no authentication. It is meant for your own
 network. Don't port-forward it.
 
+**Deleting `data/library.json` does not empty your library.** The server holds
+a shared copy, not the master: every browser keeps its own complete copy, and
+the first one to connect merges what it has with what the server has and pushes
+the result back — so the file reappears, fully populated, seconds later. That
+is the same rule that stops a phone which has been offline for a week from
+erasing a laptop's work, and it cannot tell the two situations apart.
+
+To actually start clean: stop the server, delete `./data`, then clear each
+browser's storage for that origin (developer tools → Application → Local
+Storage → `chapter.library.v1`, plus the IndexedDB cover cache), and start it
+again. Export a backup first. Any browser you skip will refill the server the
+moment it connects.
+
 **Back closes a dialog rather than leaving the app.** An open record covers
 the screen, so it looks like a place, and on a phone the gesture for leaving a
 place is Back — which used to exit Chapter entirely and take whatever was
@@ -83,6 +96,28 @@ on a phone, pushed the dialog wider than the screen, and left the right-hand
 column off the edge with the page scrolling sideways to reach it. Fields now
 collapse to a single column below 560px, the dialog runs nearly edge to edge,
 and its footer buttons wrap instead of widening the panel.
+
+</details>
+
+<details>
+<summary><strong>More than one library</strong> — Separate collections on one device</summary>
+
+Settings → **Libraries**. Add one, switch to it, and everything swaps: books,
+lists, shelves, settings. A shared household shelf and a private one, work
+reading and everything else, a real catalogue and somewhere to try an import
+before it touches anything.
+
+They are separate libraries rather than filtered views of one, because a
+filtered view leaks — and not leaking is the entire point. Each lives under its
+own storage key; **the first keeps the key it has always had**, so a library
+that predates this feature is exactly where it was and nothing needs migrating.
+The first library cannot be deleted: there has to be somewhere to land.
+
+**Only the first library syncs.** The server holds one library, and pushing a
+second one at an endpoint that has no idea there is more than one would merge
+two collections into one. Anything you add here stays in this browser, and once
+there is more than one, the save indicator in the header says which one you are
+looking at.
 
 </details>
 
@@ -147,8 +182,9 @@ so no layout leaves a gap where a book isn't.
 Clicking a day opens the popup; clicking the date number opens the full Day
 view. Two weights of the same gesture, so a quick look doesn't cost a page.
 
-**The view is in the address.** Which calendar you are on and which kinds are
-showing live in the hash — `#/calendar?mode=log&kinds=comic,manga` — so a
+**The view is in the address.** Which calendar you are on and every filter
+showing live in the hash —
+`#/calendar?mode=log&kinds=comic,manga&formats=audio&sources=library` — so a
 reload keeps them and a link can carry them. Defaults are left out, so an
 untouched calendar keeps a clean address.
 
@@ -217,13 +253,21 @@ of what you might want to log against would make it worse at that.
 </details>
 
 <details>
-<summary><strong>Filtering the calendar by kind</strong> — Showing only what you are looking for</summary>
+<summary><strong>Filtering the calendar</strong> — Showing only what you are looking for</summary>
 
-Above the month grid: **Everything**, then one switch per kind actually
-scheduled in the month on screen — including kinds you invented in Settings.
-Toggling is additive: comics and manga on together shows both and hides books.
-Turning the last one off is treated as everything on, since an empty calendar
-with no obvious way back is a trap.
+Above the month grid, three rows: **Kind**, **Format** and **Where from**,
+each with an **Everything** switch and one button per value actually scheduled
+in the month on screen — including the kinds and sources you invented in
+Settings.
+
+Within a row the switches are additive: comics and manga on together shows
+both and hides books. Across rows they narrow: comics *and* audiobooks shows
+only comics you have on audio. That asymmetry is the only reading that makes
+sense — a book is one kind but may be several formats, so comics-or-audiobooks
+would be a search rather than a filter.
+
+Turning the last switch in a row off is treated as everything on, since an
+empty calendar with no obvious way back is a trap.
 
 **From Everything, a kind is a fresh choice rather than a deselection.** This
 matters in a sequence that is easy to fall into: with only books and comics
@@ -318,6 +362,19 @@ The rule that progress equals the furthest logged page is enforced in
 `normalizeBook`, not on the store's write path, so a record loaded from disk or
 imported from a backup can never disagree with its own sessions.
 
+**None of this shows once a book stops being actively read.** The whole strip
+is measured against the real, ever-advancing today, which is exactly right for
+a book in progress and exactly wrong for one that isn't. A finished book with
+nothing logged used to read "Average so far: 5 pages a day, since you started,
+83 days ago" — a number that quietly slides toward zero for as long as the
+book sits on the shelf, because "since you started" kept growing every day it
+finished. A paused or abandoned book had the opposite problem: its old plan
+kept sliding later relative to a today it was no longer being measured
+against, producing a "Finishing" date and an "Against plan" verdict for a
+schedule nobody was keeping. Finished, on hold and did-not-finish books now
+report none of it — a finished book's own facts (dates, sittings, time at the
+page) live in its own summary instead, described below.
+
 </details>
 
 <details>
@@ -333,6 +390,26 @@ The record shows both, because one on its own is misleading:
   This is the number to act on.
 
 Each carries a line saying what it's measured over.
+
+</details>
+
+<details>
+<summary><strong>How far in you are</strong> — Progress on its own, and what a moved plan then means</summary>
+
+**Progress is its own field, in its own block, above the plan.** It used to sit
+inside *What actually happened*, between the start and finish dates, which made
+saying "I'm eighty per cent through" look like it required dates for a book
+that is not finished and may never have had a start date written down. Page,
+minute or percentage — whichever you know — and nothing else has to be filled
+in for it to count.
+
+**A moved plan is a plan for what is left.** Reschedule an audiobook you are
+eighty per cent through to finish it tomorrow and the plan used to ask for the
+whole 310 minutes again, as though the sittings behind it had not happened. Any
+plan moved on a book with progress now counts from where you are: the same
+record *Catch me up* writes, written automatically because moving a plan for a
+part-read book means exactly that. The daily pace under the dates says so —
+"1 day — about 62 minutes a day for the 62 still to go".
 
 </details>
 
@@ -377,6 +454,31 @@ across 16, with 1 break (longest 14 days)."
 </details>
 
 <details>
+<summary><strong>A missed evening</strong> — Today's number, not the number the plan was written with</summary>
+
+210 pages over seven days is thirty a day, right up until the evening you skip.
+From the next morning the plan is quietly wrong: it still says thirty, and
+thirty a day no longer finishes the book.
+
+So the day view, the day popup and the hover card ask for **what is left over
+the days that are left** — 180 pages over five days is 36 — and say why:
+*"The plan asked for 30 a day; what is left now spreads to 36 over the 5 days
+left."* Read ahead instead and the number goes the other way.
+
+Nothing is rewritten to do this. The plan on the record still says what you
+planned, the calendar still spans the days you set aside, and the number is
+derived rather than saved — which matters, because a plan that quietly edited
+itself every morning would be a plan you could never check yourself against.
+When you *want* the plan itself rebuilt around today, that is what **Catch me
+up** and **Start plan from here** are for, and they say what they will do
+before they do it.
+
+Only today condenses. Yesterday asked what it asked, and tomorrow's share
+depends on what happens tonight.
+
+</details>
+
+<details>
 <summary><strong>Catching up on a slipped plan</strong> — Replanning without losing the record</summary>
 
 Targets are cumulative from the plan's start, which means missing two days
@@ -392,6 +494,32 @@ from the 11th. A plan you can't read off the record is not a plan.
 
 A rebased plan still totals exactly the page count; `tests/calendar.test.js`
 sums the daily targets and asserts it.
+
+</details>
+
+<details>
+<summary><strong>Plans that move</strong> — What happens to the schedule you replace</summary>
+
+Moving a plan keeps the plan it replaced. Every previous schedule is filed on
+the record with the day it was replaced — the last dozen of them — which fixes
+something that used to make the record lie to you.
+
+**The chart judges each day by the plan it was lived under.** Plan a book for
+16–22 August, read on the 17th, then reschedule to 22–27: measured against the
+*new* plan, the 18th looks comfortably ahead, because the new plan had not
+started yet and asked for nothing. Measured against the plan you were actually
+failing to keep, you were behind — which is the truth, and now what the chart
+draws. The day of each move is marked on it with a faint rule, because the kink
+in the line is the most interesting thing on the chart: it is the day you
+decided this was not going to happen the way you wrote it down.
+
+**A book that keeps moving gets one sentence about it.** At three moves the
+record says so, and puts *On hold* and *Did not finish* within reach. It does
+not act on its own: quietly changing a book's status because the app counted to
+three would be the app deciding how your reading is going. It counts; you
+decide.
+
+The count travels with the CSV export as `times_rescheduled`.
 
 </details>
 
@@ -465,6 +593,35 @@ bar in between still gives its exact date to the read-out.
 ## Your library
 
 <details>
+<summary><strong>What finishing a book took</strong> — The part a finish date throws away</summary>
+
+Finish a book and the record leads with what it actually took: the dates and
+the span (*3 July – 10 August · 39 days start to finish*), how many of those
+days you actually read on, how many sittings, the time at the page, and — where
+there is enough logged to be honest about it — pages an hour and pages on a day
+you read.
+
+**Speed is measured over the sittings that were actually timed**, and it says
+so when that is only some of them. Dividing the whole book by the whole log is
+wrong the moment one sitting was logged without minutes — which is most logs,
+since minutes are optional and often unknown. That sum once reported a
+310-minute audiobook as "266 minutes an hour", which is impossible, and, read
+closely, the arithmetic admitting it had divided a whole book by an hour of it.
+
+**An audiobook reports a playback speed, not a page rate.** Its "pages" are
+minutes of audio, so units per hour is a multiple of the clock — "1.2× the
+clock" — and anything outside half to five times is treated as a mis-logged
+position and not reported at all.
+
+A book read in four sittings over a fortnight and the same book ground through
+over eight months are the same row on a shelf and completely different reading.
+Everything is counted from the log rather than stored, so correcting a session
+later corrects this too, and a book with nothing logged says so instead of
+inventing a reading speed.
+
+</details>
+
+<details>
 <summary><strong>How one book has actually gone</strong> — The plan and the record on the same axes</summary>
 
 Folded into every record with a log: two lines over the same days. The dashed
@@ -524,6 +681,16 @@ second "the" in `The Wind in the Willows` stays put.
 A series with a volume number in its own field sorts by that field first, which
 is how volume 4.5 lands between 4 and 5.
 
+**"By plan date" leads with the books actually being planned.** Reading and
+Planned books sort first, in schedule order; a finished, abandoned, on-hold or
+backlog book still carries the `schedule.start` it was last planned under, and
+sorting the whole catalogue by that put a book finished weeks ago on the same
+list as the one you start tonight, sometimes ahead of it. They are not hidden
+— the Everything shelf still shows everything — they just settle after the
+books that are actually in progress or upcoming. Picking one of the
+status-specific shelves (Finished, say) is unaffected: sorting *that* shelf by
+plan date sorts exactly what's on it.
+
 </details>
 
 <details>
@@ -537,6 +704,29 @@ This exists because "8 books finished this year" is misleading when four of
 them are single comic issues. The stats page shows the split, and the library
 filters by it. Calibre imports guess a category from the metadata, which is a
 guess and editable.
+
+</details>
+
+<details>
+<summary><strong>Where a copy came from</strong> — Bought, borrowed, a gift, the library</summary>
+
+A record has a **Where from** field: Purchased, Gift, Library, Borrowed,
+Subscription, Free — and anything else you add in Settings, under *Where books
+come from*, exactly the way kinds work. Blank is a real answer and the default
+one; an imported catalogue has no idea where anything came from, and guessing
+would be inventing a fact.
+
+It answers the questions a shelf cannot: which of these have to go back, which
+were presents, and what a year of reading actually cost. **The library has a
+"Where from" filter row**, the same control as the kind row, with a *Not stated*
+button beside the rest — an unfilled field is the commonest state of an
+imported catalogue, and finding those books is how they get filled in. The row
+can be switched off in Settings with the others. Sources are also counted in
+Settings, searchable, shown on the card when stated, and carried in the CSV
+export as `source`.
+
+Not to be confused with where a *cover* came from, which is a different field
+and belongs to the picture rather than the book.
 
 </details>
 
@@ -723,10 +913,14 @@ Hover a book in the library and a checkbox appears. Click one, then
 **shift-click another to select everything between them**, the way a file
 manager behaves — ticking forty boxes individually is not a workflow.
 
-Once anything is ticked the toolbar offers: set status, set format, shelve or
-unshelve, fill in missing details, schedule, and remove. Bulk removal is
-undoable from the toast, because deleting forty books by mistake should be
-recoverable for longer than a toast normally lives.
+Once anything is ticked the toolbar offers: set status, set format, set kind,
+**set where the books came from**, **set genre**, shelve or unshelve, add to a
+reading list, fill in missing details, schedule, shift a set of plans by days,
+and remove. Genre is one free-text field rather than a list like shelves, so
+setting it on a batch is a single value applied to all of them — leave it
+blank and it clears the field instead. Bulk removal is undoable from the
+toast, because deleting forty books by mistake should be recoverable for
+longer than a toast normally lives.
 
 Bulk scheduling lists the books **in the order you selected them**, with the
 dates each will get, and arrows to reorder before committing. The order was
@@ -1235,6 +1429,7 @@ js/data/providers.js    Open Library, Google Books, Apple Books
 js/data/schema.js       the Book record: defaults, normalise, validate
 js/data/seed.js         sample library for demos
 js/data/snapshot.js     standalone offline HTML export
+js/data/sources.js      where a copy came from: bought, borrowed, a gift
 js/data/store.js        persistence, migrations, CRUD, pub/sub
 js/data/sync.js         talking to the sync server
 js/data/theme.js        colour schemes, and everything derived from them

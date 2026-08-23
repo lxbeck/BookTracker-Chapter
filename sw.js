@@ -14,13 +14,18 @@
  * Bump CACHE_VERSION to ship an update; old caches are dropped on activate.
  */
 
-const CACHE_VERSION = 'chapter-v14';
+const CACHE_VERSION = 'chapter-v15';
 const SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const IMAGE_CACHE = `${CACHE_VERSION}-images`;
 
 const SHELL = [
   './',
   './index.html',
+  './manifest.webmanifest',
+  './icons/favicon.svg',
+  './icons/icon-192.png',
+  './icons/icon-512.png',
+  './icons/apple-touch-icon.png',
   './css/tokens.css',
   './css/base.css',
   './css/components.css',

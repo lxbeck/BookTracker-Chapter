@@ -7,12 +7,13 @@
  */
 
 import { el, fill, $, toast } from '../lib/dom.js';
-import { showModal } from './modal.js';
+import { showModal, confirmAction } from './modal.js';
 import { coverPicker } from './coverPicker.js';
 import { sessionLog } from './sessionLog.js';
 import {
-  progressReport, catchUpPreview, catchUpPatch, startFromHere, paceFor,
+  progressReport, catchUpPreview, catchUpPatch, startFromHere, paceFor, progressTrail,
 } from '../logic/pacing.js';
+import { trailChart } from '../lib/charts.js';
 import { allBooks } from '../data/store.js';
 import {
   STATUSES, STATUS_ORDER, FORMATS, FORMAT_PRIORITY,
@@ -432,6 +433,7 @@ export function openBookForm({ book = null, defaultStart = null, onSaved } = {})
 
   const body = [
     isEdit ? progressStrip(draft) : null,
+    isEdit ? historyPanel(draft) : null,
     el('div.field', {}, [
       el('span.field__label', { text: 'Cover' }),
       picker,
@@ -500,8 +502,13 @@ export function openBookForm({ book = null, defaultStart = null, onSaved } = {})
             draft.sessions.length
               ? el('button.btn.btn--danger.btn--sm', {
                   type: 'button',
-                  onClick: () => {
-                    if (!confirm(`Delete all ${draft.sessions.length} logged sittings for ${draft.title}?`)) return;
+                  onClick: async () => {
+                    const sure = await confirmAction({
+                      title: `Delete the reading log for ${draft.title}?`,
+                      body: `All ${draft.sessions.length} logged sittings go. The book itself stays.`,
+                      confirmLabel: 'Delete the log',
+                    });
+                    if (!sure) return;
                     updateBook(draft.id, { sessions: [] });
                     draft.sessions = [];
                     toast('Reading log cleared.');
@@ -742,6 +749,39 @@ export function openBookForm({ book = null, defaultStart = null, onSaved } = {})
  * where that lands. Everything here is computed from the log rather than
  * entered, so there is nothing to edit and no field to keep in sync.
  */
+/**
+ * This book's own history: the plan and the record on the same axes.
+ *
+ * The record already says "27 pages behind" and "finishes Friday", and both
+ * are this comparison boiled down to a sentence. The chart is here because the
+ * sentence cannot tell you *when* it went wrong — a book that lost a week to a
+ * holiday and one that has been quietly slipping since day one produce the
+ * same sentence and completely different shapes.
+ *
+ * Folded shut. It is detail, and the fields above it are what the record is
+ * for; anyone who wants it opens it once and finds it open thereafter.
+ */
+function historyPanel(book) {
+  const trail = progressTrail(book);
+  if (!trail.ok || trail.points.length < 2) return null;
+  if (!trail.points.some((point) => point.logged)) return null;
+
+  return el('details.book-history', {}, [
+    el('summary', {}, 'How this book has actually gone'),
+    el('div.book-history__body', {}, [
+      trailChart(trail.points, {
+        label: `${book.title}: plan against record`,
+        total: trail.total,
+        unit: trail.unit,
+      }),
+      el('p.chart-key', {}, [
+        el('span', {}, [el('i', {}), 'What you have read']),
+        el('span', {}, [el('i', { class: 'is-plan' }), 'What the plan asked for']),
+      ]),
+    ]),
+  ]);
+}
+
 function progressStrip(book) {
   const report = progressReport(book);
   if (!report.ok || (!report.done && !report.sittings)) return null;

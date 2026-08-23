@@ -70,6 +70,12 @@ design does not solve.
 The server is plain HTTP with no authentication. It is meant for your own
 network. Don't port-forward it.
 
+**Back closes a dialog rather than leaving the app.** An open record covers
+the screen, so it looks like a place, and on a phone the gesture for leaving a
+place is Back — which used to exit Chapter entirely and take whatever was
+half-typed with it. A dialog now owns one history entry: Back closes it, and
+closing it any other way gives the entry back.
+
 **On a narrow screen the forms are one field per line.** A form control's
 natural width is about twenty characters, and a grid item refuses by default to
 shrink below its contents — so a three-across row of fields kept its full width
@@ -93,6 +99,19 @@ the library lives in `./data` on disk and this stops being a concern, since
 every device reads the same copy.
 
 The server says as much on first run when it finds no library.
+
+</details>
+
+<details>
+<summary><strong>The first time you open it</strong> — Three sentences, then it gets out of the way</summary>
+
+A note at the top of the calendar says what Chapter is for, in three sentences,
+and offers to fill it with a sample library so the calendar has something on
+it. Dismiss it and it is gone for good — an introduction that keeps
+introducing itself is an advert.
+
+Nothing is seeded without being asked for. Silently inventing someone's data is
+a bad first impression, and it is impossible to tell apart from a bug.
 
 </details>
 
@@ -128,6 +147,11 @@ so no layout leaves a gap where a book isn't.
 Clicking a day opens the popup; clicking the date number opens the full Day
 view. Two weights of the same gesture, so a quick look doesn't cost a page.
 
+**The view is in the address.** Which calendar you are on and which kinds are
+showing live in the hash — `#/calendar?mode=log&kinds=comic,manga` — so a
+reload keeps them and a link can carry them. Defaults are left out, so an
+untouched calendar keeps a clean address.
+
 The board is sized from an explicit `--board-height` token rather than
 stretching to fit its contents. That is load-bearing, not cosmetic: a tile
 derives its width from its height, and that only resolves if some ancestor has
@@ -143,7 +167,13 @@ resolvable.
   inline progress logging.
 - **Drag a cover to another day** to move its plan, keeping the same length.
   Keyboard equivalent: focus a cover and press Shift + arrow keys — left and
-  right shift by a day, up and down by a week.
+  right shift by a day, up and down by a week. On a touch screen, where no
+  amount of dragging fires a drag event, open the day and use **Move plan…**:
+  a date field, nudges for a day and a week either way, and a line telling you
+  what the new span works out as.
+- **Press and hold a cover** on a touch screen to open the day. Hovering
+  answers "what does this day ask of me", and a touch screen cannot hover, so
+  that answer was desktop-only and a tap went straight past it into the record.
 
 Daily targets are computed cumulatively rather than as a flat rate. 448 pages
 over 11 days is 40.72 a day; a flat rounded 41 would drift you past the end of
@@ -239,6 +269,23 @@ The streak counts consecutive days with any logged reading, across the whole
 library. It is deliberately forgiving: today counts as unbroken until the day
 is over, so the number doesn't reset every morning and read as a telling-off
 before you've had a chance to open a book. Two silent days ends it.
+
+</details>
+
+<details>
+<summary><strong>Timing a sitting</strong> — Measuring instead of remembering</summary>
+
+**Start a timer** sits next to **Log it** in the reading log. Stopping it fills
+in the minutes; the page you reached is still yours to type, because only you
+know it.
+
+The timer lives in browser storage rather than in the page, so it survives the
+app re-rendering, the tab being closed, and the door being answered. One runs
+at a time — if a timer is already going on another book, the log says so rather
+than quietly starting a second one — and logging the sitting stops it.
+
+The minutes are rounded, and never zero: if you started a timer, a sitting
+happened.
 
 </details>
 
@@ -418,6 +465,44 @@ bar in between still gives its exact date to the read-out.
 ## Your library
 
 <details>
+<summary><strong>How one book has actually gone</strong> — The plan and the record on the same axes</summary>
+
+Folded into every record with a log: two lines over the same days. The dashed
+one is what the plan asked for, the solid one is where you actually got to, and
+a dot marks each day something was logged — the line between dots is an
+assumption, the dots are evidence.
+
+The record already says "27 pages behind" in words. The chart is here because
+that sentence cannot tell you *when* it went wrong, and a book that lost a week
+to a holiday and one that has been slipping quietly since day one produce the
+same sentence and completely different shapes.
+
+</details>
+
+<details>
+<summary><strong>The year in reading</strong> — One card, and a copy of it</summary>
+
+At the top of Stats: books finished, pages, time at the page, days read as a
+share of the year, the longest run of consecutive days, and the average of what
+you rated. Under that, the sentences the year can support — most-read author,
+the genre most of it was, the longest book, anything you gave five stars, and
+the busiest month.
+
+**Busiest is measured in time at the page, not in books finished.** Finishing
+is when a book ends, not when it was read, and a year told through finish dates
+credits January for a book read over Christmas.
+
+**Copy this summary** puts the whole thing on the clipboard as plain text. If
+the browser refuses clipboard access — which happens on insecure origins and in
+some embedded contexts — the text is shown in a box to copy by hand rather than
+the button silently doing nothing.
+
+Every year with anything recorded in it is in the picker, so this works as well
+in March, and as well for last year.
+
+</details>
+
+<details>
 <summary><strong>How titles are sorted</strong> — Articles, and volume numbers</summary>
 
 Two things a plain alphabetical sort gets wrong, and both are obvious once you
@@ -490,6 +575,51 @@ Records saved before formats were plural still work: `format` alone is read as
 a list of one, and the two fields are kept in step on every save rather than
 stored independently, since two fields that can disagree about the same fact
 eventually will.
+
+</details>
+
+<details>
+<summary><strong>A library with hundreds of books in it</strong> — Paging, and why the search feels different</summary>
+
+The shelf builds **sixty cards at a time**, with a count and a "show more"
+under them. A Goodreads import is nine hundred books, each card carries a
+cover, a progress bar and a row of controls, and building all of them is a
+second of work — repeated on every keystroke in the search field, which is
+where it was actually felt.
+
+The search reaches everything you wrote about a book, not only its labels:
+descriptions, notes, reviews, **quotes you copied out**, and **the notes on
+individual sittings**. "Which book had that line about the lighthouse" is
+precisely the question a copied-out quote exists to answer, and it used to be
+unanswerable. When the match is in that prose rather than in a title, the card
+shows the sentence it was found in.
+
+Typing now repaints only the results, not the toolbar the caret is sitting in.
+That is a bug fix as much as a speed one: rebuilding the field meant putting
+the caret back by hand, always at the end, so a search term could not be
+corrected in the middle — and any input method that composes characters before
+committing them, which is every input method for Chinese, Japanese and Korean,
+was interrupted on every keystroke.
+
+</details>
+
+<details>
+<summary><strong>Undoing things</strong> — What offers a way back, and what asks first</summary>
+
+Anything destructive does one of two things: asks first, or offers a way back.
+
+**Asks first**, in a dialog that looks like the rest of the app: deleting a
+shelf, a list, a kind, a saved theme, a reading log, or a batch of books. The
+browser's own `confirm()` used to do this, and it ignores the theme, cannot
+mark the dangerous button as dangerous, and is suppressed outright in some
+embedded contexts — where it returns false and the action silently never
+happens.
+
+**Offers a way back**, as an Undo in the message that follows: deleting a book
+or a batch of them, deleting a sitting, clearing a whole reading log, resetting
+progress and dates, deleting a reading list. Restoring a list clears its
+tombstone too, so the next sync doesn't helpfully delete it again on every
+other device.
 
 </details>
 
@@ -938,11 +1068,37 @@ ISBNs and never will, and a row permanently announcing "No ISBN (312)" is not a
 prompt, it is furniture — and it teaches you to ignore the row that would have
 told you something useful.
 
+**Shift plans.** The commonest planning event there is: a week away, an
+illness, a book that took twice as long as it should have — and everything
+after it needs to move *by* something, keeping its length and its order. Select
+the books, say how many days, and every plan among them moves together. Books
+with no start date are left alone, and the whole shift can be undone from the
+message that follows.
+
 **Shelves and lists.** A shelf has no record of its own; it exists because
 books carry its name, which made it free to create and impossible to delete.
 Renaming or deleting one now rewrites the tag on every book that has it, and
 renaming onto an existing shelf merges the two. Reading lists can be deleted
 from Settings as well as from the Orders page.
+
+</details>
+
+<details>
+<summary><strong>Installing it</strong> — Adding it to a home screen or a dock</summary>
+
+Chapter ships a web app manifest and a service worker, so any browser that
+supports installing web apps will offer it: **Install** in Chrome's address
+bar, **Add to Home Screen** on iOS, **Install this site as an app** in Edge.
+Installed, it opens in its own window with no browser chrome, keeps working
+offline, and gets shortcuts straight to Today, the Calendar and the Library
+from its icon's menu.
+
+Installing also makes browsers far more willing to mark the data persistent,
+which is the practical reason to bother: an installed app's storage is much
+less likely to be evicted.
+
+Everything in the manifest is a relative path, so this works the same served
+from a domain root or from a subdirectory.
 
 </details>
 
@@ -972,9 +1128,12 @@ time it matters.
 To check independently: developer tools, Application, Local Storage. Or just
 quit the browser, reopen it, and see that the books are still there.
 
-Settings can also ask the browser to mark the data persistent, which reduces
-the chance of eviction under storage pressure. Browsers usually decline unless
-the site is installed or frequently used; the data is saved either way.
+Chapter asks the browser to mark the data persistent on every load, and
+Settings has a button for asking again. It reduces the chance of eviction under
+storage pressure, and browsers usually decline until a site is installed or
+visited regularly — the asking is silent either way, and the data is saved
+regardless. Asking only from a button nobody knows to press is not a safeguard
+for a year of reading.
 
 </details>
 
@@ -1054,7 +1213,10 @@ css/sessions.css        reading log
 css/settings.css        settings page, themes, reports
 css/stats.css           stats page and charts
 css/tokens.css          design tokens — palette, type, spacing, motion
+icons/                  the mark: a Times "C", as SVG and as three PNG sizes
+icons/render.html       the page the PNGs are rasterised from (not part of the app)
 index.html              app shell
+manifest.webmanifest    installable-app metadata: name, icons, shortcuts
 js/app.js               bootstrap, hash router, settings applied app-wide
 js/data/calibre.js      Calibre catalogue import
 js/data/coverActions.js one path for setting a cover, wherever it came from

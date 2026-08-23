@@ -14,10 +14,10 @@
 import { el, fill, toast } from '../lib/dom.js';
 import { compareTitles } from '../lib/titles.js';
 import {
-  allOrders, allBooks, getBook, createOrder, updateOrder, removeOrder,
+  allOrders, allBooks, getBook, createOrder, updateOrder, removeOrder, restoreOrder,
   addToOrder, removeFromOrder, moveInOrder, moveOrder, setOrderSequence,
 } from '../data/store.js';
-import { showModal } from './modal.js';
+import { showModal, confirmAction } from './modal.js';
 import { coverThumb } from './cover.js';
 import { openBookForm } from './bookForm.js';
 import { STATUSES } from '../data/schema.js';
@@ -141,10 +141,24 @@ function orderPanel(order, index, total, redraw) {
         }, 'Rename'),
         el('button.btn.btn--danger.btn--sm', {
           type: 'button',
-          onClick: () => {
-            if (!confirm(`Delete the list "${order.name}"? The books themselves stay in your library.`)) return;
-            removeOrder(order.id);
-            toast('List deleted.');
+          onClick: async () => {
+            const sure = await confirmAction({
+              title: `Delete "${order.name}"?`,
+              body: 'The books themselves stay in your library.',
+              confirmLabel: 'Delete the list',
+            });
+            if (!sure) return;
+            const removed = removeOrder(order.id);
+            toast('List deleted.', {
+              action: {
+                label: 'Undo',
+                onClick: () => {
+                  restoreOrder(removed.order ?? order);
+                  toast('List restored.');
+                  redraw();
+                },
+              },
+            });
             redraw();
           },
         }, 'Delete'),

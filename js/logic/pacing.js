@@ -11,7 +11,7 @@
  * Pure functions. The clock is always a parameter.
  */
 
-import { today, spanLength, daysBetween, addDays } from '../lib/dates.js';
+import { today, spanLength, daysBetween, addDays, eachDay, formatShort, formatLong } from '../lib/dates.js';
 import { formatUnit } from '../data/schema.js';
 import { observedPace, bookTotals, formatDuration } from './sessions.js';
 
@@ -419,4 +419,78 @@ export const startFromHerePreview = (book, todayKey = today()) => startFromHere(
 export function startFromHerePatch(book, todayKey = today()) {
   const result = startFromHere(book, todayKey);
   return result.ok ? result.patch : null;
+}
+
+/**
+ * One book's plan and one book's record, day by day, for drawing.
+ *
+ * The two numbers a reader actually wants side by side: where the plan says
+ * you should be tonight, and where you are. Everything else on the record —
+ * "27 pages behind", "finishes Friday" — is this comparison reduced to a
+ * sentence, and the sentence is easier to argue with than the shape.
+ *
+ * The window runs from the start of the plan (or the first sitting, whichever
+ * is earlier) to the last of: the plan's end, the last sitting, and today. So
+ * a book finished early stops at its finish, and a book running late keeps
+ * going past its end date rather than quietly clipping the overrun.
+ *
+ * @param {object} book
+ * @param {string} [todayKey]
+ * @returns {{ok: boolean, reason?: string, points?: object[], total?: number, unit?: string}}
+ */
+export function progressTrail(book, todayKey = today()) {
+  const sessions = (book.sessions ?? []).filter((session) => session.date);
+  const start = book.schedule.start ?? book.actual.startedAt ?? sessions[0]?.date ?? null;
+
+  if (!start) return { ok: false, reason: 'This book has no plan and nothing logged.' };
+  if (!book.pageCount) return { ok: false, reason: 'No length recorded, so there is nothing to measure against.' };
+
+  const logged = sessions.map((session) => session.date).sort();
+  const from = [start, logged[0]].filter(Boolean).sort()[0];
+  const finished = book.actual.finishedAt;
+  const to = [book.schedule.end, book.schedule.start, logged.at(-1), finished ?? todayKey]
+    .filter(Boolean)
+    .sort()
+    .at(-1);
+
+  if (to < from) return { ok: false, reason: 'Nothing to draw yet.' };
+
+  // Furthest page reached on or before each day. `pageTo` is a position rather
+  // than an amount, so this is a running maximum and not a sum — two sittings
+  // that both ended on page 90 did not cover 180 pages.
+  const reachedBy = new Map();
+  for (const session of sessions) {
+    const page = session.pageTo ?? null;
+    if (page == null) continue;
+    reachedBy.set(session.date, Math.max(reachedBy.get(session.date) ?? 0, page));
+  }
+
+  let running = 0;
+  let everLogged = false;
+
+  const points = eachDay(from, to).map((day) => {
+    const reached = reachedBy.get(day);
+    if (reached != null) {
+      running = Math.max(running, reached);
+      everLogged = true;
+    }
+
+    const pace = paceFor(book, day, todayKey);
+    const planned = pace.ok && book.schedule.start
+      ? Math.min(pace.cumulative, book.pageCount)
+      : null;
+
+    return {
+      day,
+      label: formatShort(day).slice(4),
+      fullLabel: formatLong(day),
+      // Days before anything was logged have no reading to report, as distinct
+      // from reporting a confident zero.
+      actual: everLogged || day >= (book.actual.startedAt ?? from) ? running : null,
+      planned: day > (finished ?? to) ? null : planned,
+      logged: reached != null,
+    };
+  });
+
+  return { ok: true, points, total: book.pageCount, unit: formatUnit(book) };
 }

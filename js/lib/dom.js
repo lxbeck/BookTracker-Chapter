@@ -69,16 +69,43 @@ export function fill(node, children) {
 
 export const $ = (sel, root = document) => root.querySelector(sel);
 
-/** Show a transient message. Errors stay up longer. */
-export function toast(message, { variant = 'info', ms = 2600 } = {}) {
+/**
+ * Show a transient message. Errors stay up longer.
+ *
+ * An `action` turns it into the offer of a way back — "Session deleted. Undo."
+ * — which is the difference between a destructive action you can risk and one
+ * you have to be sure about first. A toast carrying one stays up long enough
+ * to be read and reached.
+ *
+ * @param {string} message
+ * @param {{variant?: 'info'|'error', ms?: number, action?: {label: string, onClick: () => void}}} [options]
+ */
+export function toast(message, { variant = 'info', ms = 2600, action = null } = {}) {
   let rail = $('.toast-rail');
   if (!rail) {
     rail = el('div.toast-rail', { role: 'status', 'aria-live': 'polite' });
     document.body.append(rail);
   }
-  const node = el('div.toast', { class: variant === 'error' ? 'toast--error' : '' }, message);
+
+  const node = el('div.toast', {
+    class: [variant === 'error' ? 'toast--error' : '', action ? 'toast--action' : ''].filter(Boolean).join(' '),
+  }, [
+    el('span', {}, message),
+    action
+      ? el('button.toast__action', {
+          type: 'button',
+          onClick: () => {
+            node.remove();
+            action.onClick();
+          },
+        }, action.label)
+      : null,
+  ].filter(Boolean));
+
   rail.append(node);
-  setTimeout(() => node.remove(), variant === 'error' ? ms + 1800 : ms);
+
+  const life = action ? Math.max(ms, 7000) : variant === 'error' ? ms + 1800 : ms;
+  setTimeout(() => node.remove(), life);
 }
 
 /**

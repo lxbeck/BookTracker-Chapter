@@ -356,17 +356,80 @@
   min-width: 180px;
 }
 
-.session-form__row--positions {
-  grid-template-columns: 1.3fr 1fr 0.8fr 0.8fr 0.8fr;
+/* --- Move a plan ---------------------------------------------------------- */
+
+/* A row of nudges beside the date field. Pushing a book back one evening is
+   the commonest move there is, and typing a date to do it is more work than
+   the move deserves. */
+.move-plan__steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
 }
 
-.session-form__hint {
+/* --- The timer ------------------------------------------------------------ */
+
+/* Sits on the left of the log's action row, so "start a timer" and "log it"
+   are the two ends of the same sentence. */
+.timer {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  margin-right: auto;
+}
+
+.timer__reading {
+  font-family: var(--face-slip);
+  font-size: var(--size-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+/* A running timer needs to be visible from across the room, and this is the
+   only thing on the page that is actually happening right now. */
+.timer__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--state-reading, #b07d1c);
+  box-shadow: 0 0 0 3px rgba(176, 125, 28, 0.2);
+  animation: timer-pulse 2s var(--ease) infinite;
+}
+
+@keyframes timer-pulse {
+  50% { opacity: 0.35; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .timer__dot {
+    animation: none;
+  }
+}
+
+.timer__elsewhere {
   font-size: var(--size-xs);
   color: var(--ink-faint);
 }
 
-@media (max-width: 720px) {
-  .session-form__row--positions {
-    grid-template-columns: 1fr 1fr;
-  }
+/* --- A book's own history ------------------------------------------------- */
+
+.book-history {
+  border: var(--rule);
+  border-radius: var(--r-card);
+  background: var(--slip-shade);
+}
+
+.book-history > summary {
+  cursor: pointer;
+  padding: var(--s2) var(--s3);
+  font-family: var(--face-slip);
+  font-size: var(--size-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.book-history__body {
+  padding: 0 var(--s3) var(--s3);
 }

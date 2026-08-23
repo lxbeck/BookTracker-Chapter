@@ -1028,29 +1028,6 @@
 
 /* --- Chart hover read-out ------------------------------------------------- */
 
-.chart-wrap {
-  position: relative;
-}
-
-.chart-tip {
-  position: absolute;
-  z-index: 5;
-  transform: translate(-50%, -100%);
-  background: var(--bookcloth);
-  color: var(--ink-inverse);
-  font-family: var(--face-slip);
-  font-size: var(--size-xs);
-  white-space: nowrap;
-  padding: var(--s1) var(--s2);
-  border-radius: var(--r-control);
-  box-shadow: var(--lift-2);
-  pointer-events: none;
-}
-
-.chart-tip[hidden] {
-  display: none;
-}
-
 /* An invisible hit area, so a two-pixel bar or an empty month is still
    hoverable and a zero still reports as zero. */
 .chart__hit {
@@ -1145,7 +1122,6 @@
   opacity: 1;
 }
 
-
 /* The unread portion of a bar, so the finished part can sit over it. A bar
    that is all one colour only tells you which row is biggest, which the
    ordering already did. */
@@ -1156,4 +1132,113 @@
 .chart__bar--done {
   fill: var(--shelved);
   opacity: 1;
+}
+
+/* The plan, in a book's own history chart: dashed and quiet, because it is an
+   intention rather than a record. */
+.chart__line--plan {
+  stroke: var(--ink-faint);
+  stroke-width: 1.5;
+  stroke-dasharray: 5 4;
+  opacity: 0.9;
+}
+
+.chart-key {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s4);
+  margin-top: var(--s2);
+  font-family: var(--face-slip);
+  font-size: var(--size-xs);
+  color: var(--ink-faint);
+}
+
+.chart-key span {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+}
+
+.chart-key i {
+  width: 18px;
+  height: 0;
+  border-top: 2px solid var(--stamp);
+  display: inline-block;
+}
+
+.chart-key i.is-plan {
+  border-top-style: dashed;
+  border-color: var(--ink-faint);
+}
+
+/* --- The year in one card ------------------------------------------------- */
+
+.review {
+  padding: var(--s5);
+  margin-bottom: var(--s4);
+  border-top: 3px solid var(--stamp);
+}
+
+.review__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--s4);
+  flex-wrap: wrap;
+}
+
+.review__eyebrow {
+  font-family: var(--face-slip);
+  font-size: var(--size-xs);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.review__year {
+  font-size: var(--size-xl);
+  line-height: 1;
+  color: var(--ink);
+}
+
+.review__picker {
+  width: auto;
+}
+
+.review__figures {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(140px, 100%), 1fr));
+  gap: var(--s4);
+  margin: var(--s4) 0 0;
+}
+
+.review__figure dt {
+  font-family: var(--face-display);
+  font-variation-settings: var(--wonk-on);
+  font-size: var(--size-lg);
+  color: var(--ink);
+  line-height: 1.1;
+}
+
+.review__figure dd {
+  margin: 0;
+  font-family: var(--face-slip);
+  font-size: var(--size-xs);
+  color: var(--ink-faint);
+}
+
+.review__lines {
+  list-style: none;
+  margin: var(--s4) 0 0;
+  padding: var(--s4) 0 0;
+  border-top: var(--rule);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+  font-size: var(--size-sm);
+  color: var(--ink-soft);
+}
+
+.review__actions {
+  margin-top: var(--s4);
 }

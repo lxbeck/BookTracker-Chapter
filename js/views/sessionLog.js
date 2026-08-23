@@ -20,6 +20,7 @@ import { FORMATS, formatUnit, hasFormat } from '../data/schema.js';
 import { formatShort, today } from '../lib/dates.js';
 import { bookTotals, formatDuration } from '../logic/sessions.js';
 import { sessionPages } from '../data/schema.js';
+import { confirmAction } from './modal.js';
 
 /**
  * @param {Object} config
@@ -228,6 +229,8 @@ function entryForm(book, fixedDate, onSaved) {
     }
 
     error.hidden = true;
+    // The sitting this timer was measuring is now on the record.
+    if (runningTimer()?.bookId === book.id) setTimer(null);
     const covered = sessionPages(result.session);
     toast(
       `Logged ${formatDuration(result.session.minutes ?? 0)}${covered ? ` and ${covered} ${unit}` : ''}.`
@@ -249,6 +252,7 @@ function entryForm(book, fixedDate, onSaved) {
     ].filter(Boolean)),
     preview,
     el('div.session-form__actions', {}, [
+      timerControl(book, minutesInput, refreshPreview),
       error,
       el('button.btn.btn--stamp.btn--sm', { type: 'button', onClick: save }, 'Log it'),
     ]),
@@ -269,6 +273,113 @@ function entryForm(book, fixedDate, onSaved) {
   };
 
   return form;
+}
+
+/* --- The timer -------------------------------------------------------------
+   Logging after the fact means remembering a number nobody was watching for,
+   and "about forty minutes?" is how a reading log becomes fiction. A timer
+   turns the guess into a measurement.
+
+   It lives in localStorage rather than in a variable, because the app
+   re-renders on every store change and a reader closes the tab, answers the
+   door, and comes back — a timer that only exists in a closure is a timer that
+   loses the sitting it was there to record.
+   -------------------------------------------------------------------------- */
+
+const TIMER_KEY = 'chapter.timer.v1';
+
+/** @returns {{bookId: string, startedAt: number}|null} */
+function runningTimer() {
+  try {
+    const raw = localStorage.getItem(TIMER_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed?.bookId && Number.isFinite(parsed.startedAt) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function setTimer(value) {
+  try {
+    if (value) localStorage.setItem(TIMER_KEY, JSON.stringify(value));
+    else localStorage.removeItem(TIMER_KEY);
+  } catch {
+    /* a timer is not worth breaking the log over */
+  }
+}
+
+/** Whole minutes elapsed, never less than one: a sitting happened. */
+export const timerMinutes = (startedAt, now = Date.now()) =>
+  Math.max(1, Math.round((now - startedAt) / 60000));
+
+/**
+ * Start / stop, and the running read-out between them.
+ *
+ * Stopping fills the minutes field rather than logging outright, because the
+ * page you reached is the other half of the entry and only you know it.
+ */
+function timerControl(book, minutesInput, onTick) {
+  const node = el('div.timer');
+
+  const draw = () => {
+    if (!node.isConnected && node.dataset.drawn) return;
+    node.dataset.drawn = 'yes';
+
+    const running = runningTimer();
+    const mine = running?.bookId === book.id;
+
+    if (mine) {
+      const minutes = timerMinutes(running.startedAt);
+      fill(node, [
+        el('span.timer__dot', { 'aria-hidden': 'true' }),
+        el('span.timer__reading', { 'aria-live': 'off' },
+          `Reading \u00b7 ${formatDuration(minutes)}`),
+        el('button.btn.btn--stamp.btn--sm', {
+          type: 'button',
+          onClick: () => {
+            setTimer(null);
+            minutesInput.value = String(minutes);
+            minutesInput.dispatchEvent(new Event('input'));
+            toast(`Timer stopped at ${formatDuration(minutes)}. Add the page you reached and log it.`);
+            draw();
+            onTick?.();
+          },
+        }, 'Stop'),
+      ]);
+      return;
+    }
+
+    fill(node, [
+      el('button.btn.btn--quiet.btn--sm', {
+        type: 'button',
+        onClick: () => {
+          setTimer({ bookId: book.id, startedAt: Date.now() });
+          draw();
+          onTick?.();
+        },
+      }, 'Start a timer'),
+      running
+        ? el('span.timer__elsewhere', {},
+            'A timer is running on another book \u2014 open it to stop.')
+        : null,
+    ].filter(Boolean));
+  };
+
+  draw();
+
+  // One interval per control, stopped when the control leaves the page. The
+  // read-out is in whole minutes, so twice a minute is as often as it can
+  // possibly need to change.
+  const tick = setInterval(() => {
+    if (!node.isConnected) {
+      clearInterval(tick);
+      return;
+    }
+    if (runningTimer()?.bookId === book.id) draw();
+  }, 30000);
+
+  return node;
 }
 
 const labelled = (label, control) =>
@@ -317,10 +428,25 @@ function correctionRow(book, onChange) {
     hasLog
       ? el('button.btn.btn--danger.btn--sm', {
           type: 'button',
-          onClick: () => {
-            if (!confirm(`Delete all ${book.sessions.length} logged sittings for ${book.title}? The book itself stays.`)) return;
+          onClick: async () => {
+            const sure = await confirmAction({
+              title: `Delete the reading log for ${book.title}?`,
+              body: `All ${book.sessions.length} logged sittings go. The book itself stays.`,
+              confirmLabel: 'Delete the log',
+            });
+            if (!sure) return;
+            const sessions = book.sessions;
             updateBook(book.id, { sessions: [] });
-            toast('Reading log cleared.');
+            toast('Reading log cleared.', {
+              action: {
+                label: 'Undo',
+                onClick: () => {
+                  updateBook(book.id, { sessions });
+                  toast('Reading log restored.');
+                  onChange();
+                },
+              },
+            });
             onChange();
           },
         }, `Clear the log (${book.sessions.length})`)
@@ -328,14 +454,33 @@ function correctionRow(book, onChange) {
     hasRecord
       ? el('button.btn.btn--danger.btn--sm', {
           type: 'button',
-          onClick: () => {
-            if (!confirm(`Reset progress and the start and finish dates for ${book.title}? The plan and the reading log stay.`)) return;
+          onClick: async () => {
+            const sure = await confirmAction({
+              title: `Reset what happened for ${book.title}?`,
+              body: 'Progress and the start and finish dates are cleared. The plan and the reading log stay.',
+              confirmLabel: 'Reset it',
+            });
+            if (!sure) return;
+            const before = {
+              actual: { ...book.actual },
+              progress: { ...book.progress },
+              status: book.status,
+            };
             updateBook(book.id, {
               actual: { startedAt: null, finishedAt: null },
               progress: { page: 0, percent: 0 },
               status: book.status === 'finished' ? 'reading' : book.status,
             });
-            toast('Progress and dates reset.');
+            toast('Progress and dates reset.', {
+              action: {
+                label: 'Undo',
+                onClick: () => {
+                  updateBook(book.id, before);
+                  toast('Progress and dates put back.');
+                  onChange();
+                },
+              },
+            });
             onChange();
           },
         }, 'Reset progress and dates')
@@ -362,7 +507,20 @@ function sessionRow(book, session, unit, onChange) {
       'aria-label': `Delete the ${formatShort(session.date)} session`,
       onClick: () => {
         removeSession(book.id, session.id);
-        toast('Session deleted.');
+        // The sitting itself is the undo: putting the same record back is a
+        // write of what we already have in hand.
+        toast('Session deleted.', {
+          action: {
+            label: 'Undo',
+            onClick: () => {
+              const current = getBook(book.id);
+              if (!current) return;
+              updateBook(book.id, { sessions: [...current.sessions, session] });
+              toast('Session restored.');
+              onChange();
+            },
+          },
+        });
         onChange();
       },
       text: '\u00d7',

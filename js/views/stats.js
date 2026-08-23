@@ -6,14 +6,16 @@
  * habit, and only then the breakdowns.
  */
 
-import { el, fill } from '../lib/dom.js';
+import { el, fill, toast } from '../lib/dom.js';
 import { allBooks, getSettings } from '../data/store.js';
 import {
   headline, allGoalProgress, finishedByMonth, loggedByMonth, dailyPages,
   cumulativePages, dailyMinutes, breakdown, finishedByCategory,
+  yearInReview, yearsWithReading,
 } from '../logic/stats.js';
 import { formatDuration } from '../logic/sessions.js';
 import { kindLabel, kindPlural } from '../data/kinds.js';
+import { showModal } from './modal.js';
 import { barChart, lineChart, rankChart, heatGrid } from '../lib/charts.js';
 import { openBookForm } from './bookForm.js';
 
@@ -47,6 +49,8 @@ export function renderStats(mount) {
     ]),
 
     ...goals.map((goal) => goalPanel(goal)),
+
+    reviewPanel(books),
 
     stats.byCategory.length > 1 ? categoryPanel(stats) : null,
 
@@ -145,6 +149,142 @@ export function renderStats(mount) {
           'The darker part of each bar is what you have finished.')
       : null,
   ].filter(Boolean));
+}
+
+/* --- The year, in one card ------------------------------------------------
+   Everything else on this page is a working answer to a question you asked on
+   a Tuesday. This is the December answer: what did I actually read this year,
+   in a shape that can be sent to someone.
+   -------------------------------------------------------------------------- */
+
+/** Which year the card is showing. Module state — a glance, not a preference. */
+let reviewYear = null;
+
+function reviewPanel(books) {
+  const years = yearsWithReading(books);
+  if (!years.length) return null;
+
+  if (!years.includes(reviewYear)) reviewYear = years[0];
+  const review = yearInReview(books, reviewYear);
+  if (!review.books && !review.sessions) return null;
+
+  const repaint = () => {
+    const mount = document.querySelector('#view');
+    if (mount) renderStats(mount);
+  };
+
+  return el('section.review.slip.slip--plain', {}, [
+    el('div.review__head', {}, [
+      el('div', {}, [
+        el('p.review__eyebrow', {}, 'The year in reading'),
+        el('h3.review__year', {}, String(review.year)),
+      ]),
+
+      years.length > 1
+        ? el('select.select.review__picker', {
+            'aria-label': 'Which year to review',
+            onChange: (event) => {
+              reviewYear = Number(event.target.value);
+              repaint();
+            },
+          }, years.map((year) =>
+            el('option', { value: String(year), selected: year === review.year }, String(year))))
+        : null,
+    ].filter(Boolean)),
+
+    el('dl.review__figures', {}, [
+      figure(String(review.books), review.books === 1 ? 'book finished' : 'books finished'),
+      figure(review.pages.toLocaleString(), 'pages, cover to cover'),
+      figure(formatDuration(review.minutes), 'at the page'),
+      figure(String(review.daysRead), `days read \u00b7 ${review.dayShare}% of the year`),
+      figure(String(review.streak), review.streak === 1 ? 'day in a row, at best' : 'days in a row, at best'),
+      review.averageRating != null
+        ? figure(`${review.averageRating}\u2605`, `average of ${review.rated} rated`)
+        : null,
+    ].filter(Boolean)),
+
+    el('ul.review__lines', {}, reviewLines(review).map((line) => el('li', {}, line))),
+
+    el('div.review__actions', {}, [
+      el('button.btn.btn--quiet.btn--sm', {
+        type: 'button',
+        onClick: async () => {
+          const text = reviewText(review);
+          try {
+            await navigator.clipboard.writeText(text);
+            toast('Copied. Paste it wherever you like.');
+          } catch {
+            // Clipboard access is refused often enough — insecure contexts,
+            // permissions, older browsers — that failing silently would look
+            // like a broken button. Hand the text over instead.
+            openReviewText(text);
+          }
+        },
+      }, 'Copy this summary'),
+    ]),
+  ]);
+}
+
+const figure = (value, label) =>
+  el('div.review__figure', {}, [el('dt', {}, value), el('dd', {}, label)]);
+
+/** The sentences worth having, skipping any the year cannot support. */
+function reviewLines(review) {
+  const lines = [];
+  const top = (list) => list[0];
+
+  if (top(review.authors)?.value > 1) {
+    lines.push(`Most read: ${top(review.authors).label}, ${top(review.authors).value} books.`);
+  } else if (top(review.authors)) {
+    lines.push(`First finished author of the year: ${top(review.authors).label}.`);
+  }
+
+  if (top(review.genres)) {
+    lines.push(`Mostly ${top(review.genres).label.toLowerCase()} \u2014 ${top(review.genres).value} of ${review.books}.`);
+  }
+
+  if (review.kinds.length > 1) {
+    // `kinds` counts by category id, which is what kindPlural speaks.
+    lines.push(`Across ${review.kinds.map((kind) => `${kind.value} ${kindPlural(kind.label)}`).join(', ')}.`);
+  }
+
+  if (review.longest) {
+    lines.push(`Longest: ${review.longest.title}, ${review.longest.pageCount.toLocaleString()} pages.`);
+  }
+
+  if (review.bestRated?.rating === 5) {
+    lines.push(`Five stars for ${review.bestRated.title}.`);
+  }
+
+  if (review.busiestMonth) {
+    lines.push(`Busiest month: ${review.busiestMonth.label}, ${formatDuration(review.busiestMonth.minutes)} logged.`);
+  }
+
+  return lines;
+}
+
+/** The same card as prose, for pasting somewhere that isn't this app. */
+function reviewText(review) {
+  return [
+    `${review.year} in reading`,
+    `${review.books} books \u00b7 ${review.pages.toLocaleString()} pages \u00b7 ${formatDuration(review.minutes)} \u00b7 read on ${review.daysRead} days`,
+    ...reviewLines(review),
+  ].join('\n');
+}
+
+/** The fallback when the clipboard is refused: show it, selected, to copy by hand. */
+function openReviewText(text) {
+  const field = el('textarea.textarea', { rows: '8', readonly: true }, text);
+  const modal = showModal({
+    title: 'Your year, as text',
+    body: [
+      el('p.field__hint', {}, 'This browser would not let the page reach the clipboard. Select it and copy.'),
+      field,
+    ],
+    actions: [el('button.btn.btn--stamp', { type: 'button', onClick: () => modal.close() }, 'Done')],
+  });
+  field.focus();
+  field.select();
 }
 
 /**

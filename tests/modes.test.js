@@ -14,6 +14,7 @@ import assert from 'node:assert/strict';
 
 import { normalizeBook } from '../js/data/schema.js';
 import { dayState, entriesForDay, groupByDay } from '../js/logic/schedule.js';
+import { isOwnHash } from '../js/views/calendar.js';
 import { monthGrid } from '../js/lib/dates.js';
 
 const TODAY = '2026-08-18';
@@ -188,4 +189,91 @@ test('the click never mutates the set it was given', async () => {
   const before = new Set(['comic']);
   nextVisibleKinds(before, 'manga', false);
   assert.deepEqual([...before], ['comic']);
+});
+
+/* --- the address bar ------------------------------------------------------- */
+
+test('the calendar carries its mode and kinds in the hash', async () => {
+  const { parseCalendarHash, calendarHash } = await import('../js/views/calendar.js');
+
+  assert.deepEqual(parseCalendarHash('#/calendar'), {}, 'an untouched calendar says nothing');
+  assert.deepEqual(parseCalendarHash('#/calendar?mode=log'), { mode: 'log' });
+  assert.deepEqual(
+    parseCalendarHash('#/calendar?mode=log&kinds=comic,manga'),
+    { mode: 'log', kinds: ['comic', 'manga'] }
+  );
+
+  // Defaults are left out rather than spelled out, so an untouched calendar
+  // keeps a clean address.
+  assert.equal(calendarHash({ mode: 'plan', kinds: [] }), '#/calendar');
+  assert.equal(calendarHash({ mode: 'log', kinds: [] }), '#/calendar?mode=log');
+  assert.equal(
+    calendarHash({ mode: 'log', kinds: ['comic', 'manga'] }),
+    '#/calendar?mode=log&kinds=comic%2Cmanga'
+  );
+});
+
+test('a hand-typed hash cannot put the calendar in a state it has no button for', async () => {
+  const { parseCalendarHash } = await import('../js/views/calendar.js');
+
+  assert.deepEqual(parseCalendarHash('#/calendar?mode=bananas'), {}, 'unknown modes are ignored');
+  assert.deepEqual(parseCalendarHash('#/calendar?kinds=,,'), { kinds: [] }, 'empty is everything');
+});
+
+test('what the hash says survives a round trip', async () => {
+  const { parseCalendarHash, calendarHash } = await import('../js/views/calendar.js');
+
+  for (const state of [
+    { mode: 'plan', kinds: [] },
+    { mode: 'log', kinds: [] },
+    { mode: 'log', kinds: ['book'] },
+    { mode: 'plan', kinds: ['comic', 'manga'] },
+  ]) {
+    const back = parseCalendarHash(calendarHash(state));
+    assert.equal(back.mode ?? 'plan', state.mode);
+    assert.deepEqual(back.kinds ?? [], state.kinds);
+  }
+});
+
+test('the calendar does not read its own address back over a click', () => {
+  // The regression this exists for: the view writes `?mode=log` after a click
+  // on Read, and the next render reads that still-current address and puts the
+  // view back on Read. Every switch above the grid worked exactly once.
+  const written = '#/calendar?mode=log';
+
+  assert.equal(isOwnHash(written, written), true, 'our own echo is not news');
+  assert.equal(isOwnHash('#/calendar', written), false, 'a cleared address is');
+  assert.equal(isOwnHash('#/calendar?mode=log&kinds=comic', written), false, 'so is a longer one');
+  assert.equal(isOwnHash('#/calendar', null), false, 'and so is arriving fresh');
+});
+
+test('the switch cycle settles rather than fighting itself', async () => {
+  const { parseCalendarHash, calendarHash, isOwnHash } = await import('../js/views/calendar.js');
+
+  // A hand-run of read → write → read, which is what a click does.
+  let mode = 'plan';
+  let written = null;
+
+  const render = () => {
+    if (!isOwnHash(hash, written)) {
+      const state = parseCalendarHash(hash);
+      if (state.mode) mode = state.mode;
+    }
+    written = calendarHash({ mode });
+    hash = written;
+  };
+
+  let hash = '#/calendar';
+  render();
+  assert.equal(mode, 'plan');
+
+  mode = 'log';               // the click
+  render();
+  assert.equal(mode, 'log', 'Read stays on Read');
+  assert.equal(hash, '#/calendar?mode=log');
+
+  mode = 'plan';              // the click back
+  render();
+  assert.equal(mode, 'plan', 'and Scheduled comes back');
+  assert.equal(hash, '#/calendar');
 });

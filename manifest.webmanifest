@@ -1,0 +1,23 @@
+{
+  "name": "Chapter — reading tracker",
+  "short_name": "Chapter",
+  "description": "Catalogue your books, plan them onto a calendar, and see what today asks of you.",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#1b2c3b",
+  "theme_color": "#1b2c3b",
+  "categories": ["books", "productivity", "lifestyle"],
+  "icons": [
+    { "src": "icons/favicon.svg", "type": "image/svg+xml", "sizes": "any", "purpose": "any" },
+    { "src": "icons/icon-192.png", "type": "image/png", "sizes": "192x192", "purpose": "any maskable" },
+    { "src": "icons/icon-512.png", "type": "image/png", "sizes": "512x512", "purpose": "any maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Today", "short_name": "Today", "url": "./#/day" },
+    { "name": "Calendar", "short_name": "Calendar", "url": "./#/calendar" },
+    { "name": "Library", "short_name": "Library", "url": "./#/library" }
+  ]
+}

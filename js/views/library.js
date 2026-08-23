@@ -9,10 +9,10 @@
 
 import { el, fill, toast } from '../lib/dom.js';
 import { compareTitles } from '../lib/titles.js';
-import { showModal } from './modal.js';
+import { showModal, confirmAction } from './modal.js';
 import {
   allBooks, updateBook, removeBook, restoreBook, getBook, getSettings,
-  allOrders, addToOrder, createOrder, positionInOrder,
+  allOrders, addToOrder, createOrder, positionInOrder, rescheduleBook,
 } from '../data/store.js';
 import {
   STATUSES, STATUS_ORDER, FORMATS,
@@ -196,29 +196,9 @@ export function renderLibrary(mount) {
   const tags = [...new Set(inScope.flatMap((book) => book.shelves))].sort();
   if (filters.tag && !tags.includes(filters.tag)) filters.tag = null;
 
-  const visible = books
-    .filter(SHELVES[filters.shelf].match)
-    .filter(matchesQuery(filters.query))
-    .filter((book) => !filters.tag || book.shelves.includes(filters.tag))
-    // A book read on paper with the audiobook playing answers to both
-    // filters, because it is genuinely both.
-    .filter((book) => !filters.format || hasFormat(book, filters.format))
-    .filter((book) => !filters.category || book.category === filters.category)
-    .filter((book) => !filters.genre || book.genre?.trim().toLowerCase() === filters.genre)
-    .filter((book) => !filters.need || NEEDS[filters.need].match(book))
-    .filter((book) => !filters.order || positionInOrder(filters.order, book.id) !== Infinity)
-    // Picking a reading order overrides the sort: the whole point of the list
-    // is its sequence, and sorting it by title would discard that.
-    .sort(
-      filters.order
-        ? (a, b) => positionInOrder(filters.order, a.id) - positionInOrder(filters.order, b.id)
-        : SORTS[filters.sort].compare
-    );
-
-  // Anything ticked but no longer on screen would be edited invisibly.
-  const visibleIds = new Set(visible.map((book) => book.id));
-  for (const id of [...selection]) if (!visibleIds.has(id)) selection.delete(id);
-  lastVisibleOrder = visible.map((book) => book.id);
+  // A different shelf, sort or filter is a different list; start it at the top.
+  shown = PAGE;
+  resultsMount = el('div.shelf-results');
 
   fill(mount, [
     el('div.view-head', {}, [
@@ -236,14 +216,110 @@ export function renderLibrary(mount) {
     books.length ? needsBar(books) : null,
     showsRow('orders') ? orderBar(inScope) : null,
     tags.length && showsRow('shelves') ? tagBar(tags) : null,
-    selection.size ? bulkBar(visible) : null,
+
+    resultsMount,
+  ]);
+
+  paintResults();
+}
+
+/**
+ * Everything a search term changes, and nothing it doesn't.
+ *
+ * Typing used to rebuild the entire view, which meant tearing out the input
+ * the caret was sitting in and putting a new one back with the caret forced to
+ * the end — so a search term could not be corrected in the middle, and any
+ * input method that composes characters before committing them (which is every
+ * input method for Chinese, Japanese and Korean) was interrupted on every
+ * keystroke. The shelf tabs and filter rows don't depend on the query, so they
+ * stay exactly where they are and only the results are repainted.
+ */
+let resultsMount = null;
+
+/** The books on screen, in the order they are shown. */
+function visibleBooks(books) {
+  return books
+    .filter(SHELVES[filters.shelf].match)
+    .filter(matchesQuery(filters.query))
+    .filter((book) => !filters.tag || book.shelves.includes(filters.tag))
+    // A book read on paper with the audiobook playing answers to both
+    // filters, because it is genuinely both.
+    .filter((book) => !filters.format || hasFormat(book, filters.format))
+    .filter((book) => !filters.category || book.category === filters.category)
+    .filter((book) => !filters.genre || book.genre?.trim().toLowerCase() === filters.genre)
+    .filter((book) => !filters.need || NEEDS[filters.need].match(book))
+    .filter((book) => !filters.order || positionInOrder(filters.order, book.id) !== Infinity)
+    // Picking a reading order overrides the sort: the whole point of the list
+    // is its sequence, and sorting it by title would discard that.
+    .sort(
+      filters.order
+        ? (a, b) => positionInOrder(filters.order, a.id) - positionInOrder(filters.order, b.id)
+        : SORTS[filters.sort].compare
+    );
+}
+
+/**
+ * How many cards to build at once.
+ *
+ * A catalogue imported from Goodreads is nine hundred books, and nine hundred
+ * cards — each with a cover, a progress bar and a row of controls — is a
+ * second of work for the browser every time anything changes, which is once
+ * per keystroke in the search field. Sixty is more than fills a screen, and
+ * the rest arrives when it is asked for.
+ */
+const PAGE = 60;
+
+let shown = PAGE;
+
+function paintResults() {
+  if (!resultsMount?.isConnected) return;
+
+  const books = allBooks();
+  const visible = visibleBooks(books);
+  const page = visible.slice(0, shown);
+
+  // Anything ticked but no longer on screen would be edited invisibly.
+  const visibleIds = new Set(visible.map((book) => book.id));
+  for (const id of [...selection]) if (!visibleIds.has(id)) selection.delete(id);
+  // Range selection and "add to list" both work off what is on screen, so this
+  // is the page rather than the whole match.
+  lastVisibleOrder = page.map((book) => book.id);
+
+  const more = visible.length - page.length;
+
+  fill(resultsMount, [
+    selection.size ? bulkBar(page) : null,
 
     books.length === 0
       ? emptyLibrary()
       : visible.length === 0
         ? emptyShelf()
-        : el('ul.shelf', {}, visible.map(shelfCard)),
-  ]);
+        : el('ul.shelf', {}, page.map(shelfCard)),
+
+    more > 0 ? showMore(page.length, visible.length, more) : null,
+  ].filter(Boolean));
+}
+
+function showMore(here, total, more) {
+  return el('div.shelf-more', {}, [
+    el('p.shelf-more__count', {}, `Showing ${here} of ${total}`),
+    el('button.btn.btn--quiet', {
+      type: 'button',
+      onClick: () => {
+        shown += PAGE;
+        paintResults();
+      },
+    }, `Show ${Math.min(more, PAGE)} more`),
+    more > PAGE
+      ? el('button.btn.btn--ghost.btn--sm', {
+          type: 'button',
+          onClick: () => {
+            shown = Infinity;
+            paintResults();
+          },
+        }, `Show all ${total}`)
+      : null,
+  ].filter(Boolean));
 }
 
 /**
@@ -257,6 +333,11 @@ export function renderLibrary(mount) {
  *
  * Notes and tags come along for the same reason: they are things you wrote
  * about a book, and anything you wrote should be findable.
+ *
+ * So are quotes and the notes on individual sittings — the two places where
+ * people write the most specific things they will ever write about a book, and
+ * the two that were unsearchable. "Which book had that line about the lighthouse"
+ * is precisely the question a copied-out quote exists to answer.
  */
 const SEARCHED = [
   (book) => book.title,
@@ -266,8 +347,20 @@ const SEARCHED = [
   (book) => book.series.name,
   (book) => book.description,
   (book) => book.notes,
+  (book) => book.review,
   (book) => book.shelves.join(' '),
+  (book) => (book.quotes ?? []).map((quote) => quote.text).join(' '),
+  (book) => (book.sessions ?? []).map((session) => session.note).filter(Boolean).join(' '),
 ];
+
+/** Everything on a book that is prose rather than a label. */
+const writtenText = (book) => [
+  book.description,
+  book.notes,
+  book.review,
+  ...(book.quotes ?? []).map((quote) => quote.text),
+  ...(book.sessions ?? []).map((session) => session.note),
+].filter(Boolean).join(' \u00b7 ');
 
 /**
  * Whether a filter row is switched on.
@@ -307,7 +400,7 @@ const matchedInText = (book, query) => {
     .filter(Boolean)
     .some((value) => value.toLowerCase().includes(needle));
 
-  return !label && `${book.description} ${book.notes}`.toLowerCase().includes(needle);
+  return !label && writtenText(book).toLowerCase().includes(needle);
 };
 
 /**
@@ -368,13 +461,12 @@ function toolbar(counts) {
     value: filters.query,
     placeholder: 'Search titles, authors, descriptions\u2026',
     'aria-label': 'Search the library',
+    // Only the results are repainted, so the field keeps its focus, its caret
+    // and any half-composed character exactly as they were.
     onInput: (event) => {
       filters.query = event.target.value;
-      rerender();
-      // Re-rendering blows away focus; put it back with the caret at the end.
-      const next = document.querySelector('.shelf-search');
-      next?.focus();
-      next?.setSelectionRange(next.value.length, next.value.length);
+      shown = PAGE;
+      paintResults();
     },
   });
 
@@ -733,11 +825,20 @@ function bulkBar(visible) {
       type: 'button', onClick: () => openScheduleDialog(chosen(), rerender),
     }, 'Schedule'),
 
+    el('button.btn.btn--quiet.btn--sm', {
+      type: 'button', onClick: () => openShiftDialog(chosen(), rerender),
+    }, 'Shift plans\u2026'),
+
     el('button.btn.btn--danger.btn--sm', {
       type: 'button',
-      onClick: () => {
+      onClick: async () => {
         const books = chosen();
-        if (!confirm(`Remove ${books.length} books from the library? This can be undone straight away.`)) return;
+        const sure = await confirmAction({
+          title: `Remove ${books.length} ${books.length === 1 ? 'book' : 'books'}?`,
+          body: 'They can be put back straight away from the message that follows.',
+          confirmLabel: 'Remove them',
+        });
+        if (!sure) return;
 
         const removed = books.map((book) => removeBook(book.id).book).filter(Boolean);
         selection.clear();
@@ -851,6 +952,118 @@ function openShelfDialog(books, done) {
       el('button.btn.btn--stamp', { type: 'button', onClick: () => apply('add') }, 'Add to shelf'),
     ],
   });
+}
+
+/**
+ * Move a set of plans without rewriting them.
+ *
+ * The scheduling dialog above hands out fresh dates, which is the wrong tool
+ * for the commonest planning event there is: a week away, an illness, a book
+ * that took twice as long as it should have. Everything after it needs to move
+ * *by* something, keeping its length and its order. Doing that a book at a
+ * time, in two date fields each, is how a plan stops being worth keeping.
+ */
+function openShiftDialog(books, done) {
+  const planned = books.filter((book) => book.schedule.start);
+
+  const daysInput = el('input.input', {
+    type: 'number',
+    step: '1',
+    value: '7',
+    id: 'shift-days',
+    'aria-label': 'Days to shift by',
+  });
+
+  const preview = el('p.field__hint', { 'aria-live': 'polite' });
+
+  const delta = () => Math.trunc(Number(daysInput.value) || 0);
+
+  const paint = () => {
+    const days = delta();
+    if (!planned.length) {
+      preview.textContent = 'None of the selected books has a plan to move.';
+      return;
+    }
+    if (!days) {
+      preview.textContent = 'Zero days moves nothing.';
+      return;
+    }
+
+    // Named against the earliest plan in the selection, because that is the one
+    // whose new date tells you whether you got the sign the right way round.
+    const first = [...planned].sort((a, b) => a.schedule.start.localeCompare(b.schedule.start))[0];
+    const to = addDays(first.schedule.start, days);
+
+    preview.textContent =
+      `${planned.length} ${planned.length === 1 ? 'plan moves' : 'plans move'} ` +
+      `${Math.abs(days)} day${Math.abs(days) === 1 ? '' : 's'} ${days > 0 ? 'later' : 'earlier'}. ` +
+      `${first.title} starts ${formatShort(to)}.`;
+  };
+
+  daysInput.addEventListener('input', paint);
+  paint();
+
+  const modal = showModal({
+    eyebrow: `${books.length} selected`,
+    title: 'Shift these plans',
+    body: [
+      el('div.field', {}, [
+        el('label.field__label', { for: 'shift-days' }, 'By how many days'),
+        daysInput,
+        preview,
+      ]),
+      el('div.move-plan__steps', {}, [-7, -1, 1, 7].map((days) =>
+        el('button.btn.btn--quiet.btn--sm', {
+          type: 'button',
+          onClick: () => {
+            daysInput.value = String(delta() + days);
+            paint();
+          },
+        }, `${days > 0 ? '+' : '\u2212'} ${Math.abs(days)} day${Math.abs(days) === 1 ? '' : 's'}`))),
+      el('p.field__hint', {}, 'Each plan keeps its length. Books with no start date are left alone.'),
+    ],
+    actions: [
+      el('button.btn.btn--quiet', { type: 'button', onClick: () => modal.close() }, 'Cancel'),
+      el('button.btn.btn--stamp', {
+        type: 'button',
+        onClick: () => {
+          const days = delta();
+          if (!days || !planned.length) {
+            modal.close();
+            return;
+          }
+
+          // Held before the write, so undo is a restore rather than a shift
+          // back — those differ the moment a book's end date was clamped.
+          const before = planned.map((book) => ({
+            id: book.id,
+            schedule: { ...book.schedule },
+          }));
+
+          for (const book of planned) rescheduleBook(book.id, addDays(book.schedule.start, days));
+
+          modal.close();
+          toast(
+            `${planned.length} ${planned.length === 1 ? 'plan' : 'plans'} moved ` +
+            `${Math.abs(days)} day${Math.abs(days) === 1 ? '' : 's'} ${days > 0 ? 'later' : 'earlier'}.`,
+            {
+              action: {
+                label: 'Undo',
+                onClick: () => {
+                  for (const entry of before) updateBook(entry.id, { schedule: entry.schedule });
+                  toast('Plans put back.');
+                  done();
+                },
+              },
+            }
+          );
+          done();
+        },
+      }, 'Move them'),
+    ],
+  });
+
+  return modal;
 }
 
 function openScheduleDialog(books, done) {
@@ -1146,17 +1359,14 @@ function shelfCard(book) {
             : null,
           orderBadge(book),
           book.rating ? el('p.shelf-card__rating', { 'aria-label': `${book.rating} out of 5` }, '\u2605'.repeat(book.rating)) : null,
-          book.description || book.notes
+          book.description || book.notes || matchedInText(book, filters.query)
             ? el('p.shelf-card__blurb', {
                 // When the only reason this book is on screen is a phrase in
                 // its blurb, show that phrase rather than the opening line.
                 class: matchedInText(book, filters.query) ? 'shelf-card__blurb--hit' : '',
               },
               matchedInText(book, filters.query)
-                ? excerptAround(
-                    `${book.description} ${book.notes}`.trim(),
-                    filters.query
-                  )
+                ? excerptAround(writtenText(book), filters.query)
                 : book.description)
             : null,
         ].filter(Boolean)),

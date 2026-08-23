@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Chapter">
+  <!-- The mark is the letter, set in Times. Nothing clever: at 16px in a tab,
+       a drawn illustration is a smudge and a single well-set letter is still a
+       letter. The stack names Times first and falls back through its
+       metric-compatible clones, which is what a Linux or Android viewer will
+       actually have. -->
+  <rect width="64" height="64" rx="10" fill="#1b2c3b"/>
+  <text x="32" y="33" fill="#f3f0e8"
+        font-family="'Times New Roman', Times, 'Nimbus Roman', 'Liberation Serif', serif"
+        font-size="46" text-anchor="middle" dominant-baseline="central">C</text>
+</svg>

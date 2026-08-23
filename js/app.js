@@ -37,7 +37,9 @@ const ROUTES = {
 const DEFAULT_ROUTE = 'calendar';
 
 function currentRoute() {
-  const name = location.hash.replace(/^#\/?/, '') || DEFAULT_ROUTE;
+  // Views may hang state off the hash — `#/calendar?mode=log&kinds=comic` —
+  // so the route is only the part before the query.
+  const name = location.hash.replace(/^#\/?/, '').split('?')[0] || DEFAULT_ROUTE;
   return ROUTES[name] ? name : DEFAULT_ROUTE;
 }
 
@@ -55,6 +57,24 @@ function render() {
 
   ROUTES[name].render(mount);
   paintSaveStatus();
+  announceRoute(name);
+}
+
+/**
+ * Say which view this is, once, when it changes.
+ *
+ * `render` runs on every store change, so anything announced here that isn't
+ * guarded repeats itself all day — which is exactly what the old live region
+ * around the whole of #view did.
+ */
+let announcedRoute = null;
+
+function announceRoute(name) {
+  if (name === announcedRoute) return;
+  announcedRoute = name;
+
+  const slot = $('#announcer');
+  if (slot) slot.textContent = `${ROUTES[name].label} view`;
 }
 
 /**
@@ -98,6 +118,12 @@ function paintSaveStatus() {
           ? ' \u00b7 waiting to reach the sync server'
           : ' \u00b7 this browser only');
 
+  // The label is a live region, and "Saved 8:46 PM" re-read after every
+  // keystroke is noise rather than information. The dot and the tooltip are
+  // repainted regardless; only the spoken part is held still.
+  if (slot.dataset.label === label) return;
+  slot.dataset.label = label;
+
   fill(slot, [
     el('span.save-status__dot', { 'aria-hidden': 'true' }),
     el('span', {}, label),
@@ -133,6 +159,15 @@ async function start() {
   applySettings(store.getSettings());
   store.subscribe(() => applySettings(store.getSettings()));
   store.subscribe(render);
+
+  // Ask, once, for the data not to be evicted under storage pressure.
+  //
+  // Settings has a button for this, and a button nobody knows to press is not
+  // a safeguard: an offline-first app that keeps a year of reading in
+  // localStorage and an IndexedDB full of cover art has something to lose.
+  // Browsers decline this unless the site is installed or used often, and the
+  // asking is silent either way — there is nothing here for anyone to answer.
+  store.requestPersistentStorage().catch(() => null);
 
   // An image dropped next to a book rather than on it should do nothing, not
   // replace the app with a JPEG.

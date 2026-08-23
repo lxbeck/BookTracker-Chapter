@@ -128,6 +128,15 @@ test('page-level grids shrink below their track floor rather than overflowing', 
   }
 });
 
+test('a row of controls wraps rather than running off the side', () => {
+  // The year view's row is six controls long. A flex item defaults to refusing
+  // to shrink below its contents, so it stayed on one line however wide that
+  // was — 81px past the right edge of a 390px screen, measured.
+  const nav = rule(calendar, '.cal-nav');
+  assert.match(nav, /flex-wrap:\s*wrap/);
+  assert.match(nav, /min-width:\s*0/);
+});
+
 test('the navigation wraps rather than scrolling its tabs out of sight', () => {
   const base = read('css/base.css');
   assert.match(rule(base, '.app-nav'), /flex-wrap:\s*wrap/);

@@ -293,4 +293,109 @@ export function goalProgress(books, goal, todayKey = today()) {
   };
 }
 
+/**
+ * A year, summed up.
+ *
+ * The stats page answers a dozen questions at once and is the right shape for
+ * a Tuesday afternoon; this is the shape for the end of December, when the
+ * question is "what did I actually read this year" and the answer wants to be
+ * one paragraph you can send to someone.
+ *
+ * Everything is counted from the record rather than remembered as it happens,
+ * so it stays true after a backdated session or a corrected finish date.
+ *
+ * @param {object[]} books
+ * @param {number} year
+ */
+export function yearInReview(books, year) {
+  const inYear = (key) => typeof key === 'string' && key.slice(0, 4) === String(year);
+
+  const finished = books.filter((book) => inYear(book.actual.finishedAt));
+  const sessions = allSessions(books).filter((entry) => inYear(entry.session.date));
+
+  const minutes = sessions.reduce((sum, entry) => sum + (entry.session.minutes ?? 0), 0);
+  const pagesLogged = sessions.reduce((sum, entry) => sum + sessionPages(entry.session), 0);
+  const days = new Set(sessions.map((entry) => entry.session.date));
+
+  const count = (read) => {
+    const tally = new Map();
+    for (const value of finished.flatMap((book) => [].concat(read(book)).filter(Boolean))) {
+      tally.set(value, (tally.get(value) ?? 0) + 1);
+    }
+    return [...tally.entries()]
+      .sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0])))
+      .map(([label, value]) => ({ label, value }));
+  };
+
+  // Busiest month by time logged, which is a better answer than by books
+  // finished: finishing is when a book ends, not when it was read.
+  const perMonth = new Map();
+  for (const entry of sessions) {
+    const key = monthKey(entry.session.date);
+    perMonth.set(key, (perMonth.get(key) ?? 0) + (entry.session.minutes ?? 0));
+  }
+  const busiest = [...perMonth.entries()].sort((a, b) => b[1] - a[1])[0] ?? null;
+
+  const lengths = finished
+    .filter((book) => book.pageCount)
+    .sort((a, b) => b.pageCount - a.pageCount);
+
+  const rated = finished.filter((book) => book.rating);
+
+  return {
+    year,
+    books: finished.length,
+    pages: finished.reduce((sum, book) => sum + (book.pageCount ?? 0), 0),
+    pagesLogged,
+    minutes,
+    sessions: sessions.length,
+    daysRead: days.size,
+    // A year is 365 days and a reading habit is measured against that, not
+    // against the days you happened to open the app.
+    dayShare: Math.round((days.size / daysInYear(year)) * 100),
+    streak: longestRun([...days].sort()),
+    authors: count((book) => book.author),
+    genres: count((book) => book.genre),
+    kinds: count((book) => book.category),
+    shelves: count((book) => book.shelves),
+    longest: lengths[0] ?? null,
+    shortest: lengths.at(-1) ?? null,
+    rated: rated.length,
+    averageRating: rated.length
+      ? Math.round((rated.reduce((sum, book) => sum + book.rating, 0) / rated.length) * 10) / 10
+      : null,
+    bestRated: [...rated].sort((a, b) => b.rating - a.rating)[0] ?? null,
+    busiestMonth: busiest
+      ? { key: busiest[0], label: monthName(Number(busiest[0].slice(5, 7)) - 1), minutes: busiest[1] }
+      : null,
+    finished,
+  };
+}
+
+const daysInYear = (year) => (new Date(year, 1, 29).getMonth() === 1 ? 366 : 365);
+
+/** The longest run of consecutive days in a sorted list of day keys. */
+function longestRun(days) {
+  let longest = days.length ? 1 : 0;
+  let run = longest;
+
+  for (let i = 1; i < days.length; i += 1) {
+    run = daysBetween(days[i - 1], days[i]) === 1 ? run + 1 : 1;
+    longest = Math.max(longest, run);
+  }
+  return longest;
+}
+
+/** Every year the record has anything in, newest first. */
+export function yearsWithReading(books) {
+  const years = new Set();
+  for (const book of books) {
+    if (book.actual.finishedAt) years.add(Number(book.actual.finishedAt.slice(0, 4)));
+    for (const session of book.sessions ?? []) {
+      if (session.date) years.add(Number(session.date.slice(0, 4)));
+    }
+  }
+  return [...years].filter(Boolean).sort((a, b) => b - a);
+}
+
 export { formatDuration };

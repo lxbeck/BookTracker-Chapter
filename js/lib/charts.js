@@ -396,3 +396,122 @@ export function heatGrid(days, { label = 'Reading days' } = {}) {
 
   return svg;
 }
+
+/**
+ * Two lines over the same days: where the plan says you should be, and where
+ * you actually are.
+ *
+ * A single line answers "how is this book going" with a shape you have to
+ * interpret. Two answers it by putting the interpretation on the page — the
+ * gap between them *is* "27 pages behind", drawn rather than asserted, and the
+ * day the gap opened is usually the interesting part.
+ *
+ * The plan is dashed and quiet; the record is solid and coloured, because one
+ * of them happened and the other is an intention.
+ *
+ * @param {{day: string, label: string, fullLabel?: string, planned: number|null,
+ *   actual: number|null, logged?: boolean}[]} points
+ */
+export function trailChart(points, { height = 190, label = 'Progress', total = 0, unit = 'pages' } = {}) {
+  const width = 640;
+
+  const max = niceMax(Math.max(
+    total,
+    ...points.map((point) => Math.max(point.planned ?? 0, point.actual ?? 0)),
+    1
+  ));
+
+  const axisLabels = [0, 0.5, 1].map((fraction) => Math.round(max * fraction).toLocaleString());
+  const gutter = Math.max(...axisLabels.map((text) => text.length)) * 6.2 + 12;
+
+  const padding = { top: 16, right: 10, bottom: 30, left: Math.max(40, Math.ceil(gutter)) };
+  const plotW = width - padding.left - padding.right;
+  const plotH = height - padding.top - padding.bottom;
+
+  const last = Math.max(points.length - 1, 1);
+  const x = (index) => padding.left + (plotW * index) / last;
+  const y = (value) => padding.top + plotH - (max ? (value / max) * plotH : 0);
+
+  const ended = points.at(-1);
+  const svg = frame(width, height,
+    `${label}. Plan ends at ${ended?.planned ?? 0} ${unit}; the record reaches ${ended?.actual ?? 0}.`);
+
+  for (const fraction of [0, 0.5, 1]) {
+    const gy = padding.top + plotH * (1 - fraction);
+    svg.append(
+      svgEl('line', { x1: padding.left, x2: width - padding.right, y1: gy, y2: gy, class: 'chart__grid' }),
+      svgEl('text', { x: padding.left - 6, y: gy + 4, class: 'chart__axis', 'text-anchor': 'end' },
+        Math.round(max * fraction).toLocaleString())
+    );
+  }
+
+  /** A run of consecutive days that have a number, as an SVG points list. */
+  const series = (read) => {
+    const runs = [];
+    let current = [];
+    points.forEach((point, index) => {
+      const value = read(point);
+      if (value == null) {
+        if (current.length) runs.push(current);
+        current = [];
+        return;
+      }
+      current.push(`${x(index)},${y(value)}`);
+    });
+    if (current.length) runs.push(current);
+    return runs;
+  };
+
+  for (const run of series((point) => point.planned)) {
+    if (run.length > 1) svg.append(svgEl('polyline', { class: 'chart__line chart__line--plan', points: run.join(' ') }));
+  }
+  for (const run of series((point) => point.actual)) {
+    if (run.length > 1) svg.append(svgEl('polyline', { class: 'chart__line', points: run.join(' ') }));
+  }
+
+  // A dot on the days something was actually logged: the line between them is
+  // an assumption (you did not un-read anything), the dots are the evidence.
+  points.forEach((point, index) => {
+    if (!point.logged || point.actual == null) return;
+    svg.append(svgEl('circle', { cx: x(index), cy: y(point.actual), r: 3, class: 'chart__dot is-on' }));
+  });
+
+  const columnW = plotW / last;
+
+  points.forEach((point, index) => {
+    const hit = svgEl('rect', {
+      x: x(index) - columnW / 2, y: padding.top, width: columnW, height: plotH, class: 'chart__hit',
+    });
+
+    const behind = point.planned != null && point.actual != null
+      ? Math.round(point.actual - point.planned)
+      : null;
+
+    attachReadout(hit, {
+      label: point.fullLabel ?? point.label,
+      value: point.actual == null
+        ? `plan: ${point.planned ?? 0} ${unit}`
+        : `${point.actual} of ${total || max} ${unit}`,
+      note: behind == null
+        ? undefined
+        : behind === 0
+          ? 'exactly on plan'
+          : behind > 0 ? `${behind} ahead of plan` : `${Math.abs(behind)} behind plan`,
+    });
+
+    svg.append(hit);
+  });
+
+  // Only the ends and the middle get a date, for the same reason the daily bars
+  // do: a label per day is a smear.
+  for (const index of [0, Math.floor(last / 2), last]) {
+    const point = points[index];
+    if (!point) continue;
+    svg.append(svgEl('text', {
+      x: x(index), y: height - 10, class: 'chart__label',
+      'text-anchor': index === 0 ? 'start' : index === last ? 'end' : 'middle',
+    }, point.label));
+  }
+
+  return svg;
+}

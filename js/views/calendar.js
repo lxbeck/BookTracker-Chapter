@@ -14,7 +14,7 @@
  */
 
 import { el, fill, toast } from '../lib/dom.js';
-import { allBooks, getSettings, rescheduleBook, getBook } from '../data/store.js';
+import { allBooks, getSettings, updateSettings, rescheduleBook, getBook } from '../data/store.js';
 import { monthGrid, monthName, weekdayLabels, today, addDays, formatLong, toKey } from '../lib/dates.js';
 import { groupByDay, DAY_STATE_LABEL, CALENDAR_MODES } from '../logic/schedule.js';
 import { matchesKinds } from '../data/schema.js';
@@ -120,6 +120,88 @@ let calendarMode = 'plan';
 const MODE_LABEL = { plan: 'Scheduled', log: 'Read' };
 
 /**
+ * Which calendar, and which kinds, live in the address bar.
+ *
+ * Module state alone meant a reload dropped you back on the scheduled view
+ * with every kind showing, however carefully you had set it up — and there was
+ * no way to send yourself "comics I actually read in August". The hash carries
+ * both now: `#/calendar?mode=log&kinds=comic,manga`. Defaults are left out of
+ * the URL rather than spelled out, so an untouched calendar keeps a clean
+ * address.
+ */
+/**
+ * Read `#/calendar?mode=log&kinds=comic,manga` back into view state.
+ *
+ * Anything unrecognised is left alone rather than corrected: a hand-typed
+ * `mode=bananas` should leave the calendar as it was, not blank it.
+ *
+ * @param {string} hash
+ * @returns {{mode?: string, kinds?: string[]}}
+ */
+export function parseCalendarHash(hash) {
+  const params = new URLSearchParams(String(hash).split('?')[1] ?? '');
+  const state = {};
+
+  const mode = params.get('mode');
+  if (CALENDAR_MODES.includes(mode)) state.mode = mode;
+
+  if (params.has('kinds')) {
+    state.kinds = params.get('kinds').split(',').map((id) => id.trim()).filter(Boolean);
+  }
+
+  return state;
+}
+
+/** The address for a given view state. Defaults are left out, not spelled out. */
+export function calendarHash({ mode = 'plan', kinds = [] } = {}) {
+  const params = new URLSearchParams();
+  if (mode !== 'plan') params.set('mode', mode);
+  if (kinds.length) params.set('kinds', kinds.join(','));
+
+  const query = params.toString();
+  return `#/calendar${query ? `?${query}` : ''}`;
+}
+
+/**
+ * Whether a hash is news, or this view's own echo.
+ *
+ * The address is written from the view on every render and read back on the
+ * next one, which is a loop with a bug in the middle of it: press Read and the
+ * view writes `?mode=log`; press Scheduled and the next render reads that
+ * still-current address and puts the view straight back on Read. Every switch
+ * above the grid stopped working after its first use, in precisely the way
+ * that looks like a dead button.
+ *
+ * So a hash this view wrote is not read back. Anything else — a pasted link, a
+ * reload, a hand-edited address, the Back button — is.
+ */
+export const isOwnHash = (hash, written) => written != null && hash === written;
+
+/** The last address this view wrote, so it can recognise its own echo. */
+let writtenHash = null;
+
+function readUrlState() {
+  if (isOwnHash(location.hash, writtenHash)) return;
+
+  const state = parseCalendarHash(location.hash);
+
+  if (state.mode) calendarMode = state.mode;
+  if (state.kinds) {
+    visibleKinds.clear();
+    for (const id of state.kinds) visibleKinds.add(id);
+  }
+}
+
+function writeUrlState() {
+  const next = calendarHash({ mode: calendarMode, kinds: [...visibleKinds] });
+  writtenHash = next;
+
+  // replaceState rather than assigning to location.hash: this is a repaint of
+  // the address bar to match the view, not a new place to press Back to.
+  if (location.hash !== next) history.replaceState(null, '', next);
+}
+
+/**
  * Wired in step 4.5. Kept as hooks rather than direct imports so the grid
  * stays usable — and testable — without the popup and hover layers.
  */
@@ -165,6 +247,7 @@ export function goToMonth(year, month) {
 
 export function renderCalendar(mount) {
   hideHoverCard();
+  readUrlState();
   const everything = allBooks();
   const books = everything.filter((book) => matchesKinds(book, visibleKinds));
   const todayKey = today();
@@ -186,6 +269,8 @@ export function renderCalendar(mount) {
   const totals = libraryTotals(everything, todayKey);
   const isLog = calendarMode === 'log';
 
+  writeUrlState();
+
   fill(mount, [
     el('div.view-head.view-head--calendar', {}, [
       el('div', {}, [
@@ -201,6 +286,8 @@ export function renderCalendar(mount) {
         navButton('\u203a', 'Next month', () => step(1, mount)),
       ]),
     ]),
+
+    introStrip(everything),
 
     el('div.cal-filters', {}, [
       modeSwitch(mount),
@@ -501,6 +588,8 @@ function coverTile(entry, dayKey, mount) {
     },
   }, coverThumb(book, { width: '100%', alt: '' }));
 
+  attachLongPress(tile, () => openDay(dayKey, mount));
+
   if (!canMove) {
     calendarHooks.attachHover?.(tile, book, dayKey);
     return tile;
@@ -530,6 +619,62 @@ function coverTile(entry, dayKey, mount) {
 
   calendarHooks.attachHover?.(tile, book, dayKey);
   return tile;
+}
+
+/**
+ * Press and hold a cover to open the day.
+ *
+ * Hovering a cover answers "what does this day ask of me", and a touch screen
+ * cannot hover — so the whole of that answer was desktop-only, and a tap went
+ * straight past it into the record. A long press is the touch idiom for "tell
+ * me more about this", and it lands on the day popup, which says everything
+ * the hover card does and can be acted on as well.
+ *
+ * Touch only: a mouse already has hover, and stealing a held click from it
+ * would break dragging, which is the thing a held mouse button is for.
+ */
+const LONG_PRESS_MS = 450;
+
+const LONG_PRESS_SLOP = 10; // a finger is never perfectly still
+
+function attachLongPress(node, onHold) {
+  let timer = null;
+  let held = false;
+  let from = null;
+
+  const cancel = () => {
+    clearTimeout(timer);
+    timer = null;
+  };
+
+  node.addEventListener('pointerdown', (event) => {
+    if (event.pointerType !== 'touch') return;
+    held = false;
+    from = { x: event.clientX, y: event.clientY };
+    timer = setTimeout(() => {
+      held = true;
+      onHold();
+    }, LONG_PRESS_MS);
+  });
+
+  // Only a real move counts as a scroll. Cancelling on any movement at all
+  // meant the press only worked for someone holding unnaturally still.
+  node.addEventListener('pointermove', (event) => {
+    if (!timer || !from) return;
+    if (Math.hypot(event.clientX - from.x, event.clientY - from.y) > LONG_PRESS_SLOP) cancel();
+  });
+
+  for (const event of ['pointerup', 'pointercancel', 'pointerleave']) {
+    node.addEventListener(event, cancel);
+  }
+
+  // The tap that ends a long press must not also open the record behind it.
+  node.addEventListener('click', (event) => {
+    if (!held) return;
+    held = false;
+    event.preventDefault();
+    event.stopPropagation();
+  }, true);
 }
 
 /* --- Rescheduling --------------------------------------------------------- */
@@ -617,6 +762,48 @@ function emptyLog() {
         onClick: () => goToDay(today()),
       }, 'Log today\u2019s reading'),
     ]),
+  ]);
+}
+
+/**
+ * What this is, on the first visit only.
+ *
+ * The empty states explain each corner of the app once you are standing in it,
+ * which is no help at all for the question a new arrival actually has: what is
+ * this for, and what am I meant to do first. Three sentences and a way to see
+ * it with something on it — then it is dismissed for good, because an
+ * introduction that keeps introducing itself is an advert.
+ */
+function introStrip(books) {
+  if (getSettings().introDismissed) return null;
+
+  const dismiss = () => updateSettings({ introDismissed: true });
+
+  return el('div.intro', {}, [
+    el('div.intro__body', {}, [
+      el('h3.intro__title', {}, 'Chapter, in three sentences'),
+      el('ol.intro__steps', {}, [
+        el('li', {}, 'Catalogue a book and give it a start and finish date; it spreads itself across those days, with a page target for each one.'),
+        el('li', {}, 'Log what you actually read. The Scheduled calendar shows the plan, the Read one shows the days you kept it.'),
+        el('li', {}, 'The Day view is what today asks of you; Stats is whether the year is going the way you meant it to.'),
+      ]),
+      el('p.intro__note', {}, 'Everything stays in this browser unless you run the sync server. Nothing is sent anywhere.'),
+    ]),
+    el('div.intro__actions', {}, [
+      books.length
+        ? null
+        : el('button.btn.btn--stamp.btn--sm', {
+            type: 'button',
+            onClick: () => {
+              loadSampleLibrary();
+              dismiss();
+            },
+          }, 'Show me with a sample library'),
+      el('button.btn.btn--quiet.btn--sm', {
+        type: 'button',
+        onClick: dismiss,
+      }, books.length ? 'Got it' : 'I\u2019ll start my own'),
+    ].filter(Boolean)),
   ]);
 }
 

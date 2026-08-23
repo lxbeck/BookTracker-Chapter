@@ -490,6 +490,32 @@
   border-left-color: var(--overdue);
 }
 
+/* The rail ignores the pointer so it can sit over the page harmlessly; a toast
+   offering a way back has to be clickable, so it takes the pointer back. */
+.toast--action {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+}
+
+.toast__action {
+  font-family: var(--face-slip);
+  font-size: var(--size-xs);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--stamp);
+  background: none;
+  border: 0;
+  border-bottom: 1px solid currentColor;
+  padding: 0 0 1px;
+  cursor: pointer;
+}
+
+.toast__action:hover {
+  color: var(--stamp-deep);
+}
+
 .empty__aside {
   font-size: var(--size-sm);
   color: var(--ink-inverse-soft);

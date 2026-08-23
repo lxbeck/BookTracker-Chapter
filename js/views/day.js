@@ -18,11 +18,13 @@ import { DAY_STATE_LABEL } from '../logic/schedule.js';
 import { formatUnit } from '../data/schema.js';
 import { setStatus } from '../data/store.js';
 import { openDayPopup } from './dayPopup.js';
+import { openMovePlan } from './dayRow.js';
 import { currentDay, setCurrentDay, goToDay } from './dayCursor.js';
 
 export function renderDay(mount) {
   const todayKey = today();
   const cursor = currentDay();
+  bindResize(mount);
 
   const books = allBooks();
   const entries = entriesForDay(books, cursor, todayKey);
@@ -127,6 +129,32 @@ function columnCap() {
   return 5;
 }
 
+/**
+ * Repaint when a resize crosses a breakpoint.
+ *
+ * Counting the columns in JavaScript buys an integer the stylesheet cannot
+ * express, and costs this: the number is only right until the window changes.
+ * Turning a phone on its side is the ordinary way to find that out, so the
+ * same guard the calendar uses applies here — bound once, and only acting when
+ * the answer actually changes.
+ */
+let lastColumnCap = null;
+let resizeBound = false;
+
+function bindResize(mount) {
+  lastColumnCap = columnCap();
+  if (resizeBound) return;
+  resizeBound = true;
+
+  let frame = null;
+  globalThis.addEventListener?.('resize', () => {
+    cancelAnimationFrame(frame);
+    frame = requestAnimationFrame(() => {
+      if (columnCap() !== lastColumnCap && document.contains(mount)) renderDay(mount);
+    });
+  });
+}
+
 function move(delta, mount) {
   setCurrentDay(addDays(currentDay(), delta));
   renderDay(mount);
@@ -222,6 +250,11 @@ function dayCard({ book, state }, dayKey, todayKey, redraw) {
             },
           }, 'Finished')
         : null,
+      // The touch-and-keyboard equivalent of dragging the cover to another day.
+      el('button.btn.btn--quiet.btn--sm', {
+        type: 'button',
+        onClick: () => openMovePlan(book, { onDone: redraw }),
+      }, 'Move'),
       el('button.btn.btn--quiet.btn--sm', {
         type: 'button',
         onClick: () => openBookForm({ book }),

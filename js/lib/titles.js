@@ -82,28 +82,3 @@ export function compareTitles(a, b) {
     collator.compare(left, right)
   );
 }
-
-/**
- * Compare two books by series position, then by title.
- *
- * Volume 4.5 belongs between 4 and 5, which numeric collation on the title
- * would not manage on its own — the number in `Vol. 4.5` is only reliable when
- * it is actually in the title, and for a series it is a field.
- */
-export function compareBySeries(a, b) {
-  const nameA = a.series?.name ?? '';
-  const nameB = b.series?.name ?? '';
-
-  if (nameA && nameB && nameA !== nameB) return collator.compare(nameA, nameB);
-  if (nameA && nameB) {
-    const numberA = a.series?.number;
-    const numberB = b.series?.number;
-    // A volume with no number sorts after the numbered ones rather than at
-    // the front, where a missing value would otherwise put it.
-    if (numberA != null && numberB != null && numberA !== numberB) return numberA - numberB;
-    if (numberA != null && numberB == null) return -1;
-    if (numberA == null && numberB != null) return 1;
-  }
-
-  return compareTitles(a.title, b.title);
-}

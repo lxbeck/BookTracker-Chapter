@@ -307,6 +307,23 @@ export function restoreBook(book) {
   });
 }
 
+/**
+ * Put a deleted list back — undo for `removeOrder`.
+ *
+ * The tombstone has to go with it, exactly as it does for a book: leave it in
+ * place and the next sync sees a list this device deleted and helpfully
+ * deletes it again on every other device.
+ */
+export function restoreOrder(order) {
+  commit(() => {
+    if (!getOrder(order.id)) {
+      state.readingOrders = [...state.readingOrders, { ...order, updatedAt: new Date().toISOString() }];
+    }
+    state.deleted = (state.deleted ?? []).filter((entry) => entry.id !== order.id);
+  });
+  return { ok: true, order };
+}
+
 export function setStatus(id, status) {
   const book = getBook(id);
   if (!book) return { ok: false };

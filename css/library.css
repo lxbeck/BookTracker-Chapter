@@ -1,66 +1,6 @@
 /* ===========================================================================
-   Chapter — library / record lists
+   Chapter — library: shelves, cards and the toolbar above them
    =========================================================================== */
-
-.record-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--s2);
-}
-
-.record {
-  display: flex;
-  align-items: center;
-  gap: var(--s4);
-  padding: var(--s3) var(--s4) var(--s3) var(--s5);
-  transition: transform var(--fast) var(--ease), box-shadow var(--fast) var(--ease);
-}
-
-.record:hover {
-  transform: translateX(2px);
-  box-shadow: var(--lift-2);
-}
-
-.record__main {
-  flex: 1;
-  min-width: 0;
-}
-
-.record__title {
-  font-size: var(--size-md);
-  font-variation-settings: var(--wonk-on);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.record__byline {
-  font-size: var(--size-sm);
-  color: var(--ink-soft);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.record__dot {
-  margin: 0 var(--s2);
-  color: var(--ink-faint);
-}
-
-.record__meta {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 2px;
-  font-family: var(--face-slip);
-  font-size: var(--size-xs);
-  color: var(--ink-soft);
-  text-align: right;
-  white-space: nowrap;
-}
 
 .plan-block {
   border: var(--rule);
@@ -75,18 +15,6 @@
 
 .plan-block legend {
   padding: 0 var(--s2);
-}
-
-@media (max-width: 720px) {
-  .record {
-    flex-wrap: wrap;
-    padding-left: var(--s4);
-    background-image: none;
-  }
-  .record__meta {
-    align-items: flex-start;
-    text-align: left;
-  }
 }
 
 /* --- Shelf toolbar -------------------------------------------------------- */
@@ -459,4 +387,26 @@
   gap: var(--s2);
   justify-content: center;
   margin-top: var(--s4);
+}
+
+/* --- Paging --------------------------------------------------------------- */
+
+/* The shelf builds sixty cards at a time. The count is as much a part of this
+   as the button: "showing 60 of 912" explains why the shelf ends where it
+   does, where a bare "Show more" reads as an unexplained cut-off. */
+.shelf-more {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  flex-wrap: wrap;
+  justify-content: center;
+  padding: var(--s5) 0 var(--s2);
+}
+
+.shelf-more__count {
+  font-family: var(--face-slip);
+  font-size: var(--size-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-inverse-soft);
 }

@@ -7,13 +7,14 @@
  */
 
 import { el, toast } from '../lib/dom.js';
+import { showModal } from './modal.js';
 import { coverThumb } from './cover.js';
 import { sessionLog } from './sessionLog.js';
 import { paceFor, paceStanding, projectedFinish } from '../logic/pacing.js';
 import { observedPace, bookTotals, formatDuration } from '../logic/sessions.js';
-import { formatShort } from '../lib/dates.js';
+import { formatShort, formatLong, addDays, spanLength, isValidKey } from '../lib/dates.js';
 import { formatUnit, STATUSES } from '../data/schema.js';
-import { setStatus } from '../data/store.js';
+import { setStatus, rescheduleBook } from '../data/store.js';
 import { openBookForm } from './bookForm.js';
 
 /**
@@ -99,6 +100,10 @@ export function dayRow({ book, state }, dayKey, todayKey, { redraw, beforeOpenRe
           : null,
         el('button.btn.btn--quiet.btn--sm', {
           type: 'button',
+          onClick: () => openMovePlan(book, { onDone: redraw }),
+        }, 'Move plan\u2026'),
+        el('button.btn.btn--quiet.btn--sm', {
+          type: 'button',
           onClick: () => {
             beforeOpenRecord?.();
             openBookForm({ book });
@@ -108,6 +113,99 @@ export function dayRow({ book, state }, dayKey, todayKey, { redraw, beforeOpenRe
     ]),
   ]);
 }
+
+/**
+ * Move a whole plan to another day, keeping its length.
+ *
+ * Dragging a cover across the calendar does this on a desktop, and did it
+ * nowhere else: HTML5 drag-and-drop does not fire for touch at all, so on a
+ * phone there was no way to move a book to another day short of editing both
+ * dates by hand in the record. This is the same operation with buttons on it,
+ * which also makes it reachable from the keyboard and from a screen reader.
+ *
+ * @param {object} book
+ * @param {{onDone?: () => void}} [options]
+ */
+export function openMovePlan(book, { onDone } = {}) {
+  const start = book.schedule.start;
+  const end = book.schedule.end;
+  const days = start ? spanLength(start, end ?? start) : 1;
+
+  const field = el('input.input', {
+    type: 'date',
+    id: 'move-plan-start',
+    value: start ?? '',
+  });
+
+  const note = el('p.field__hint', { 'aria-live': 'polite' });
+
+  const refresh = () => {
+    const value = field.value;
+    if (!isValidKey(value)) {
+      note.textContent = 'Pick a day to start on.';
+      return;
+    }
+    note.textContent = end && start
+      ? `${formatLong(value)} \u2013 ${formatLong(addDays(value, days - 1))} \u00b7 ${days} day${days === 1 ? '' : 's'}, the same length as now.`
+      : `Starts ${formatLong(value)}. This book has no finish date, so only the start moves.`;
+  };
+
+  const shift = (delta) => {
+    const from = isValidKey(field.value) ? field.value : start;
+    if (!from) return;
+    field.value = addDays(from, delta);
+    refresh();
+  };
+
+  field.addEventListener('change', refresh);
+  field.addEventListener('input', refresh);
+  refresh();
+
+  const modal = showModal({
+    eyebrow: 'Reading plan',
+    title: `Move ${book.title}`,
+    body: [
+      el('div.field', {}, [
+        el('label.field__label', { for: 'move-plan-start' }, 'Start on'),
+        field,
+        note,
+      ]),
+      // The common moves are a day and a week either way. Typing a date to
+      // push a book back one evening is more work than the move deserves.
+      el('div.move-plan__steps', {}, [
+        stepButton('\u2212 1 week', () => shift(-7)),
+        stepButton('\u2212 1 day', () => shift(-1)),
+        stepButton('+ 1 day', () => shift(1)),
+        stepButton('+ 1 week', () => shift(7)),
+      ]),
+    ],
+    actions: [
+      el('button.btn.btn--quiet', { type: 'button', onClick: () => modal.close() }, 'Cancel'),
+      el('button.btn.btn--stamp', {
+        type: 'button',
+        onClick: () => {
+          if (!isValidKey(field.value)) {
+            toast('Pick a day to start on.', { variant: 'error' });
+            return;
+          }
+          const result = rescheduleBook(book.id, field.value);
+          if (!result.ok) {
+            toast('That book could not be moved.', { variant: 'error' });
+            return;
+          }
+          modal.close();
+          toast(`${book.title} moved to ${formatShort(result.book.schedule.start)}.`);
+          onDone?.();
+        },
+      }, 'Move it'),
+    ],
+  });
+
+  return modal;
+}
+
+const stepButton = (label, onClick) =>
+  el('button.btn.btn--quiet.btn--sm', { type: 'button', onClick }, label);
 
 const fact = (label, value) =>
   el('div.day-row__fact', {}, [el('dt', {}, label), el('dd', {}, value)]);

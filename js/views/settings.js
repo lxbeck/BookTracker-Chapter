@@ -6,10 +6,10 @@
  */
 
 import { el, fill, toast } from '../lib/dom.js';
-import { showModal } from './modal.js';
+import { showModal, confirmAction } from './modal.js';
 import {
   allBooks, getSettings, updateSettings, replaceAll, mergeBooks,
-  allOrders, removeOrder, restoreBook, recentlyDeleted, restoreDeleted, forgetDeleted,
+  allOrders, removeOrder, restoreOrder, restoreBook, recentlyDeleted, restoreDeleted, forgetDeleted,
   storageStatus, requestPersistentStorage,
 } from '../data/store.js';
 import {
@@ -210,9 +210,14 @@ function appearanceSection(settings, redraw) {
             role: 'button',
             tabindex: '0',
             title: `Delete ${preset.label}`,
-            onClick: (event) => {
+            onClick: async (event) => {
               event.stopPropagation();
-              if (!confirm(`Delete the saved theme "${preset.label}"?`)) return;
+              const sure = await confirmAction({
+                title: `Delete the saved theme "${preset.label}"?`,
+                body: 'The colours it holds are not used by anything else.',
+                confirmLabel: 'Delete the theme',
+              });
+              if (!sure) return;
               updateSettings({
                 savedThemes: (settings.savedThemes ?? []).filter(
                   (entry) => `saved:${String(entry.id ?? entry.label).toLowerCase().replace(/[^a-z0-9]+/g, '-')}` !== preset.id
@@ -465,11 +470,13 @@ function shelvesBlock(books, redraw) {
               }, 'Rename'),
               el('button.link-btn.is-danger', {
                 type: 'button',
-                onClick: () => {
-                  if (!confirm(
-                    `Delete the shelf "${shelf}"? It will be taken off ${count} ` +
-                    `${count === 1 ? 'book' : 'books'}. The books stay in your library.`
-                  )) return;
+                onClick: async () => {
+                  const sure = await confirmAction({
+                    title: `Delete the shelf "${shelf}"?`,
+                    body: `It comes off ${count} ${count === 1 ? 'book' : 'books'}. The books stay in your library.`,
+                    confirmLabel: 'Delete the shelf',
+                  });
+                  if (!sure) return;
                   const touched = rewrite(shelf, null);
                   toast(`Shelf deleted from ${touched} ${touched === 1 ? 'book' : 'books'}.`);
                   redraw();
@@ -499,10 +506,24 @@ function listsBlock(redraw) {
             el('span.plain-list__aside', {}, [
               el('button.link-btn.is-danger', {
                 type: 'button',
-                onClick: () => {
-                  if (!confirm(`Delete the list "${order.name}"? The books themselves stay in your library.`)) return;
-                  removeOrder(order.id);
-                  toast('List deleted.');
+                onClick: async () => {
+                  const sure = await confirmAction({
+                    title: `Delete "${order.name}"?`,
+                    body: 'The books themselves stay in your library.',
+                    confirmLabel: 'Delete the list',
+                  });
+                  if (!sure) return;
+                  const removed = removeOrder(order.id);
+                  toast('List deleted.', {
+                    action: {
+                      label: 'Undo',
+                      onClick: () => {
+                        restoreOrder(removed.order ?? order);
+                        toast('List restored.');
+                        redraw();
+                      },
+                    },
+                  });
                   redraw();
                 },
               }, 'Delete'),
@@ -551,12 +572,17 @@ function kindsBlock(books, redraw) {
     redraw();
   };
 
-  const remove = (kind) => {
+  const remove = async (kind) => {
     const inUse = books.filter((book) => book.category === kind.id).length;
-    if (inUse && !confirm(
-      `${inUse} ${inUse === 1 ? 'book is' : 'books are'} filed as ${kind.label}. ` +
-      'Removing the kind leaves them filed under a name this library no longer lists. Continue?'
-    )) return;
+    if (inUse) {
+      const sure = await confirmAction({
+        title: `Remove the kind "${kind.label}"?`,
+        body: `${inUse} ${inUse === 1 ? 'book is' : 'books are'} filed as ${kind.label}, and they stay `
+          + 'filed under a name this library no longer lists.',
+        confirmLabel: 'Remove it',
+      });
+      if (!sure) return;
+    }
 
     updateSettings({ kinds: customKinds().filter((entry) => entry.id !== kind.id) });
     toast(`${kind.label} removed.`);
@@ -998,8 +1024,13 @@ function deletedSection(redraw) {
           }, 'Restore'),
           el('button.link-btn.is-danger', {
             type: 'button',
-            onClick: () => {
-              if (!confirm(`Forget "${entry.book.title}" for good? It cannot be restored afterwards.`)) return;
+            onClick: async () => {
+              const sure = await confirmAction({
+                title: `Forget "${entry.book.title}" for good?`,
+                body: 'It cannot be restored afterwards.',
+                confirmLabel: 'Forget it',
+              });
+              if (!sure) return;
               forgetDeleted(entry.id);
               redraw();
             },
@@ -1474,11 +1505,14 @@ function storageSection(redraw) {
   // localStorage is around 5MB in every browser that matters.
   const percent = Math.min(100, Math.round((status.bytes / (5 * 1024 * 1024)) * 100));
 
+  // Asked for at boot as well as here, so this line usually reports rather
+  // than prompts. Browsers grant it once a site is installed or used often, so
+  // the answer can change between visits without anybody pressing anything.
   const persistNote = el('p.settings__note', { 'aria-live': 'polite' },
-    'Browsers may clear site data when storage runs low.');
+    'Chapter asks for this on every load. Browsers usually grant it once a site is installed or visited regularly; until then, data can be cleared when storage runs low.');
 
   navigator.storage?.persisted?.().then((already) => {
-    if (already) persistNote.textContent = 'This browser has marked your library as persistent.';
+    if (already) persistNote.textContent = 'Granted \u2014 this browser has marked your library as persistent.';
   }).catch(() => null);
 
   return section('Is my library saved?', [

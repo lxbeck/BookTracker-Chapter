@@ -789,6 +789,11 @@ function formatBar(books) {
 
 function bulkBar(visible) {
   const rerender = () => renderLibrary(document.querySelector('#view'));
+  // Select all and Clear only ever touch the selection, never a book — so
+  // unlike every other control in this bar, they must not trigger the full
+  // rerender: that resets pagination back to one page, which would silently
+  // drop anything past it the moment it was selected.
+  const repaint = () => paintResults();
   const chosen = () => [...selection].map((id) => getBook(id)).filter(Boolean);
   const count = selection.size;
 
@@ -799,7 +804,7 @@ function bulkBar(visible) {
       type: 'button',
       onClick: () => {
         for (const book of visible) selection.add(book.id);
-        rerender();
+        repaint();
       },
     }, `Select all ${visible.length}`),
 
@@ -807,7 +812,7 @@ function bulkBar(visible) {
       type: 'button',
       onClick: () => {
         selection.clear();
-        rerender();
+        repaint();
       },
     }, 'Clear'),
 
@@ -1456,7 +1461,13 @@ function shelfCard(book) {
           if (event.shiftKey && anchorId && anchorId !== book.id) {
             event.preventDefault();
             selectRange(anchorId, book.id);
-            renderLibrary(document.querySelector('#view'));
+            // Not the full renderLibrary: that resets `shown` back to one page,
+            // which is exactly wrong here — selecting a book only reachable
+            // through "Show more" made it, and everything past it, vanish
+            // again, right as it was clicked. Ticking a box changes nothing
+            // about which shelf, sort or filter is in effect, so nothing about
+            // the toolbar needs rebuilding either.
+            paintResults();
             return;
           }
           anchorId = book.id;
@@ -1465,7 +1476,7 @@ function shelfCard(book) {
           if (event.target.checked) selection.add(book.id);
           else selection.delete(book.id);
           anchorId = book.id;
-          renderLibrary(document.querySelector('#view'));
+          paintResults();
         },
       }),
     ]),

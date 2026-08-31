@@ -921,6 +921,11 @@ Hover a book in the library and a checkbox appears. Click one, then
 **shift-click another to select everything between them**, the way a file
 manager behaves — ticking forty boxes individually is not a workflow.
 
+Ticking a box never rebuilds the page you are on. It used to: selecting a book
+only reachable through "Show more" made it, and everything past it, disappear
+the instant it was clicked, since selecting shares nothing with actually
+changing the shelf, sort or filter — only those need the page to start over.
+
 Once anything is ticked the toolbar offers: set status, set format, set kind,
 **set where the books came from**, **set genre**, shelve or unshelve, add to a
 reading list, fill in missing details, schedule, shift a set of plans by days,

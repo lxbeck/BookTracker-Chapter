@@ -133,6 +133,26 @@ test('the shelf builds a page at a time rather than the whole catalogue', () => 
   assert.match(library, /shelf-more/, 'and says how much is left');
 });
 
+test('selecting a book past the fold does not collapse the page it was on', () => {
+  // The bug this guards: the checkbox and the bulk bar's Select all / Clear
+  // called the full renderLibrary, which unconditionally resets `shown` back
+  // to one page. Selecting a book only reachable through "Show more" made it
+  // — and everything past it — disappear the instant it was clicked.
+  const library = read('js/views/library.js');
+
+  const card = library.slice(library.indexOf("el('li.shelf-card"));
+  const pick = card.slice(0, card.indexOf('shelf-card__hit'));
+  assert.doesNotMatch(pick, /renderLibrary\(/,
+    'ticking a box does not change the shelf, sort or filter, so it must not rebuild the toolbar');
+  assert.match(pick, /paintResults\(\)/g);
+
+  const barStart = library.indexOf('function bulkBar');
+  const bar = library.slice(barStart, library.indexOf("'Clear'", barStart));
+  assert.match(bar, /const repaint = \(\) => paintResults\(\);/);
+  assert.match(bar, /repaint\(\);/g,
+    'Select all and Clear only touch the selection, unlike every edit action beside them');
+});
+
 /* --- Touch ----------------------------------------------------------------- */
 
 test('a cover can be held to open the day, since touch cannot hover', () => {

@@ -332,3 +332,41 @@ test('genre can be set on a batch of books, the same as status or kind', () => {
   assert.match(library, /function openGenreDialog/);
   assert.match(library, /Set genre/);
 });
+
+/* --- Hiding the calendar's filter rows ------------------------------------- */
+
+test('the calendar filter rows can be switched off in settings', () => {
+  const calendar = read('js/views/calendar.js');
+  assert.match(calendar, /hiddenCalendarRows/);
+  assert.match(calendar, /export const calendarFilterRows/,
+    'settings should read the row names from the calendar, not keep a second list');
+
+  const settings = read('js/views/settings.js');
+  assert.match(settings, /calendarRowsBlock/);
+  assert.match(settings, /calendarFilterRows\(\)/);
+});
+
+test('a hidden row drops its filter before the grid is drawn, not while drawing it', () => {
+  // Clearing it inside the row builder ran too late: the grid had already been
+  // filtered and the address already written, so the first render after hiding
+  // a row was still narrowed by a control no longer on screen to explain why.
+  const calendar = read('js/views/calendar.js');
+  const render = calendar.slice(calendar.indexOf('export function renderCalendar'));
+  const body = render.slice(0, render.indexOf('\n}'));
+
+  assert.match(body, /dropHiddenFilters\(\)/);
+  assert.ok(
+    body.indexOf('dropHiddenFilters()') < body.indexOf('everything.filter(matchesFilters)'),
+    'it has to run before the books are filtered'
+  );
+  assert.ok(
+    body.indexOf('dropHiddenFilters()') < body.indexOf('writeUrlState()'),
+    'and before the address is written'
+  );
+});
+
+test('the two sets of row toggles are told apart when read aloud', () => {
+  // The library's own row toggles carry some of the same words — Kind, Format,
+  // Where from — and on screen only a subtitle separates them.
+  assert.match(read('js/views/settings.js'), /row on the calendar/);
+});

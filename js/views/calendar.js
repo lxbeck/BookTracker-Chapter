@@ -155,6 +155,16 @@ const FILTER_ROWS = [
   },
 ];
 
+/**
+ * The rows Settings can offer to hide, named.
+ *
+ * Exported from here rather than copied into the settings view, because a
+ * second list of these is a second list to forget to update — which is how the
+ * library's own row toggles once ended up offering a row that no longer
+ * existed.
+ */
+export const calendarFilterRows = () => FILTER_ROWS.map(({ id, label }) => ({ id, label }));
+
 /** Does this book survive every filter row currently narrowing the grid? */
 function matchesFilters(book) {
   return FILTER_ROWS.every((row) => {
@@ -322,6 +332,7 @@ export function goToMonth(year, month) {
 export function renderCalendar(mount) {
   hideHoverCard();
   readUrlState();
+  dropHiddenFilters();
   const everything = allBooks();
   const books = everything.filter(matchesFilters);
   const todayKey = today();
@@ -501,8 +512,32 @@ export function nextVisibleKinds(selected, id, showingAll) {
 function filterToggles(books, mount) {
   const inView = booksInView(books);
 
-  const rows = FILTER_ROWS.map((row) => filterRow(row, inView, mount)).filter(Boolean);
+  const rows = FILTER_ROWS
+    .filter((row) => showsRow(row))
+    .map((row) => filterRow(row, inView, mount))
+    .filter(Boolean);
+
   return rows.length ? rows : null;
+}
+
+/** Whether a row is switched on in Settings. A predicate, and nothing else. */
+function showsRow(row) {
+  return !(getSettings().hiddenCalendarRows ?? []).includes(row.id);
+}
+
+/**
+ * A row switched off in Settings drops whatever it had selected.
+ *
+ * This has to run before the grid is filtered and before the address is
+ * written, not while the rows are being built — otherwise the first render
+ * after hiding a row still narrows the grid by it, and still puts it in the
+ * hash, from a control that is no longer on screen to explain why. Which is
+ * the worst of both: books missing, and nothing to say so.
+ */
+function dropHiddenFilters() {
+  for (const row of FILTER_ROWS) {
+    if (!showsRow(row)) row.selected().clear();
+  }
 }
 
 function filterRow(row, inView, mount) {

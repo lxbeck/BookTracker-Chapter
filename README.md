@@ -269,6 +269,14 @@ would be a search rather than a filter.
 Turning the last switch in a row off is treated as everything on, since an
 empty calendar with no obvious way back is a trap.
 
+**Rows you never use can be switched off** in Settings, under *On the
+calendar* — three rows of switches is a lot of chrome above a month grid, and
+on a phone they cost two lines each. A row switched off also drops whatever it
+had selected: a filter still narrowing the grid from a control you can no
+longer see is the worst of both, books missing and nothing to say why. Each
+row only appears in the first place when the month on screen actually holds
+more than one answer.
+
 **From Everything, a kind is a fresh choice rather than a deselection.** This
 matters in a sequence that is easy to fall into: with only books and comics
 scheduled, turning on comics and then books selects both, which is everything,

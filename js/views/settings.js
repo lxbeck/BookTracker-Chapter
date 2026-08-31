@@ -34,6 +34,7 @@ import { allSources, customSources, sourcesPresent } from '../data/sources.js';
 import { buildSnapshot } from '../data/snapshot.js';
 import { buildIcs, icsEventCount } from '../data/ics.js';
 import { showShortcuts } from './shortcuts.js';
+import { calendarFilterRows } from './calendar.js';
 import {
   storeLocalCoverOnServer, storeCoverOnServer, storeUploadedCoverOnServer,
   cachedCoverUrl, isLocalCover, hasServer, LOCAL_COVER,
@@ -404,6 +405,53 @@ function filterRowsBlock(settings, redraw) {
         el('input', {
           type: 'checkbox',
           checked: !hidden.includes(id),
+          onChange: (event) => toggle(id, event.target.checked),
+        }),
+        el('span', {}, label),
+      ]))),
+
+    calendarRowsBlock(settings, redraw),
+  ]);
+}
+
+/**
+ * The same choice, for the rows above the calendar.
+ *
+ * Three rows of switches is a lot of chrome above a month grid for someone who
+ * only ever filters by one of them — and on a phone they cost two lines each.
+ * The names come from the calendar's own table, so this cannot drift out of
+ * step with what is actually rendered.
+ *
+ * A row switched off here also drops whatever it had selected, which the
+ * calendar enforces: a filter still narrowing the grid from a row you can no
+ * longer see is the worst of both worlds.
+ */
+function calendarRowsBlock(settings, redraw) {
+  const hidden = settings.hiddenCalendarRows ?? [];
+
+  const toggle = (id, on) => {
+    updateSettings({
+      hiddenCalendarRows: on
+        ? hidden.filter((entry) => entry !== id)
+        : [...new Set([...hidden, id])],
+    });
+    redraw();
+  };
+
+  return el('div', {}, [
+    el('h4.settings__subtitle', { style: { marginTop: 'var(--s4)' } }, 'On the calendar'),
+    el('p.settings__hint', {},
+      'The rows of switches above the month grid. Each one only appears when the month on screen actually holds more than one answer, so hiding a row you never use keeps the calendar to the covers.'),
+    // The library's row toggles sit a few lines above and carry some of the
+    // same words — Kind, Format, Where from. On screen the subtitles keep them
+    // apart; read aloud, one after another, they are six identical checkboxes,
+    // so each says which grid it belongs to.
+    el('div.needs-toggles', {}, calendarFilterRows().map(({ id, label }) =>
+      el('label.bulk-check', {}, [
+        el('input', {
+          type: 'checkbox',
+          checked: !hidden.includes(id),
+          'aria-label': `${label} row on the calendar`,
           onChange: (event) => toggle(id, event.target.checked),
         }),
         el('span', {}, label),

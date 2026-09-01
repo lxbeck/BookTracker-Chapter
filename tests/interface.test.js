@@ -390,3 +390,94 @@ test('the two sets of row toggles are told apart when read aloud', () => {
   // Where from — and on screen only a subtitle separates them.
   assert.match(read('js/views/settings.js'), /row on the calendar/);
 });
+
+/* --- Clearing a field the log also writes ---------------------------------- */
+
+test('clearing a date by button marks it touched, or Save writes the old one back', () => {
+  // Save calls syncFromStore first, which refreshes any field the person has
+  // not edited from the stored record. Setting `.value` in code fires no input
+  // event, so the clear button has to say so itself — without it, clearing
+  // appeared to work, saved nothing, and the date was back on reopening.
+  const form = read('js/views/bookForm.js');
+  const clear = form.slice(form.indexOf("startedInput.value = '';"));
+  const body = clear.slice(0, clear.indexOf('Clear what actually happened'));
+
+  assert.match(body, /touched\.add\('startedAt'\)/);
+  assert.match(body, /touched\.add\('finishedAt'\)/);
+  assert.match(body, /touched\.add\('progress'\)/);
+});
+
+test('a deliberately cleared date is not stamped straight back on', () => {
+  // The status rules stamp a missing date onto anything marked Reading or
+  // Finished, which is right for a date never set and wrong for one just
+  // deleted. The store tells them apart by comparing the patch with what it
+  // is replacing.
+  const store = read('js/data/store.js');
+  assert.match(store, /function statusAfterClearing/);
+  assert.match(store, /status: statusAfterClearing\(existing, defined\)/);
+});
+
+/* --- Two lengths ------------------------------------------------------------ */
+
+test('the length lines are declared before the notes that read them', () => {
+  // refreshProgressNote runs while the form is still being assembled, and it
+  // asks which length line is showing. Declared any later, that read hits the
+  // temporal dead zone and the whole record fails to open.
+  const form = read('js/views/bookForm.js');
+  assert.ok(
+    form.indexOf('const pagesLine =') < form.indexOf('refreshProgressNote();'),
+    'pagesLine has to exist before the first refreshProgressNote() call'
+  );
+});
+
+test('a hidden length line is actually hidden', () => {
+  // `.length-line` is display:flex, which beats the browser's own
+  // `[hidden] { display: none }` — without the explicit rule the line stays
+  // on screen no matter what the JavaScript sets.
+  const css = read('css/components.css');
+  assert.match(css, /\.length-line\[hidden\]\s*\{[^}]*display:\s*none/);
+});
+
+test('the length boxes can shrink', () => {
+  // Flex items do not shrink by default, and a text box holds its ~20-character
+  // intrinsic width — which is how a field row hangs off the side of a phone.
+  const css = read('css/components.css');
+  const block = css.slice(css.indexOf('.length-line {'), css.indexOf('.length-line__unit'));
+  assert.match(block, /min-width:\s*0/);
+});
+
+test('a running time is a text box, not a number box', () => {
+  // A number input drops the colons in 9:45:30 without a word rather than
+  // refusing them, so the length silently becomes nothing.
+  const form = read('js/views/bookForm.js');
+  const audio = form.slice(form.indexOf("input('audioSeconds'"), form.indexOf("input('speed'"));
+  assert.ok(!/type:\s*'number'/.test(audio), 'the running time field stays text');
+
+  const log = read('js/views/sessionLog.js');
+  assert.match(log, /field\.type = mode === 'time' \? 'text' : 'number'/);
+});
+
+test('an unreadable running time is refused rather than dropped', () => {
+  const form = read('js/views/bookForm.js');
+  assert.match(form, /!parseHms\(audioInput\.value\)[\s\S]{0,200}showErrors/);
+});
+
+test('the speed sits on its own line, away from the running time', () => {
+  // The Length cell can be 150px wide. A label, a running time, a speed and
+  // two words of connective tissue on one line left both boxes too narrow to
+  // read back what was being typed into them.
+  const form = read('js/views/bookForm.js');
+  const audio = form.slice(form.indexOf('const audioLine ='), form.indexOf('const speedLine ='));
+  assert.ok(!/speedInput/.test(audio), 'the speed is not on the running time line');
+  assert.match(form, /speedLine\.hidden = !audio/, 'and it hides with it');
+});
+
+test('the length boxes have a width to shrink from, not to zero', () => {
+  const css = read('css/components.css');
+  const block = css.slice(css.indexOf('.length-line .input {'), css.indexOf('.length-line__unit'));
+  // `flex: 1 1 0` let the box collapse to whatever space was left over.
+  assert.match(block, /flex:\s*1\s+1\s+[1-9]/);
+  // A number input draws its spinner arrows inside its own box, over the last
+  // digit of "1.75" unless the box leaves room for them.
+  assert.match(block, /\.length-line--speed \.input \{[^}]*padding-right/);
+});

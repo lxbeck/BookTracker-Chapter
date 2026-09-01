@@ -138,3 +138,90 @@ test('progress and dates can be reset and restored', () => {
   assert.equal(back.actual.startedAt, '2026-08-01');
   assert.equal(back.actual.finishedAt, '2026-08-09');
 });
+
+/* --- Clearing what actually happened --------------------------------------- */
+
+test('clearing the dates on a book being read actually clears them', () => {
+  // The reported case: clear the dates, save, reopen — and they were back.
+  // `applyStatusRules` stamps a missing start date onto anything marked
+  // Reading, so the blank was overwritten before it ever reached storage.
+  const book = seedBook();
+  store.updateBook(book.id, {
+    status: 'reading',
+    actual: { startedAt: '2026-08-01', finishedAt: null },
+  });
+  assert.equal(store.getBook(book.id).actual.startedAt, '2026-08-01');
+
+  store.updateBook(book.id, { status: 'reading', actual: { startedAt: null, finishedAt: null } });
+
+  const cleared = store.getBook(book.id);
+  assert.equal(cleared.actual.startedAt, null, 'the date stays cleared');
+  assert.equal(cleared.status, 'backlog', 'and the status steps back to match');
+});
+
+test('a cleared book with a plan lands on planned rather than backlog', () => {
+  const book = seedBook();
+  store.updateBook(book.id, {
+    status: 'reading',
+    schedule: { start: '2026-09-01', end: '2026-09-10' },
+    actual: { startedAt: '2026-08-01' },
+  });
+
+  store.updateBook(book.id, { status: 'reading', actual: { startedAt: null, finishedAt: null } });
+
+  const cleared = store.getBook(book.id);
+  assert.equal(cleared.actual.startedAt, null);
+  assert.equal(cleared.status, 'planned', 'planned means dated, and it still has dates');
+});
+
+test('clearing only the finish date leaves a book being read', () => {
+  const book = seedBook();
+  store.updateBook(book.id, {
+    status: 'finished',
+    actual: { startedAt: '2026-08-01', finishedAt: '2026-08-09' },
+  });
+
+  store.updateBook(book.id, { status: 'finished', actual: { finishedAt: null } });
+
+  const cleared = store.getBook(book.id);
+  assert.equal(cleared.actual.finishedAt, null, 'no longer finished on any day');
+  assert.equal(cleared.actual.startedAt, '2026-08-01', 'but it was still started');
+  assert.equal(cleared.status, 'reading');
+});
+
+test('a book is never left finished with no finish date', () => {
+  // The state this avoids: nothing counts such a book — it drops out of the
+  // year summary, off the calendar, and out of every finished total.
+  const book = seedBook();
+  store.updateBook(book.id, {
+    status: 'finished',
+    actual: { startedAt: '2026-08-01', finishedAt: '2026-08-09' },
+  });
+  store.updateBook(book.id, { actual: { startedAt: null, finishedAt: null } });
+
+  const after = store.getBook(book.id);
+  assert.notEqual(after.status, 'finished');
+  assert.equal(after.actual.finishedAt, null);
+});
+
+test('a patch that says nothing about the dates leaves the status alone', () => {
+  const book = seedBook();
+  store.updateBook(book.id, { status: 'reading', actual: { startedAt: '2026-08-01' } });
+
+  store.updateBook(book.id, { notes: 'still reading this' });
+
+  const after = store.getBook(book.id);
+  assert.equal(after.status, 'reading', 'an unrelated edit is not a clear');
+  assert.equal(after.actual.startedAt, '2026-08-01');
+});
+
+test('a date that was never set is still stamped in, as before', () => {
+  // The rule being preserved: only an explicit clear counts. Marking a book
+  // finished without naming a day should still stamp one.
+  const book = seedBook();
+  store.updateBook(book.id, { status: 'finished' });
+
+  const after = store.getBook(book.id);
+  assert.equal(after.status, 'finished');
+  assert.ok(after.actual.finishedAt, 'a finished book still gets a finish date');
+});

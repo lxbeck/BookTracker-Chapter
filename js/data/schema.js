@@ -14,7 +14,7 @@
 
 import { isValidKey, today } from '../lib/dates.js';
 
-export const SCHEMA_VERSION = 8;
+export const SCHEMA_VERSION = 9;
 
 /** @type {Record<string, {id: string, label: string, hint: string}>} */
 export const STATUSES = {
@@ -103,6 +103,59 @@ export const formatUnit = (book) => FORMATS[primaryFormat(book)]?.unit ?? 'pages
 export const hasFormat = (book, id) =>
   Array.isArray(book?.formats) ? book.formats.includes(id) : book?.format === id;
 
+/**
+ * A running time, read and written the way a player shows it.
+ *
+ * `9:45:30` is nine hours, forty-five minutes, thirty seconds. Two parts mean
+ * minutes and seconds (`45:30`), one means minutes — which is what someone
+ * typing a short recording will reach for. Anything unparseable is null rather
+ * than a confident zero, because a blank field and a nought-length book are
+ * different statements.
+ *
+ * @param {string|number} value
+ * @returns {number|null} seconds
+ */
+export function parseHms(value) {
+  if (typeof value === 'number') return Number.isFinite(value) && value > 0 ? Math.round(value) : null;
+
+  const text = String(value ?? '').trim();
+  if (!text) return null;
+  if (!/^\d{1,3}(:[0-5]?\d){0,2}$/.test(text)) return null;
+
+  const parts = text.split(':').map(Number);
+  const [hours, minutes, seconds] = parts.length === 3
+    ? parts
+    : parts.length === 2
+      ? [0, parts[0], parts[1]]
+      : [0, parts[0], 0];
+
+  const total = hours * 3600 + minutes * 60 + seconds;
+  return total > 0 ? total : null;
+}
+
+/** Seconds as `9:45:30`, or `45:30` when it is under an hour. */
+export function formatHms(seconds) {
+  const total = Math.max(0, Math.round(seconds ?? 0));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const rest = total % 60;
+  const pad = (n) => String(n).padStart(2, '0');
+
+  return hours ? `${hours}:${pad(minutes)}:${pad(rest)}` : `${minutes}:${pad(rest)}`;
+}
+
+/**
+ * What the clock says a recording will take you, at the speed you play it.
+ *
+ * The recording is 9:45:30 whoever is listening. At 1.5x it is six and a half
+ * hours of your evening, and that is the number worth planning around.
+ */
+export function listeningTime(book) {
+  const runtime = book?.audioSeconds ?? null;
+  const speed = book?.speed > 0 ? book.speed : 1;
+  return runtime ? Math.round(runtime / speed) : null;
+}
+
 /** "Physical and audiobook", for a card that has room for one line. */
 export const formatLabel = (book) => {
   const ids = book?.formats?.length ? book.formats : [book?.format].filter(Boolean);
@@ -150,6 +203,15 @@ export function blankBook(overrides = {}) {
     author: '',
     isbn: '',
     pageCount: null,
+    // Two lengths, because a book can genuinely have two. Pages are pages; an
+    // audiobook's length is a running time, and a running time is not a page
+    // count in disguise. `audioSeconds` is kept in seconds because a recording
+    // is 9:45:30, not "586 minutes" — rounding it to minutes on the way in and
+    // back out again loses the seconds for good.
+    audioSeconds: null,
+    // How fast you play it. Not a property of the recording: 1.5x is a fact
+    // about the listener, and it is why clock time and audio time differ.
+    speed: 1,
     genre: '',
     description: '',
     format: 'physical',
@@ -407,6 +469,14 @@ export function normalizeBook(input = {}, todayKey = today()) {
   const title = String(input.title ?? '').trim();
 
   const pageCount = toInt(input.pageCount);
+  const audioSeconds = parseHms(input.audioSeconds);
+  // A playback rate outside this range is a typo, not a preference. Clamped
+  // rather than rejected: the length is still good, and refusing to save a
+  // whole record over a stray digit in an optional field helps nobody.
+  const rawSpeed = Number(input.speed);
+  const speed = Number.isFinite(rawSpeed) && rawSpeed >= 0.5 && rawSpeed <= 5
+    ? Math.round(rawSpeed * 100) / 100
+    : 1;
   const start = cleanKey(input.schedule?.start);
   let end = cleanKey(input.schedule?.end);
   // An end before the start is a slip of the finger, not an intent.
@@ -422,6 +492,8 @@ export function normalizeBook(input = {}, todayKey = today()) {
     author: String(input.author ?? '').trim(),
     isbn: String(input.isbn ?? '').replace(/[^0-9Xx]/g, '').toUpperCase(),
     pageCount: pageCount && pageCount > 0 ? pageCount : null,
+    audioSeconds,
+    speed,
     genre: String(input.genre ?? '').trim(),
     description: String(input.description ?? '').trim().slice(0, 2000),
     formats: cleanFormats(input),
@@ -489,7 +561,36 @@ export function normalizeBook(input = {}, todayKey = today()) {
     updatedAt: new Date().toISOString(),
   };
 
+  reconcileLengths(book);
   return applyStatusRules(book, todayKey);
+}
+
+/**
+ * Keep the two lengths from contradicting each other.
+ *
+ * Everything that paces, charts or checks a length reads `pageCount`, in the
+ * book's own unit — pages for something read, minutes for something only
+ * listened to. Rather than teach every one of those to ask which field to
+ * look at, the running time is mirrored into `pageCount` for an audio-only
+ * book and the rest of the app carries on unchanged.
+ *
+ * The mirror runs both ways because records arrive from both directions: a
+ * save from the new form brings a running time, and a save made before this
+ * field existed — or on a phone that has not synced the change yet — brings
+ * only minutes. Neither should come out the other side with half a length.
+ */
+function reconcileLengths(book) {
+  if (book.format !== 'audio') return book;
+
+  if (book.audioSeconds) {
+    // Rounded up: a 45:30 recording is not 45 minutes of listening, and a
+    // target that says otherwise leaves you thirty seconds short every day.
+    book.pageCount = Math.max(1, Math.ceil(book.audioSeconds / 60));
+  } else if (book.pageCount) {
+    book.audioSeconds = book.pageCount * 60;
+  }
+
+  return book;
 }
 
 /**

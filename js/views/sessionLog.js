@@ -16,7 +16,7 @@
 
 import { el, fill, toast } from '../lib/dom.js';
 import { addSession, updateSession, removeSession, getBook, updateBook } from '../data/store.js';
-import { FORMATS, formatUnit, hasFormat } from '../data/schema.js';
+import { FORMATS, formatUnit, hasFormat, parseHms, formatHms } from '../data/schema.js';
 import { formatShort, today } from '../lib/dates.js';
 import { bookTotals, formatDuration } from '../logic/sessions.js';
 import { sessionPages } from '../data/schema.js';
@@ -90,6 +90,12 @@ function entryForm(book, fixedDate, onSaved) {
   const unit = formatUnit(book);
   const isAudio = unit === 'minutes';
 
+  // A position in a recording is a timestamp, and typing one should not mean
+  // working out that 4:12:30 is minute 253. Offered whenever there is a
+  // running time to measure against — including a paperback you also own on
+  // audio, where the sitting still has to land on a page in the end.
+  const canTime = hasFormat(book, 'audio') && book.audioSeconds > 0;
+
   const dateInput = el('input.input', {
     type: 'date',
     value: fixedDate ?? today(),
@@ -104,7 +110,9 @@ function entryForm(book, fixedDate, onSaved) {
     type: 'number',
     min: '1',
     placeholder: 'optional',
-    'aria-label': 'Minutes read, optional',
+    'aria-label': hasFormat(book, 'audio')
+      ? 'Minutes spent listening, optional'
+      : 'Minutes read, optional',
   });
 
   const fromInput = el('input.input', {
@@ -139,37 +147,73 @@ function entryForm(book, fixedDate, onSaved) {
     disabled: !book.pageCount,
     title: book.pageCount ? '' : 'Add a page count to log by percentage',
     onChange: () => {
-      const total = book.pageCount;
-      const toPercent = unitSelect.value === 'percent';
+      // Convert through the page number rather than between display units, so
+      // switching page -> % -> time and back cannot drift.
+      const held = [fromInput, toInput].map((field) => pageIn(field, previousUnit));
+      previousUnit = unitSelect.value;
+      applyUnitChrome();
 
-      for (const field of [fromInput, toInput]) {
-        const value = Number.parseFloat(field.value);
-        if (Number.isFinite(value) && total > 0) {
-          field.value = toPercent
-            ? Math.round((value / total) * 100)
-            : Math.round((value / 100) * total);
-        }
-        field.max = toPercent ? '100' : String(total ?? '');
-      }
-
-      fromInput.placeholder = toPercent ? 'from %' : 'from';
-      toInput.placeholder = toPercent ? '40' : String(total ?? 'page');
+      held.forEach((page, index) => {
+        const field = [fromInput, toInput][index];
+        field.value = page == null ? '' : displayFor(page);
+      });
       refreshPreview();
     },
   }, [
     el('option', { value: 'page' }, isAudio ? 'min' : 'page'),
     el('option', { value: 'percent' }, '%'),
+    canTime ? el('option', { value: 'time' }, 'time') : null,
   ]);
 
-  /** A typed value in whichever unit is selected, expressed as a page number. */
-  const asPage = (field) => {
+  let previousUnit = 'page';
+
+  /** Swap the boxes between a number and a timestamp as the mode changes. */
+  function applyUnitChrome() {
+    const total = book.pageCount;
+    const mode = unitSelect.value;
+
+    for (const field of [fromInput, toInput]) {
+      // A timestamp is not a number, and a number input drops the colons
+      // without a word rather than refusing them.
+      field.type = mode === 'time' ? 'text' : 'number';
+      field.max = mode === 'percent' ? '100' : mode === 'page' ? String(total ?? '') : null;
+    }
+
+    fromInput.placeholder =
+      mode === 'percent' ? 'from %' : mode === 'time' ? '0:00:00' : 'from';
+    toInput.placeholder =
+      mode === 'percent' ? '40' : mode === 'time' ? formatHms(book.audioSeconds) : String(total ?? 'page');
+  }
+
+  /** A page number rendered in whichever unit is on show. */
+  function displayFor(page) {
+    const total = book.pageCount;
+    if (unitSelect.value === 'percent') return total ? Math.round((page / total) * 100) : '';
+    if (unitSelect.value === 'time') {
+      return total ? formatHms(Math.round((page / total) * book.audioSeconds)) : '';
+    }
+    return page;
+  }
+
+  /** What a field holds, read as the given unit, expressed as a page number. */
+  function pageIn(field, mode) {
+    const total = book.pageCount;
+    if (mode === 'time') {
+      const seconds = parseHms(field.value);
+      return seconds && book.audioSeconds
+        ? Math.round((seconds / book.audioSeconds) * total)
+        : null;
+    }
     const value = Number.parseFloat(field.value);
     if (!Number.isFinite(value)) return null;
-    if (unitSelect.value === 'percent' && book.pageCount) {
-      return Math.round((Math.min(Math.max(value, 0), 100) / 100) * book.pageCount);
+    if (mode === 'percent' && total) {
+      return Math.round((Math.min(Math.max(value, 0), 100) / 100) * total);
     }
     return Math.round(value);
-  };
+  }
+
+  /** A typed value in whichever unit is selected, expressed as a page number. */
+  const asPage = (field) => pageIn(field, unitSelect.value);
 
   const endingPage = () => asPage(toInput);
   const startingPage = () => asPage(fromInput);
@@ -177,6 +221,7 @@ function entryForm(book, fixedDate, onSaved) {
   // A running read-out of what this entry will mean, so nobody has to work out
   // 79 of 440 in their head to check they typed the right number.
   const preview = el('p.session-form__preview');
+  const speedNote = el('p.session-form__speed');
 
   const refreshPreview = () => {
     const to = endingPage();
@@ -187,13 +232,44 @@ function entryForm(book, fixedDate, onSaved) {
     const percent = Math.round((Math.min(to, book.pageCount) / book.pageCount) * 100);
     const from = startingPage();
     const covered = Number.isFinite(from) && to > from ? to - from : null;
+
+    // In timestamp mode the numbers people typed were timestamps, so the
+    // read-out echoes timestamps back. Answering "4:12:30" with "253 of 586"
+    // makes you do the conversion twice over.
+    const asTime = unitSelect.value === 'time';
+    const stamp = (page) => formatHms(Math.round((page / book.pageCount) * book.audioSeconds));
+
     preview.textContent =
-      `${percent}% \u00b7 ${to} of ${book.pageCount} ${unit}` +
-      (covered ? ` \u00b7 ${covered} ${unit} this sitting` : '');
+      `${percent}% \u00b7 ${asTime ? stamp(to) : to} of ${asTime ? formatHms(book.audioSeconds) : `${book.pageCount} ${unit}`}`
+      + (covered ? ` \u00b7 ${asTime ? stamp(covered) : `${covered} ${unit}`} this sitting` : '');
+
+    speedNote.textContent = observedSpeed(covered);
   };
+
+  /**
+   * What speed this sitting was actually played at.
+   *
+   * Recording time and clock time are different quantities, and treating them
+   * as one is how a log ends up claiming 266 minutes in an hour. Given both,
+   * their ratio is the only honest thing to say — and it is the number someone
+   * listening at 1.5x wants to see confirmed.
+   */
+  function observedSpeed(coveredPages) {
+    const spent = Number.parseFloat(minutesInput.value);
+    if (!book.audioSeconds || !coveredPages || !Number.isFinite(spent) || spent <= 0) return '';
+
+    const listened = (coveredPages / book.pageCount) * book.audioSeconds;
+    const rate = listened / (spent * 60);
+    // Outside this band the entry is a typo or a half-finished thought, and a
+    // confident "0.1x" would be worse than saying nothing.
+    if (rate < 0.5 || rate > 5) return '';
+
+    return `${formatHms(listened)} of recording in ${spent} minute${spent === 1 ? '' : 's'} \u2014 about ${rate.toFixed(2).replace(/\.?0+$/, '')}\u00d7.`;
+  }
 
   toInput.addEventListener('input', refreshPreview);
   fromInput.addEventListener('input', refreshPreview);
+  minutesInput.addEventListener('input', refreshPreview);
 
   const error = el('p.field__error', { hidden: true });
 
@@ -247,10 +323,11 @@ function entryForm(book, fixedDate, onSaved) {
       labelled('Date', dateInput),
       labelled(isAudio ? 'Ended at' : 'Ended on', el('div.progress-entry', {}, [toInput, unitSelect])),
       labelled(isAudio ? 'Started at' : 'Started from', fromInput),
-      labelled('Minutes', minutesInput),
+      labelled(hasFormat(book, 'audio') ? 'Time spent' : 'Minutes', minutesInput),
       viaSelect ? labelled('How', viaSelect) : null,
     ].filter(Boolean)),
     preview,
+    speedNote,
     el('div.session-form__actions', {}, [
       timerControl(book, minutesInput, refreshPreview),
       error,

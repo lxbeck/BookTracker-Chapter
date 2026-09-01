@@ -550,6 +550,66 @@
   align-items: center;
 }
 
+/* --- Length: one measurement, or two ---------------------------------------- */
+
+.length-fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+  min-width: 0;
+}
+
+.length-line {
+  display: flex;
+  align-items: center;
+  gap: var(--s1);
+  /* Without this the number and text boxes hold their ~20-character intrinsic
+     width and push the whole field out of the dialog on a phone. */
+  min-width: 0;
+}
+
+/* An explicit rule because `display: flex` above beats the browser's own
+   `[hidden] { display: none }`, and the line would stay on screen. */
+.length-line[hidden] {
+  display: none;
+}
+
+/* A basis rather than 0: `flex: 1 1 0` let the box collapse to whatever was
+   left over, which in a 150px field cell was too narrow to read "9:45:30" back
+   while typing it. */
+.length-line .input {
+  min-width: 0;
+  flex: 1 1 6rem;
+}
+
+/* A number input draws its spinner arrows inside its own box, so the last
+   digit of "1.75" sits under them unless the box is wide enough for both. */
+.length-line--speed .input {
+  flex: 0 1 7rem;
+  padding-right: var(--s5);
+}
+
+.length-line__unit {
+  font-size: var(--size-sm);
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+
+/* The "Pages"/"Audio" prefixes are noise when only one line is showing — the
+   field label already says Length, and the placeholder says which unit. Speed
+   keeps its label either way, or it reads as a bare number with a stray ×. */
+.length-fields:not(.length-fields--both)
+  .length-line:not(.length-line--speed) .length-line__unit:first-child {
+  display: none;
+}
+
+/* The clock-versus-recording read-out, under the sitting's preview. */
+.session-form__speed {
+  margin: 0;
+  font-size: var(--size-sm);
+  color: var(--ink-soft);
+}
+
 .format-check {
   display: inline-flex;
   align-items: center;

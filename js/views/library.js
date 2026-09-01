@@ -17,6 +17,7 @@ import {
 import {
   STATUSES, STATUS_ORDER, FORMATS,
   formatUnit, hasFormat, formatLabel, FORMAT_PRIORITY,
+  formatHms,
 } from '../data/schema.js';
 import { allKinds, kindLabel, kindsPresent } from '../data/kinds.js';
 import { allSources, sourceLabel, sourcesPresent } from '../data/sources.js';
@@ -1551,7 +1552,13 @@ function statusLine(book, unit) {
   if (book.schedule.start) {
     return el('p.shelf-card__meta', {}, `Starts ${relativeDay(book.schedule.start)}`);
   }
-  return el('p.shelf-card__meta', {}, book.pageCount ? `${book.pageCount} ${unit}` : 'Unscheduled');
+  // "586 minutes" is a number you have to convert before it means anything.
+  // A recording's length belongs on a card the way a player shows it.
+  const length = book.audioSeconds && unit === 'minutes'
+    ? formatHms(book.audioSeconds)
+    : book.pageCount && `${book.pageCount} ${unit}`;
+
+  return el('p.shelf-card__meta', {}, length || 'Unscheduled');
 }
 
 function progressBar(book) {

@@ -18,6 +18,7 @@ import { allBooks } from '../data/store.js';
 import {
   STATUSES, STATUS_ORDER, FORMATS, FORMAT_PRIORITY,
   blankBook, resolveProgress, formatUnit, hasFormat,
+  parseHms, formatHms, listeningTime,
 } from '../data/schema.js';
 import { allKinds } from '../data/kinds.js';
 import { allSources, sourceLabel } from '../data/sources.js';
@@ -82,6 +83,46 @@ export function openBookForm({ book = null, defaultStart = null, onSaved } = {})
     value: draft.pageCount ?? '',
     placeholder: '448',
   });
+  // A running time is typed the way a player displays it, so the field is text
+  // rather than a number input: `9:45:30` is not a number, and a number input
+  // silently refuses the colons instead of saying so.
+  const audioInput = input('audioSeconds', {
+    value: draft.audioSeconds ? formatHms(draft.audioSeconds) : '',
+    placeholder: '9:45:30',
+    inputMode: 'numeric',
+    'aria-describedby': 'err-pageCount audio-note',
+  });
+  const speedInput = input('speed', {
+    type: 'number',
+    min: '0.5',
+    max: '5',
+    step: '0.05',
+    value: draft.speed && draft.speed !== 1 ? draft.speed : '',
+    placeholder: '1',
+    'aria-label': 'Playback speed',
+  });
+  const audioNote = el('p.field__hint', { id: 'audio-note' });
+
+  // --- Length, which is two different measurements ---------------------------
+
+  const pagesLine = el('div.length-line', {}, [
+    el('span.length-line__unit', { text: 'Pages' }),
+    pagesInput,
+  ]);
+  const audioLine = el('div.length-line', {}, [
+    el('span.length-line__unit', { text: 'Audio' }),
+    audioInput,
+  ]);
+  // Its own line, because the Length cell can be 150px wide: a label, a
+  // running time, a speed and two words of connective tissue on one line left
+  // both boxes too narrow to read what was being typed into them.
+  const speedLine = el('div.length-line.length-line--speed', {}, [
+    el('span.length-line__unit', { text: 'Speed' }),
+    speedInput,
+    el('span.length-line__unit', { text: '\u00d7' }),
+  ]);
+  const lengthControl = el('div.length-fields', {}, [pagesLine, audioLine, speedLine, audioNote]);
+
   const genreInput = input('genre', { value: draft.genre, placeholder: 'Adventure' });
 
   const descriptionInput = el('textarea.textarea', {
@@ -176,7 +217,7 @@ export function openBookForm({ book = null, defaultStart = null, onSaved } = {})
   const progressUnit = el('select.select.progress-unit', {
     'aria-label': 'Progress measured in',
     onChange: () => {
-      const total = Number.parseInt(pagesInput.value, 10);
+      const total = lengthInUnits();
       const current = Number.parseFloat(progressInput.value);
 
       // Convert what's already typed rather than leaving a page number sitting
@@ -199,7 +240,7 @@ export function openBookForm({ book = null, defaultStart = null, onSaved } = {})
   const progressNote = el('span.field__hint');
 
   function refreshProgressNote() {
-    const total = Number.parseInt(pagesInput.value, 10);
+    const total = lengthInUnits();
     const value = Number.parseFloat(progressInput.value);
 
     if (!Number.isFinite(value) || !total) {
@@ -224,6 +265,7 @@ export function openBookForm({ book = null, defaultStart = null, onSaved } = {})
 
   progressInput.addEventListener('input', refreshProgressNote);
   pagesInput.addEventListener('input', refreshProgressNote);
+  audioInput.addEventListener('input', refreshProgressNote);
   refreshProgressNote();
 
   const ratingControl = starRating(draft.rating, (value) => {
@@ -282,6 +324,7 @@ export function openBookForm({ book = null, defaultStart = null, onSaved } = {})
       .map((input) => input.value);
 
   function refreshFormatNote() {
+    refreshLengthFields();
     const chosen = readFormats();
     const unit = formatUnit({ formats: chosen });
     formatNote.textContent =
@@ -291,6 +334,56 @@ export function openBookForm({ book = null, defaultStart = null, onSaved } = {})
   }
 
   const formatField = el('div.format-checks', {}, formatChecks);
+
+  /**
+   * Show the measurements this book actually has.
+   *
+   * One box labelled "pages, or minutes for audio" made you work out which
+   * unit it meant every time you opened a record, and gave a paperback you
+   * also own on audio nowhere to put the second length.
+   */
+  function refreshLengthFields() {
+    const chosen = readFormats();
+    const audio = chosen.includes('audio');
+    const printed = chosen.includes('physical') || chosen.includes('ebook');
+
+    pagesLine.hidden = audio && !printed;
+    audioLine.hidden = !audio;
+    speedLine.hidden = !audio;
+    // The "Pages"/"Audio" prefixes only earn their space when both are up and
+    // the field label above can no longer say which is which.
+    lengthControl.classList.toggle('length-fields--both', audio && printed);
+
+    const label = fields.pageCount?.wrap.querySelector('.field__label');
+    if (label) label.htmlFor = pagesLine.hidden ? 'f-audioSeconds' : 'f-pageCount';
+
+    refreshAudioNote();
+  }
+
+  /** What the recording costs you at the speed you play it. */
+  function refreshAudioNote() {
+    const typed = audioInput.value.trim();
+    const runtime = parseHms(typed);
+
+    if (audioLine.hidden || !typed) {
+      audioNote.textContent = '';
+      return;
+    }
+    if (!runtime) {
+      audioNote.textContent = 'Use hours:minutes:seconds, like 9:45:30.';
+      return;
+    }
+
+    const speed = Number(speedInput.value) || 1;
+    const minutes = Math.ceil(runtime / 60);
+
+    audioNote.textContent = speed > 0 && speed !== 1
+      ? `${formatHms(runtime)} at ${speed}\u00d7 is ${formatHms(listeningTime({ audioSeconds: runtime, speed }))} of your time.`
+      : `${formatHms(runtime)} \u2014 ${minutes} minutes.`;
+  }
+
+  audioInput.addEventListener('input', refreshAudioNote);
+  speedInput.addEventListener('input', refreshAudioNote);
 
   const categorySelect = el(
     'select.select',
@@ -341,24 +434,42 @@ export function openBookForm({ book = null, defaultStart = null, onSaved } = {})
 
   // The record, as distinct from the plan. Finishing a book fills these in on
   // its own; they're editable for the times it didn't happen that way.
+  // Both events, deliberately: a date field emptied with the picker's own
+  // clear control reports `change` without always reporting `input`, and an
+  // untouched field is one Save is free to overwrite from the stored record.
   const startedInput = input('actual.startedAt', {
     type: 'date',
     value: draft.actual.startedAt ?? '',
     onInput: () => touched.add('startedAt'),
+    onChange: () => touched.add('startedAt'),
   });
   const finishedInput = input('actual.finishedAt', {
     type: 'date',
     value: draft.actual.finishedAt ?? '',
     onInput: () => touched.add('finishedAt'),
+    onChange: () => touched.add('finishedAt'),
   });
 
   const paceNote = el('p.field__hint', { id: 'pace-note' });
+
+  /**
+   * The length in the unit the book is paced in.
+   *
+   * Pages when there are pages; whole minutes of recording when there are not.
+   * The stored record derives the same number, but the notes below have to
+   * work from what is typed, before any of it is saved.
+   */
+  function lengthInUnits() {
+    if (!pagesLine.hidden) return Number.parseInt(pagesInput.value, 10) || 0;
+    const runtime = parseHms(audioInput.value);
+    return runtime ? Math.ceil(runtime / 60) : 0;
+  }
 
   /** Live feedback: what this plan actually asks of you per day. */
   function refreshPaceNote() {
     const start = startInput.value;
     const end = endInput.value;
-    const pages = Number.parseInt(pagesInput.value, 10);
+    const pages = lengthInUnits();
     const unit = formatUnit({ formats: readFormats() });
 
     if (!start || !end || !pages || end < start) {
@@ -384,7 +495,7 @@ export function openBookForm({ book = null, defaultStart = null, onSaved } = {})
         : `${days} day${days === 1 ? '' : 's'} \u2014 about ${perDay} ${unit} a day.`;
   }
 
-  [startInput, endInput, pagesInput, progressInput].forEach((node) =>
+  [startInput, endInput, pagesInput, progressInput, audioInput].forEach((node) =>
     node.addEventListener('input', refreshPaceNote)
   );
   progressUnit.addEventListener('change', refreshPaceNote);
@@ -497,7 +608,7 @@ export function openBookForm({ book = null, defaultStart = null, onSaved } = {})
       field('category', 'Kind', categorySelect, 'Book, comic, manga\u2026'),
       field('format', 'Format', el('div', {}, [formatField, formatNote]),
         'How you read it \u2014 tick both if you read and listen'),
-      field('pageCount', 'Length', pagesInput, 'Pages, or minutes for audio'),
+      field('pageCount', 'Length', lengthControl, 'How long it is, in its own units'),
       field('genre', 'Genre', genreInput),
     ]),
     el('div.field-row', {}, [
@@ -559,8 +670,30 @@ export function openBookForm({ book = null, defaultStart = null, onSaved } = {})
                 startedInput.value = '';
                 finishedInput.value = '';
                 progressInput.value = '';
-                draft.rating = draft.rating;
-                toast('Cleared. Save to keep it.');
+
+                // Setting `.value` in code fires no input event, so without
+                // this the fields count as untouched — and Save re-reads the
+                // stored record over them before collecting, putting the dates
+                // straight back. That is the bug where clearing appeared to
+                // work, saved silently, and came back on reopening.
+                touched.add('startedAt');
+                touched.add('finishedAt');
+                touched.add('progress');
+
+                // Saying a book has not been read is saying it is not being
+                // read, so the status has to move with the dates — otherwise
+                // the status rules stamp them straight back on save. Shown
+                // here rather than sprung afterwards, so the form says what
+                // saving will do.
+                const stepped = startInput.value ? 'planned' : 'backlog';
+                if (statusSelect.value === 'reading' || statusSelect.value === 'finished') {
+                  statusSelect.value = stepped;
+                  touched.add('status');
+                }
+
+                refreshProgressNote();
+                refreshPaceNote();
+                toast(`Cleared, and set back to ${STATUSES[stepped].label.toLowerCase()}. Save to keep it.`);
               },
             }, 'Clear what actually happened'),
             draft.sessions.length
@@ -642,6 +775,8 @@ export function openBookForm({ book = null, defaultStart = null, onSaved } = {})
       author: authorInput.value,
       isbn: isbnInput.value,
       pageCount: pagesInput.value,
+      audioSeconds: audioLine.hidden ? null : parseHms(audioInput.value),
+      speed: audioLine.hidden ? 1 : Number(speedInput.value) || 1,
       genre: genreInput.value,
       formats: readFormats(),
       category: categorySelect.value,
@@ -676,7 +811,7 @@ export function openBookForm({ book = null, defaultStart = null, onSaved } = {})
         progressInput.value === ''
           ? undefined
           : resolveProgress(
-              { pageCount: Number.parseInt(pagesInput.value, 10) || null },
+              { pageCount: lengthInUnits() || null },
               progressUnit.value === 'percent'
                 ? { percent: progressInput.value }
                 : { page: progressInput.value }
@@ -742,6 +877,16 @@ export function openBookForm({ book = null, defaultStart = null, onSaved } = {})
     // Then pick up anything the log wrote while the form was open, so Save
     // cannot write stale values back over it.
     if (isEdit) syncFromStore();
+
+    // Caught here rather than in validateBook, which only ever sees the parsed
+    // number: by then "9.45.30" has already become null, and saving it would
+    // quietly drop a length the person believes they just typed.
+    if (!audioLine.hidden && audioInput.value.trim() && !parseHms(audioInput.value)) {
+      showErrors({ pageCount: 'Use hours:minutes:seconds, like 9:45:30.' });
+      toast('Check the highlighted fields.', { variant: 'error' });
+      return;
+    }
+
     const payload = collect();
 
     // On add there is nothing to merge against, so the defaults come from a
@@ -805,6 +950,10 @@ export function openBookForm({ book = null, defaultStart = null, onSaved } = {})
       save();
     }
   });
+
+  // Again now the fields exist: the first call runs while the form is still
+  // being assembled, so the Length label has nothing to point at yet.
+  refreshLengthFields();
 
   return modal;
 }

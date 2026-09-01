@@ -308,6 +308,10 @@ own dates would be worse than no status at all.
 <summary><strong>Logging what you read</strong> — Recording a sitting</summary>
 
 A session is one sitting: a date, minutes, and optionally the pages it covered.
+On anything with a running time the positions can be typed as timestamps —
+switch the unit next to the box from *page* to *time* — and the read-out answers
+in timestamps too, rather than making you convert 4:12:30 into minute 253 and
+back again.
 Log one from a book's record for the full history, or from the day popup to
 date it to that day automatically. Logging moves a planned book to reading and
 backdates its start to the earliest sitting, because that is when it actually
@@ -621,6 +625,13 @@ minutes of audio, so units per hour is a multiple of the clock — "1.2× the
 clock" — and anything outside half to five times is treated as a mis-logged
 position and not reported at all.
 
+Speed is a fact about the listener, not the recording, so it lives on the
+record as a number you set: at 1.5× a 9:45:30 audiobook is 6:30:20 of your
+evening, and the Length field says so as you type. The log then shows what
+actually happened rather than what you claimed — give a sitting both a
+timestamp span and the minutes it took and it reports the speed those two
+imply, which is the only honest way to compare recording time with clock time.
+
 A book read in four sittings over a fortnight and the same book ground through
 over eight months are the same row on a shelf and completely different reading.
 Everything is counted from the log rather than stored, so correcting a session
@@ -753,6 +764,14 @@ There is no "primary" to choose, because the rule is obvious once stated:
 **pages beat minutes.** A page count is a property of the book; a running time
 is a property of one recording. So a book that is both physical and audio is
 measured in pages, and only an audio-only book is measured in minutes.
+
+Both facts are still worth keeping, so the record holds **both lengths**. The
+Length field shows the boxes the book has earned: pages for a paperback, a
+running time for an audiobook, and both — labelled — for the paperback you also
+own on audio. A running time is typed the way a player shows it, `9:45:30`, and
+kept to the second; whole minutes are what the pacing works from, rounded up,
+because a plan built on 45 minutes leaves you thirty seconds short of a 45:30
+chapter every day.
 
 Everything downstream follows from that one helper rather than from
 `book.format` read directly, which is what makes the change small: pacing,

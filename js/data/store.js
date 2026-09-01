@@ -226,6 +226,9 @@ function migrate(saved) {
   // v0 -> v1: straight normalise.
   // v1 -> v2: sessions array gained real structure; normalizeBook handles it,
   //           and a v1 record's empty sessions array survives untouched.
+  // v8 -> v9: audiobooks gained a running time in seconds. An older record
+  //           holds only whole minutes in pageCount; normalizeBook mirrors
+  //           those back into audioSeconds, so the bump is the migration.
   const shared = {
     version: SCHEMA_VERSION,
     settings: { weekStartsOn: 0, ...saved?.settings },
@@ -376,6 +379,7 @@ export function updateBook(id, patch) {
     schedule: recordPlanChange(existing, { ...existing.schedule, ...defined.schedule }),
     actual: { ...existing.actual, ...defined.actual },
     progress: { ...existing.progress, ...defined.progress },
+    status: statusAfterClearing(existing, defined),
     id: existing.id,
     createdAt: existing.createdAt,
   });
@@ -504,6 +508,49 @@ function recordPlanChange(existing, next) {
       { start: was.start, end: was.end ?? was.start, at: today() },
     ].slice(-12),
   };
+}
+
+/**
+ * Clearing "what actually happened" has to actually clear it.
+ *
+ * The status rules keep dates and status honest in one direction: a book being
+ * read has started, a finished book finished on some day, so `applyStatusRules`
+ * stamps a missing date back on. That is right when a date was never set, and
+ * wrong when one was just deliberately deleted — clear the dates on a book
+ * marked Reading, save, and the rules wrote today straight back over the blank,
+ * so the field could never be emptied at all.
+ *
+ * A date cleared on purpose is a statement about the book: *this has not been
+ * read*. So the status steps back to match, rather than the status quietly
+ * overruling the edit. The alternative — leaving `finished` with no finish date
+ * — is worse than either: nothing counts such a book, it vanishes from the
+ * calendar, and no year summary can see it.
+ *
+ * Only an explicit clear counts. A patch that says nothing about these dates
+ * leaves the status exactly where it was.
+ */
+function statusAfterClearing(existing, defined) {
+  const status = defined.status ?? existing.status;
+  if (!Object.hasOwn(defined, 'actual')) return status;
+
+  const cleared = (field) =>
+    Object.hasOwn(defined.actual ?? {}, field)
+    && !defined.actual[field]
+    && Boolean(existing.actual?.[field]);
+
+  if (cleared('startedAt')) {
+    // Never started, so it cannot be being read or be finished. Where it lands
+    // is the same question "planned means dated" answers everywhere else.
+    if (status === 'reading' || status === 'finished') {
+      return existing.schedule?.start ? 'planned' : 'backlog';
+    }
+    return status;
+  }
+
+  // Started but no longer finished is exactly what Reading means.
+  if (cleared('finishedAt') && status === 'finished') return 'reading';
+
+  return status;
 }
 
 /**

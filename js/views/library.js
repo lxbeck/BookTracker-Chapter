@@ -176,7 +176,12 @@ const selection = new Set();
 let anchorId = null;
 
 const filters = {
-  shelf: 'reading', sort: 'planned', query: '', tag: null,
+  shelf: 'reading', sort: 'planned', query: '',
+  // Every other filter here is one value at a time. Shelves are a set: they
+  // are the one thing on a book that is genuinely a list of several — "owned"
+  // and "signed" and "want to reread" all at once — so picking just one to
+  // filter by was always going to be the wrong shape for it.
+  tags: new Set(),
   format: null, order: null, category: null, need: null, genre: null, source: null,
 };
 
@@ -211,7 +216,12 @@ export function renderLibrary(mount) {
   const inScope = filters.shelf === 'all' ? books : books.filter(SHELVES[filters.shelf].match);
 
   const tags = [...new Set(inScope.flatMap((book) => book.shelves))].sort();
-  if (filters.tag && !tags.includes(filters.tag)) filters.tag = null;
+  // A shelf that no longer matches anything on this shelf tab — deleted, or
+  // just not present here — drops out rather than sitting on as a filter
+  // nobody can see or clear.
+  for (const tag of filters.tags) {
+    if (!tags.includes(tag)) filters.tags.delete(tag);
+  }
 
   // A different shelf, sort or filter is a different list; start it at the top.
   shown = PAGE;
@@ -259,7 +269,11 @@ function visibleBooks(books) {
   return books
     .filter(SHELVES[filters.shelf].match)
     .filter(matchesQuery(filters.query))
-    .filter((book) => !filters.tag || book.shelves.includes(filters.tag))
+    // Any selected shelf matches, not all of them — the same rule the
+    // calendar's own multi-select rows use, and for the same reason: a book
+    // can be on several shelves at once, so requiring every checked one would
+    // turn ticking a second shelf into a way to see fewer books.
+    .filter((book) => !filters.tags.size || book.shelves.some((shelf) => filters.tags.has(shelf)))
     // A book read on paper with the audiobook playing answers to both
     // filters, because it is genuinely both.
     .filter((book) => !filters.format || hasFormat(book, filters.format))
@@ -526,18 +540,19 @@ function tagBar(tags) {
     ...tags.map((tag) =>
       el('button.tag', {
         type: 'button',
-        'aria-pressed': String(filters.tag === tag),
+        'aria-pressed': String(filters.tags.has(tag)),
         onClick: () => {
-          filters.tag = filters.tag === tag ? null : tag;
+          if (filters.tags.has(tag)) filters.tags.delete(tag);
+          else filters.tags.add(tag);
           rerender();
         },
       }, tag)
     ),
-    filters.tag
+    filters.tags.size
       ? el('button.link-btn.tag-bar__clear', {
           type: 'button',
           onClick: () => {
-            filters.tag = null;
+            filters.tags.clear();
             rerender();
           },
         }, 'Clear')
@@ -1609,7 +1624,14 @@ function emptyShelf() {
 
   const applied = [
     filters.query ? { label: `search "${filters.query}"`, clear: () => { filters.query = ''; } } : null,
-    filters.tag ? { label: `shelf "${filters.tag}"`, clear: () => { filters.tag = null; } } : null,
+    filters.tags.size
+      ? {
+          label: filters.tags.size === 1
+            ? `shelf "${[...filters.tags][0]}"`
+            : `shelves "${[...filters.tags].join('", "')}"`,
+          clear: () => { filters.tags.clear(); },
+        }
+      : null,
     filters.genre ? { label: `genre "${filters.genre}"`, clear: () => { filters.genre = null; } } : null,
     filters.category
       ? { label: `kind "${kindLabel(filters.category)}"`, clear: () => { filters.category = null; } }

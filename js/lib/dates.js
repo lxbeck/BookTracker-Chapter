@@ -24,7 +24,14 @@ export function toKey(date) {
 /** Parse a DayKey into a local Date at midnight. @param {DayKey} key */
 export function fromKey(key) {
   const [y, m, d] = key.split('-').map(Number);
-  return new Date(y, m - 1, d);
+  // Not `new Date(y, m - 1, d)`: the Date constructor applies JS's legacy
+  // two-digit-year rule to any year 0-99, silently adding 1900 — so a date
+  // input mid-edit, reporting "0002-06-15" for the single "2" just typed into
+  // a cleared year field, produced a "finish by" of 1902 instead of 2026. A
+  // Date built with `setFullYear` is never remapped, whatever the year.
+  const date = new Date(0);
+  date.setFullYear(y, m - 1, d);
+  return date;
 }
 
 /** True if the string is a well-formed, real calendar date. */

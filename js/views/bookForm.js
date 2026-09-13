@@ -24,7 +24,7 @@ import { allKinds } from '../data/kinds.js';
 import { allSources, sourceLabel } from '../data/sources.js';
 import { formatShort } from '../lib/dates.js';
 import { addBook, updateBook, removeBook, restoreBook, getBook, setStatus } from '../data/store.js';
-import { addDays } from '../lib/dates.js';
+import { addDays, isValidKey } from '../lib/dates.js';
 import { fetchMissingDetails, missingFields } from '../data/enrich.js';
 import { historySummary, finishedSummary, formatDuration } from '../logic/sessions.js';
 import { readingDaysFor } from '../logic/sessions.js';
@@ -504,7 +504,12 @@ export function openBookForm({ book = null, defaultStart = null, onSaved } = {})
   // finish date in saves the second date picker, and it stays editable, so the
   // guess costs nothing when it's wrong.
   startInput.addEventListener('change', () => {
-    if (!startInput.value || endInput.value) return;
+    // A native date input can report a "change" mid-edit — typing over an
+    // existing year fires one for every digit, each a complete-looking but
+    // wrong date (a single "2" typed into a cleared year reads as "0002").
+    // Guessing a finish date from that stuck once the guess landed, since the
+    // guard below only fires while endInput is still empty.
+    if (!startInput.value || !isValidKey(startInput.value) || endInput.value) return;
     endInput.value = addDays(startInput.value, 6);
     refreshPaceNote();
   });

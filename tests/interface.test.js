@@ -481,3 +481,40 @@ test('the length boxes have a width to shrink from, not to zero', () => {
   // digit of "1.75" unless the box leaves room for them.
   assert.match(block, /\.length-line--speed \.input \{[^}]*padding-right/);
 });
+
+/* --- A date input mid-edit is not a finished date --------------------------- */
+
+/* --- Filtering the library by more than one shelf at once ------------------ */
+
+test('shelves are a set, not one value at a time', () => {
+  // Every other library filter is one thing at a time — a shelf, a genre, a
+  // format. Shelves are the one thing on a book that is genuinely a list of
+  // several ("owned" and "signed" at once), so a single filters.tag could
+  // never show a book on more than one shelf as picked.
+  const lib = read('js/views/library.js');
+  assert.match(lib, /tags:\s*new Set\(\)/);
+  assert.ok(!/filters\.tag\b/.test(lib), 'the old single-value field is gone, not left dangling');
+});
+
+test('picking a second shelf widens the results, it does not narrow them', () => {
+  // The calendar's own multi-select rows match on *any* checked value within
+  // a row, because a book can be several things at once — ticking a second
+  // one should never be a way to see fewer books. Shelves follow the same
+  // rule here.
+  const lib = read('js/views/library.js');
+  assert.match(lib, /book\.shelves\.some\(\(shelf\) => filters\.tags\.has\(shelf\)\)/);
+});
+
+test('guessing a finish date checks the start date is actually finished', () => {
+  // A native date input can fire "change" once per keystroke while a year is
+  // being retyped — each one a complete-looking but wrong date, since a lone
+  // "2" typed into a cleared year field reads as "0002". Without a validity
+  // check here, that guess landed permanently: the guard only fires once,
+  // while endInput is still empty, and never gets a second try to fix itself.
+  const form = read('js/views/bookForm.js');
+  const listener = form.slice(
+    form.indexOf("startInput.addEventListener('change'"),
+    form.indexOf("startInput.addEventListener('change'") + 800
+  );
+  assert.match(listener, /isValidKey\(startInput\.value\)/);
+});

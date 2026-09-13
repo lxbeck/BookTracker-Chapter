@@ -35,6 +35,18 @@ test('addDays crosses month and year boundaries', () => {
   assert.equal(addDays('2026-03-01', -1), '2026-02-28');
 });
 
+test('a four-digit year is never quietly shifted a thousand years', () => {
+  // `new Date(y, m, d)` applies JS's legacy two-digit-year rule to any year
+  // 0-99, silently adding 1900 — `new Date(2, 5, 15)` is 1902, not year 2.
+  // A native date input reports exactly this mid-edit: typing a fresh year
+  // over a cleared field, the "2" of "2026" is briefly a whole, padded
+  // "0002-06-15", and that value used to survive as a "finish by" of 1902.
+  // toKey doesn't zero-pad a year, so this reads back as "2-06-21" rather than
+  // "0002-06-21" — the point is only that it isn't "1902-06-21".
+  assert.equal(addDays('0002-06-15', 6), '2-06-21');
+  assert.notEqual(addDays('0002-06-15', 6), '1902-06-21');
+});
+
 test('daysBetween survives a DST transition', () => {
   // US DST starts 2026-03-08; a naive ms/86400000 would return 6.958 here.
   assert.equal(daysBetween('2026-03-07', '2026-03-14'), 7);

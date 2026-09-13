@@ -685,20 +685,24 @@ export function openBookForm({ book = null, defaultStart = null, onSaved } = {})
                 touched.add('finishedAt');
                 touched.add('progress');
 
-                // Saying a book has not been read is saying it is not being
-                // read, so the status has to move with the dates — otherwise
-                // the status rules stamp them straight back on save. Shown
-                // here rather than sprung afterwards, so the form says what
-                // saving will do.
+                // Finished without a start date is a contradiction — you can't
+                // have finished a book you never started — so Finished steps
+                // back with the dates, the same question "planned means
+                // dated" answers everywhere else. Reading doesn't: plenty of
+                // books were begun before anyone was tracking dates for them,
+                // and clearing an unknown start date doesn't stop one being
+                // read right now.
                 const stepped = startInput.value ? 'planned' : 'backlog';
-                if (statusSelect.value === 'reading' || statusSelect.value === 'finished') {
+                let note = 'Cleared.';
+                if (statusSelect.value === 'finished') {
                   statusSelect.value = stepped;
                   touched.add('status');
+                  note = `Cleared, and set back to ${STATUSES[stepped].label.toLowerCase()}.`;
                 }
 
                 refreshProgressNote();
                 refreshPaceNote();
-                toast(`Cleared, and set back to ${STATUSES[stepped].label.toLowerCase()}. Save to keep it.`);
+                toast(`${note} Save to keep it.`);
               },
             }, 'Clear what actually happened'),
             draft.sessions.length

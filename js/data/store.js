@@ -239,8 +239,26 @@ function migrate(saved) {
   };
 
   return version < SCHEMA_VERSION
-    ? { ...shared, books: books.map(normalizeBook) }
+    ? { ...shared, books: books.map(migrateBook) }
     : { ...shared, books };
+}
+
+/**
+ * Normalise a book without letting the migration itself count as an edit.
+ *
+ * `normalizeBook` stamps `updatedAt` to now, which is right when a person
+ * changes something and wrong here: a version bump touches every book on a
+ * device whether or not anything about it actually changed, and sync trusts
+ * `updatedAt` completely to decide whose copy of a record is newer. A phone
+ * that hadn't opened the app since before a schema bump used to have every
+ * book's timestamp reset to the moment it next launched — making a week-old,
+ * pre-migration copy look like the freshest thing in the library, and a sync
+ * right after would let it silently overwrite real edits made everywhere else
+ * since. The migration itself is not an edit, so it must not look like one.
+ */
+export function migrateBook(book) {
+  const clean = normalizeBook(book);
+  return book?.updatedAt ? { ...clean, updatedAt: book.updatedAt } : clean;
 }
 
 function persist() {
@@ -371,6 +389,8 @@ export function updateBook(id, patch) {
     Object.entries(patch).filter(([, value]) => value !== undefined)
   );
 
+  const status = statusAfterClearing(existing, defined);
+
   const merged = normalizeBook({
     ...existing,
     ...defined,
@@ -379,10 +399,20 @@ export function updateBook(id, patch) {
     schedule: recordPlanChange(existing, { ...existing.schedule, ...defined.schedule }),
     actual: { ...existing.actual, ...defined.actual },
     progress: { ...existing.progress, ...defined.progress },
-    status: statusAfterClearing(existing, defined),
+    status,
     id: existing.id,
     createdAt: existing.createdAt,
   });
+
+  // applyStatusRules (inside normalizeBook) can't tell "never had a start
+  // date" from "just had it cleared" — a reading book with neither gets one
+  // stamped either way, which is the right default for the first and wrong
+  // for the second. A book started before anyone was tracking dates for it
+  // is still being read; it doesn't need a date invented for it to stay that
+  // way, and clearing the date deliberately should not put one back.
+  if (status === 'reading' && wasCleared(existing, defined, 'startedAt')) {
+    merged.actual.startedAt = null;
+  }
 
   const errors = validateBook(merged);
   if (Object.keys(errors).length) return { ok: false, errors };
@@ -529,26 +559,30 @@ function recordPlanChange(existing, next) {
  * Only an explicit clear counts. A patch that says nothing about these dates
  * leaves the status exactly where it was.
  */
+/** Whether a caller explicitly blanked a field the existing record had. */
+function wasCleared(existing, defined, field) {
+  return Object.hasOwn(defined.actual ?? {}, field)
+    && !defined.actual[field]
+    && Boolean(existing.actual?.[field]);
+}
+
 function statusAfterClearing(existing, defined) {
   const status = defined.status ?? existing.status;
   if (!Object.hasOwn(defined, 'actual')) return status;
 
-  const cleared = (field) =>
-    Object.hasOwn(defined.actual ?? {}, field)
-    && !defined.actual[field]
-    && Boolean(existing.actual?.[field]);
-
-  if (cleared('startedAt')) {
-    // Never started, so it cannot be being read or be finished. Where it lands
-    // is the same question "planned means dated" answers everywhere else.
-    if (status === 'reading' || status === 'finished') {
+  if (wasCleared(existing, defined, 'startedAt')) {
+    // Finished without a start date is a genuine contradiction — you can't
+    // have finished a book you never started. A reading book with no known
+    // start date isn't: plenty of books were begun before anyone was tracking
+    // dates for them, and that doesn't stop them being read right now.
+    if (status === 'finished') {
       return existing.schedule?.start ? 'planned' : 'backlog';
     }
     return status;
   }
 
   // Started but no longer finished is exactly what Reading means.
-  if (cleared('finishedAt') && status === 'finished') return 'reading';
+  if (wasCleared(existing, defined, 'finishedAt') && status === 'finished') return 'reading';
 
   return status;
 }
@@ -899,10 +933,18 @@ export function applyRemote(next) {
   });
 }
 
-/** Replace the whole library — used by seeding and, later, import. */
+/**
+ * Replace the whole library — used by seeding and by restoring a backup.
+ *
+ * Restoring a backup is the same hazard `applyRemote` was written to dodge:
+ * a book from an old export already has an honest `updatedAt`, and restoring
+ * it is not itself an edit. `migrateBook` preserves that timestamp when the
+ * book has one, so a restored library competes on its real history rather
+ * than claiming, falsely, to have all been edited just now.
+ */
 export function replaceAll(books, { settings, readingOrders, deleted } = {}) {
   commit(() => {
-    state.books = books.map(normalizeBook);
+    state.books = books.map(migrateBook);
     if (settings) state.settings = { ...state.settings, ...settings };
     if (readingOrders) state.readingOrders = readingOrders.map(normalizeOrder);
 

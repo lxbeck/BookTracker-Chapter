@@ -10,10 +10,10 @@
  * merge is the default and replace has to be asked for.
  */
 
-import { SCHEMA_VERSION, normalizeBook, normalizeOrder } from './schema.js';
+import { SCHEMA_VERSION, normalizeOrder } from './schema.js';
 import {
   allBooks, getState, replaceAll, addBook, updateBook, getBook,
-  allOrders, getOrder, createOrder, updateOrder,
+  allOrders, getOrder, createOrder, updateOrder, migrateBook,
 } from './store.js';
 import { coverAsDataUrl } from './snapshot.js';
 import { storeUploadedCover, storeUploadedCoverOnServer, LOCAL_COVER } from './coverCache.js';
@@ -181,14 +181,14 @@ export const backupFilename = (extension) => `chapter-library-${today()}.${exten
 /**
  * @param {string} text - file contents
  * @param {{mode?: 'merge'|'replace'}} [options]
- * @returns {{ok: boolean, added: number, updated: number, skipped: number, error?: string}}
+ * @returns {{ok: boolean, added: number, updated: number, kept: number, skipped: number, error?: string}}
  */
 export function importJson(text, { mode = 'merge' } = {}) {
   let parsed;
   try {
     parsed = JSON.parse(text);
   } catch {
-    return { ok: false, error: 'That file is not valid JSON.', added: 0, updated: 0, skipped: 0 };
+    return { ok: false, error: 'That file is not valid JSON.', added: 0, updated: 0, kept: 0, skipped: 0 };
   }
 
   const incoming = Array.isArray(parsed) ? parsed : parsed?.books;
@@ -198,11 +198,16 @@ export function importJson(text, { mode = 'merge' } = {}) {
       error: 'No books found in that file. Expected a Chapter export.',
       added: 0,
       updated: 0,
+      kept: 0,
       skipped: 0,
     };
   }
 
-  const books = incoming.map((book) => normalizeBook(book)).filter((book) => book.title);
+  // migrateBook, not normalizeBook: a backup's books already carry their own
+  // honest `updatedAt`, and importing one is not itself an edit to every
+  // record in it. Restoring an old export must not make it look like the
+  // freshest thing in the library the moment sync compares timestamps.
+  const books = incoming.map((book) => migrateBook(book)).filter((book) => book.title);
   const hasOrders = Array.isArray(parsed?.readingOrders) && parsed.readingOrders.length > 0;
 
   // A file with no usable books is only an error if it has nothing else to
@@ -210,7 +215,7 @@ export function importJson(text, { mode = 'merge' } = {}) {
   // and refusing it would mean a backup taken before any books were added
   // could never be restored.
   if (!books.length && !hasOrders) {
-    return { ok: false, error: 'Every record in that file was empty.', added: 0, updated: 0, skipped: 0 };
+    return { ok: false, error: 'Every record in that file was empty.', added: 0, updated: 0, kept: 0, skipped: 0 };
   }
 
   if (mode === 'replace') {
@@ -223,7 +228,7 @@ export function importJson(text, { mode = 'merge' } = {}) {
       deleted: Array.isArray(parsed?.deleted) ? parsed.deleted : [],
     });
     return {
-      ok: true, added: books.length, updated: 0, skipped: 0,
+      ok: true, added: books.length, updated: 0, kept: 0, skipped: 0,
       orders: (parsed?.readingOrders ?? []).length,
       covers: Object.keys(parsed?.covers ?? {}).length,
     };
@@ -238,6 +243,7 @@ export function importJson(text, { mode = 'merge' } = {}) {
 
   let added = 0;
   let updated = 0;
+  let kept = 0;
   let skipped = 0;
 
   /** Old id -> new id, for any book that arrived under a different record. */
@@ -249,6 +255,17 @@ export function importJson(text, { mode = 'merge' } = {}) {
 
     if (match) {
       if (match.id !== book.id) remapped.set(book.id, match.id);
+
+      // The same rule sync itself uses (merge.js): newest `updatedAt` wins,
+      // wholesale, ties favour what is already here. Without this, "merge"
+      // meant matched books always lost to the file — an older backup could
+      // silently replace sessions, quotes or a review added since it was
+      // taken, with a matched book treated no differently from a new one.
+      if (String(book.updatedAt) <= String(match.updatedAt)) {
+        kept += 1;
+        continue;
+      }
+
       const result = updateBook(match.id, { ...book, id: match.id, createdAt: match.createdAt });
       result.ok ? (updated += 1) : (skipped += 1);
     } else {
@@ -262,7 +279,7 @@ export function importJson(text, { mode = 'merge' } = {}) {
   // library. A backup that silently loses your sequences is not a backup.
   const orders = mergeOrders(parsed?.readingOrders, remapped);
 
-  return { ok: true, added, updated, skipped, orders, remapped };
+  return { ok: true, added, updated, kept, skipped, orders, remapped };
 }
 
 /**

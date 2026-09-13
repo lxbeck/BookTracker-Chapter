@@ -42,6 +42,12 @@ export function sessionLog({ bookId, fixedDate = null, compact = false, onChange
    */
   root.commitPending = () => false;
 
+  // Which sitting, if any, has its editor open. Held here rather than on the
+  // book: it's purely which row is expanded, and a redraw — which happens
+  // constantly, on every store change — must not close it out from under
+  // someone mid-correction.
+  let editingId = null;
+
   const draw = () => {
     const book = getBook(bookId);
     if (!book) return;
@@ -58,6 +64,9 @@ export function sessionLog({ bookId, fixedDate = null, compact = false, onChange
       historyList(book, compact, () => {
         draw();
         onChange?.();
+      }, editingId, (id) => {
+        editingId = id;
+        draw();
       }),
     ].filter(Boolean));
   };
@@ -86,7 +95,7 @@ const stat = (label, value) =>
 
 /* --- Entry form ----------------------------------------------------------- */
 
-function entryForm(book, fixedDate, onSaved) {
+function entryForm(book, fixedDate, onSaved, { session = null, onCancel = null } = {}) {
   const unit = formatUnit(book);
   const isAudio = unit === 'minutes';
 
@@ -98,7 +107,7 @@ function entryForm(book, fixedDate, onSaved) {
 
   const dateInput = el('input.input', {
     type: 'date',
-    value: fixedDate ?? today(),
+    value: session?.date ?? fixedDate ?? today(),
     'aria-label': 'Date read',
     disabled: Boolean(fixedDate),
   });
@@ -109,6 +118,7 @@ function entryForm(book, fixedDate, onSaved) {
   const minutesInput = el('input.input', {
     type: 'number',
     min: '1',
+    value: session?.minutes ?? '',
     placeholder: 'optional',
     'aria-label': hasFormat(book, 'audio')
       ? 'Minutes spent listening, optional'
@@ -119,8 +129,9 @@ function entryForm(book, fixedDate, onSaved) {
     type: 'number',
     min: '0',
     step: 'any',
-    // Picking up where the last session left off is the common case.
-    value: book.progress.page || '',
+    // Picking up where the last session left off is the common case; editing
+    // an existing sitting starts from what it already says instead.
+    value: session ? (session.pageFrom ?? '') : (book.progress.page || ''),
     placeholder: 'from',
     'aria-label': isAudio ? 'Started from minute' : 'Started from page',
   });
@@ -130,6 +141,7 @@ function entryForm(book, fixedDate, onSaved) {
     min: '0',
     step: 'any',
     max: book.pageCount ? String(book.pageCount) : null,
+    value: session?.pageTo ?? '',
     placeholder: book.pageCount ? String(book.pageCount) : 'page',
     'aria-label': isAudio ? 'Ended on minute' : 'Ended on page',
   });
@@ -288,15 +300,19 @@ function entryForm(book, fixedDate, onSaved) {
         ...book.formats.map((id) => el('option', { value: id }, FORMATS[id].label)),
       ])
     : null;
+  if (viaSelect && session) viaSelect.value = session.via ?? '';
 
   const save = () => {
-    const result = addSession(book.id, {
+    const payload = {
       date: dateInput.value,
       minutes: minutesInput.value,
       pageFrom: startingPage(),
       pageTo: endingPage(),
       via: viaSelect?.value || null,
-    });
+    };
+    const result = session
+      ? updateSession(book.id, session.id, payload)
+      : addSession(book.id, payload);
 
     if (!result.ok) {
       error.textContent = Object.values(result.errors)[0];
@@ -305,6 +321,14 @@ function entryForm(book, fixedDate, onSaved) {
     }
 
     error.hidden = true;
+
+    if (session) {
+      toast('Sitting updated.');
+      onSaved();
+      onCancel?.();
+      return true;
+    }
+
     // The sitting this timer was measuring is now on the record.
     if (runningTimer()?.bookId === book.id) setTimer(null);
     const covered = sessionPages(result.session);
@@ -329,11 +353,18 @@ function entryForm(book, fixedDate, onSaved) {
     preview,
     speedNote,
     el('div.session-form__actions', {}, [
-      timerControl(book, minutesInput, refreshPreview),
+      session ? null : timerControl(book, minutesInput, refreshPreview),
       error,
-      el('button.btn.btn--stamp.btn--sm', { type: 'button', onClick: save }, 'Log it'),
-    ]),
+      session
+        ? el('button.btn.btn--quiet.btn--sm', { type: 'button', onClick: () => onCancel?.() }, 'Cancel')
+        : null,
+      el('button.btn.btn--stamp.btn--sm', { type: 'button', onClick: save }, session ? 'Save changes' : 'Log it'),
+    ].filter(Boolean)),
   ]);
+
+  // The preview and speed note are otherwise built lazily from typing; opened
+  // for editing, the fields already hold values nobody just typed.
+  if (session) refreshPreview();
 
   form.addEventListener('keydown', (event) => {
     if (event.key === 'Enter') {
@@ -464,7 +495,7 @@ const labelled = (label, control) =>
 
 /* --- History -------------------------------------------------------------- */
 
-function historyList(book, compact, onChange) {
+function historyList(book, compact, onChange, editingId, setEditing) {
   const sessions = [...book.sessions].reverse();
   if (!sessions.length) {
     return el('div', {}, [
@@ -478,7 +509,9 @@ function historyList(book, compact, onChange) {
 
   return el('div', {}, [
     el('ul.session-list', {}, [
-      ...shown.map((session) => sessionRow(book, session, unit, onChange)),
+      ...shown.map((session) =>
+        sessionRow(book, session, unit, onChange, session.id === editingId, setEditing)
+      ),
       compact && sessions.length > shown.length
         ? el('li.session-list__more', {}, `${sessions.length - shown.length} earlier sittings`)
         : null,
@@ -565,12 +598,31 @@ function correctionRow(book, onChange) {
   ].filter(Boolean));
 }
 
-function sessionRow(book, session, unit, onChange) {
-  const covered = sessionPages(session);
+function sessionRow(book, session, unit, onChange, isEditing, setEditing) {
+  if (isEditing) {
+    return el('li.session-row.session-row--editing', {}, [
+      entryForm(book, null, () => {
+        setEditing(null);
+        onChange();
+      }, {
+        session,
+        onCancel: () => setEditing(null),
+      }),
+    ]);
+  }
+
+  const span = session.pageFrom != null && session.pageTo != null
+    // The endpoint alone ("to page 448") answers "how far are you now", not
+    // "what did this sitting cover" \u2014 the second is what a correction needs
+    // to see before changing anything, and what "from x to y" was asked for.
+    ? `${unit === 'minutes' ? 'minute' : 'page'} ${session.pageFrom} to ${session.pageTo}`
+    : session.pageTo != null
+      ? `to ${unit === 'minutes' ? '' : 'page '}${session.pageTo}`.trim()
+      : null;
+
   const parts = [
     session.minutes ? formatDuration(session.minutes) : null,
-    covered ? `${covered} ${unit}` : null,
-    session.pageTo != null ? `to ${unit === 'minutes' ? '' : 'page '}${session.pageTo}`.trim() : null,
+    span,
     // Only worth saying when the book has more than one form and this sitting
     // was one of them; "both" is the default and needs no label.
     session.via && book.formats.length > 1 ? FORMATS[session.via].label.toLowerCase() : null,
@@ -579,6 +631,12 @@ function sessionRow(book, session, unit, onChange) {
   return el('li.session-row', {}, [
     el('span.session-row__date', {}, formatShort(session.date)),
     el('span.session-row__detail', {}, parts.join(' \u00b7 ') || 'Logged'),
+    el('button.icon-btn.session-row__edit', {
+      type: 'button',
+      'aria-label': `Edit the ${formatShort(session.date)} session`,
+      onClick: () => setEditing(session.id),
+      text: '\u270e',
+    }),
     el('button.icon-btn.session-row__remove', {
       type: 'button',
       'aria-label': `Delete the ${formatShort(session.date)} session`,
@@ -604,5 +662,3 @@ function sessionRow(book, session, unit, onChange) {
     }),
   ]);
 }
-
-export { updateSession };

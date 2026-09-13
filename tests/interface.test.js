@@ -408,13 +408,26 @@ test('clearing a date by button marks it touched, or Save writes the old one bac
 });
 
 test('a deliberately cleared date is not stamped straight back on', () => {
-  // The status rules stamp a missing date onto anything marked Reading or
+  // The status rules stamp a missing start date onto anything marked
   // Finished, which is right for a date never set and wrong for one just
   // deleted. The store tells them apart by comparing the patch with what it
   // is replacing.
   const store = read('js/data/store.js');
   assert.match(store, /function statusAfterClearing/);
-  assert.match(store, /status: statusAfterClearing\(existing, defined\)/);
+  assert.match(store, /const status = statusAfterClearing\(existing, defined\)/);
+});
+
+test('reading with a deliberately cleared start date does not get one stamped back either', () => {
+  // The status rules also default a missing start date onto anything marked
+  // Reading — right the first time it happens, wrong the second: a lot of
+  // books are begun before anyone is tracking dates for them, and clearing an
+  // unknown date on purpose should not be the only way to also lose the
+  // status that says it's currently being read.
+  const store = read('js/data/store.js');
+  assert.match(
+    store,
+    /if \(status === 'reading' && wasCleared\(existing, defined, 'startedAt'\)\)/
+  );
 });
 
 /* --- Two lengths ------------------------------------------------------------ */
@@ -517,4 +530,19 @@ test('guessing a finish date checks the start date is actually finished', () => 
     form.indexOf("startInput.addEventListener('change'") + 800
   );
   assert.match(listener, /isValidKey\(startInput\.value\)/);
+});
+
+/* --- Editing a logged sitting ------------------------------------------------ */
+
+test('a logged sitting shows what it covered, not just where it ended', () => {
+  // "to page 448" answers "how far are you now"; a correction needs to see
+  // what the sitting itself covered before changing anything about it.
+  const log = read('js/views/sessionLog.js');
+  assert.match(log, /\$\{session\.pageFrom\} to \$\{session\.pageTo\}/);
+});
+
+test('a sitting can be edited in place, not just deleted and retyped', () => {
+  const log = read('js/views/sessionLog.js');
+  assert.match(log, /session\s*\?\s*updateSession\(book\.id, session\.id, payload\)\s*:\s*addSession\(book\.id, payload\)/);
+  assert.match(log, /session\.id === editingId/);
 });

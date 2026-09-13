@@ -1519,6 +1519,10 @@ function dataSection(books, redraw) {
         [
           `${result.added} added`,
           `${result.updated} updated`,
+          // A matched book whose copy here was already newer is left alone —
+          // said explicitly, so this doesn't read as though the file's
+          // sessions or notes for it were silently dropped rather than kept.
+          result.kept ? `${result.kept} already up to date` : null,
           result.orders ? `${result.orders} reading ${result.orders === 1 ? 'list' : 'lists'}` : null,
         ].filter(Boolean).join(', ') + '.'
       );

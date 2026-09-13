@@ -94,6 +94,44 @@ test('a deleted sitting can be written back from what the caller held', () => {
   assert.equal(back.pageTo, 60);
 });
 
+test('editing a sitting changes that entry and nothing else in the log', () => {
+  const book = seedBook();
+  store.addSession(book.id, { date: '2026-08-16', minutes: 40, pageFrom: 0, pageTo: 60 });
+  store.addSession(book.id, { date: '2026-08-18', minutes: 30, pageFrom: 60, pageTo: 90 });
+  const [first, second] = store.getBook(book.id).sessions;
+
+  // Correcting a mistyped page is the whole point: get it wrong once, fix it,
+  // rather than deleting the sitting and re-typing everything about it.
+  const result = store.updateSession(book.id, first.id, { pageTo: 65 });
+  assert.equal(result.ok, true);
+
+  const sessions = store.getBook(book.id).sessions;
+  assert.equal(sessions.find((s) => s.id === first.id).pageTo, 65);
+  assert.equal(sessions.find((s) => s.id === second.id).pageTo, 90, 'the other sitting is untouched');
+});
+
+test('editing a sitting past the book\'s own length is refused, not clamped', () => {
+  const book = seedBook();
+  store.addSession(book.id, { date: '2026-08-16', minutes: 40, pageFrom: 0, pageTo: 60 });
+  const [session] = store.getBook(book.id).sessions;
+
+  const result = store.updateSession(book.id, session.id, { pageTo: book.pageCount + 50 });
+  assert.equal(result.ok, false, 'a page past the end of the book is a typo, not a page');
+  assert.equal(store.getBook(book.id).sessions[0].pageTo, 60, 'and the original entry survives it');
+});
+
+test('editing a sitting to an earlier date moves the start date with it', () => {
+  const book = seedBook();
+  store.addSession(book.id, { date: '2026-08-16', minutes: 40, pageFrom: 0, pageTo: 60 });
+  assert.equal(store.getBook(book.id).actual.startedAt, '2026-08-16');
+
+  const [session] = store.getBook(book.id).sessions;
+  store.updateSession(book.id, session.id, { date: '2026-08-10' });
+
+  assert.equal(store.getBook(book.id).actual.startedAt, '2026-08-10',
+    'the earliest sitting is still the truest start date there is');
+});
+
 test('a whole log can be cleared and put back', () => {
   const book = seedBook();
   store.addSession(book.id, { date: '2026-08-16', minutes: 40, pageFrom: 0, pageTo: 60 });
@@ -156,10 +194,13 @@ test('clearing the dates on a book being read actually clears them', () => {
 
   const cleared = store.getBook(book.id);
   assert.equal(cleared.actual.startedAt, null, 'the date stays cleared');
-  assert.equal(cleared.status, 'backlog', 'and the status steps back to match');
+  // Reading with an unknown start date is a real case — a book begun before
+  // anyone was tracking dates for it — and clearing the date on purpose
+  // shouldn't be the only way to lose that status too.
+  assert.equal(cleared.status, 'reading', 'and it is still being read');
 });
 
-test('a cleared book with a plan lands on planned rather than backlog', () => {
+test('a cleared start date does not stop a book being read, plan or none', () => {
   const book = seedBook();
   store.updateBook(book.id, {
     status: 'reading',
@@ -171,7 +212,21 @@ test('a cleared book with a plan lands on planned rather than backlog', () => {
 
   const cleared = store.getBook(book.id);
   assert.equal(cleared.actual.startedAt, null);
-  assert.equal(cleared.status, 'planned', 'planned means dated, and it still has dates');
+  assert.equal(cleared.status, 'reading', 'a plan does not force the question either way');
+});
+
+test('finished still needs a start date — you can\'t finish what you never started', () => {
+  const book = seedBook();
+  store.updateBook(book.id, {
+    status: 'finished',
+    schedule: { start: '2026-09-01', end: '2026-09-10' },
+    actual: { startedAt: '2026-08-01', finishedAt: '2026-08-09' },
+  });
+
+  store.updateBook(book.id, { actual: { startedAt: null } });
+
+  const cleared = store.getBook(book.id);
+  assert.equal(cleared.status, 'planned', 'finished is the one status a missing start date still empties out of');
 });
 
 test('clearing only the finish date leaves a book being read', () => {

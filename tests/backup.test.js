@@ -150,6 +150,51 @@ test('a sequence naming books that are not here drops the dead entries', () => {
   assert.ok(!store.allOrders()[0].bookIds.includes('bk-never-existed'));
 });
 
+/* --- Merge safety: newest updatedAt wins, same as sync ---------------------- */
+
+test('an older backup does not erase sessions logged since it was taken', () => {
+  const book = store.addBook({ title: 'The Time Machine', author: 'H. G. Wells', pageCount: 118 }).book;
+  store.addSession(book.id, { date: '2026-09-10', minutes: 40, pageFrom: 0, pageTo: 60 });
+  const current = store.getBook(book.id);
+
+  // A snapshot from before that sitting was ever logged — "merge" used to mean
+  // a matched book always lost to the file, so importing this used to put the
+  // log back the way it looked before the sitting was recorded.
+  const stale = {
+    format: 'chapter-library', version: 9,
+    books: [{ ...current, sessions: [], updatedAt: '2020-01-01T00:00:00.000Z' }],
+  };
+
+  const result = importJson(JSON.stringify(stale), { mode: 'merge' });
+
+  assert.equal(result.kept, 1, 'the matched book is recognised as already up to date');
+  assert.equal(result.updated, 0);
+  assert.equal(store.getBook(book.id).sessions.length, 1, 'the logged sitting survives the import');
+});
+
+test('a genuinely newer backup does update a matched book', () => {
+  const book = store.addBook({ title: 'The Time Machine', author: 'H. G. Wells', pageCount: 118 }).book;
+
+  const newer = {
+    format: 'chapter-library', version: 9,
+    books: [{ ...book, rating: 5, updatedAt: new Date(Date.now() + 60000).toISOString() }],
+  };
+
+  const result = importJson(JSON.stringify(newer), { mode: 'merge' });
+
+  assert.equal(result.updated, 1);
+  assert.equal(result.kept, 0);
+  assert.equal(store.getBook(book.id).rating, 5, 'the newer information actually lands');
+});
+
+test('an import identical to what is already here is kept, not churned', () => {
+  const book = store.addBook({ title: 'The Time Machine', author: 'H. G. Wells', pageCount: 118 }).book;
+  const result = importJson(JSON.stringify({ format: 'chapter-library', version: 9, books: [book] }), { mode: 'merge' });
+
+  assert.equal(result.kept, 1, 'a tie favours what is already here, same as sync');
+  assert.equal(result.updated, 0);
+});
+
 /* --- Reordering ------------------------------------------------------------ */
 
 test('a book can be moved to either end of a long list in one action', () => {

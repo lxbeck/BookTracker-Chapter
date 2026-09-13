@@ -67,6 +67,13 @@ Edit the same book on two devices within the same second and the later
 timestamp wins — that case is genuinely lost, and it's the one thing this
 design does not solve.
 
+That timestamp is only trustworthy because nothing bumps it except an actual
+edit. A device that has been offline for a while will bring its schema up to
+date the moment it reopens — that update touches every book's shape but isn't
+something you did, so it leaves each book's own history alone rather than
+making all of it look freshly edited. The same is true for restoring a backup:
+the books in it keep the history they were exported with.
+
 The server is plain HTTP with no authentication. It is meant for your own
 network. Don't port-forward it.
 
@@ -1220,6 +1227,13 @@ imported sequence and keeps anything added here since on the end, rather than
 one silently overwriting the other. Book ids are rewritten on the way in, so a
 sequence restored onto a device that catalogued the same books separately points
 at the records that are actually there.
+
+A matched book only takes what the file says if the file is actually newer —
+the same "newest `updatedAt` wins" rule sync itself uses. Importing an old
+backup over a book you have kept reading since does not put the log back the
+way it looked when the backup was taken; it leaves the book alone and says so
+("N already up to date") rather than quietly overwriting the sessions, quotes
+or review you've added since.
 
 CSV remains lossy by design: one row per book, no sessions, no lists.
 

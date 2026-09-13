@@ -120,15 +120,25 @@
   color: var(--ink);
 }
 
+.session-row__edit,
 .session-row__remove {
   font-size: 1rem;
   opacity: 0;
   transition: opacity var(--fast) var(--ease);
 }
 
+.session-row:hover .session-row__edit,
+.session-row__edit:focus-visible,
 .session-row:hover .session-row__remove,
 .session-row__remove:focus-visible {
   opacity: 1;
+}
+
+/* An editing row is a whole form now, not a one-line summary — it should
+   read like the entry form above it, not like the list it's sitting in. */
+.session-row--editing {
+  display: block;
+  padding: var(--s2) 0;
 }
 
 .session-list__more,

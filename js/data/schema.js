@@ -313,6 +313,11 @@ function blankSession(overrides = {}) {
     minutes: null,
     pageFrom: null,
     pageTo: null,
+    // Both ends are stored as a page number regardless — pacing needs one
+    // true unit to add sessions together — but this is what a sitting was
+    // actually typed in, so it can be shown back the same way rather than
+    // always converted into the book's own unit.
+    enteredAs: null,
     note: '',
     createdAt: new Date().toISOString(),
     ...overrides,
@@ -343,6 +348,7 @@ export function normalizeSession(input = {}) {
     // means "not stated", which is every session logged before the field
     // existed and every book that only comes in one form.
     via: FORMATS[input.via] ? input.via : null,
+    enteredAs: ['page', 'percent', 'time'].includes(input.enteredAs) ? input.enteredAs : null,
     createdAt: input.createdAt || base.createdAt,
   };
 }

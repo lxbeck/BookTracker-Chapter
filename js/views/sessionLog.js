@@ -130,8 +130,8 @@ function entryForm(book, fixedDate, onSaved, { session = null, onCancel = null }
     min: '0',
     step: 'any',
     // Picking up where the last session left off is the common case; editing
-    // an existing sitting starts from what it already says instead.
-    value: session ? (session.pageFrom ?? '') : (book.progress.page || ''),
+    // an existing sitting fills in below, in whichever unit it was logged in.
+    value: session ? '' : (book.progress.page || ''),
     placeholder: 'from',
     'aria-label': isAudio ? 'Started from minute' : 'Started from page',
   });
@@ -141,7 +141,6 @@ function entryForm(book, fixedDate, onSaved, { session = null, onCancel = null }
     min: '0',
     step: 'any',
     max: book.pageCount ? String(book.pageCount) : null,
-    value: session?.pageTo ?? '',
     placeholder: book.pageCount ? String(book.pageCount) : 'page',
     'aria-label': isAudio ? 'Ended on minute' : 'Ended on page',
   });
@@ -230,6 +229,20 @@ function entryForm(book, fixedDate, onSaved, { session = null, onCancel = null }
   const endingPage = () => asPage(toInput);
   const startingPage = () => asPage(fromInput);
 
+  // Editing shows the sitting the way it was actually logged — 40% to 60%
+  // stays 40% to 60%, not converted to whatever page numbers that happened to
+  // land on. Reopening a percent entry as pages, saving without touching
+  // anything, would silently swap what the record says it was measured in.
+  if (session) {
+    unitSelect.value = ['page', 'percent', 'time'].includes(session.enteredAs)
+      ? session.enteredAs
+      : 'page';
+    previousUnit = unitSelect.value;
+    applyUnitChrome();
+    fromInput.value = session.pageFrom != null ? displayFor(session.pageFrom) : '';
+    toInput.value = session.pageTo != null ? displayFor(session.pageTo) : '';
+  }
+
   // A running read-out of what this entry will mean, so nobody has to work out
   // 79 of 440 in their head to check they typed the right number.
   const preview = el('p.session-form__preview');
@@ -309,6 +322,11 @@ function entryForm(book, fixedDate, onSaved, { session = null, onCancel = null }
       pageFrom: startingPage(),
       pageTo: endingPage(),
       via: viaSelect?.value || null,
+      // What was actually typed, not just what it converts to — a session
+      // is stored as a page number either way (pacing needs one true unit
+      // to add up), but this is what lets it read back the way it was
+      // entered rather than always in the book's unit.
+      enteredAs: unitSelect.value,
     };
     const result = session
       ? updateSession(book.id, session.id, payload)
@@ -598,6 +616,29 @@ function correctionRow(book, onChange) {
   ].filter(Boolean));
 }
 
+/**
+ * What a sitting covered, in the unit it was actually logged in.
+ *
+ * Both ends are stored as a page number regardless of unit — pacing needs
+ * one true measure to add sessions together — so displaying them always in
+ * pages would quietly answer "60% to 90%" with "290 to 435" instead. A
+ * session logged before this existed has no `enteredAs` to go by, and falls
+ * back to the book's own unit, which is what it would have shown before.
+ */
+function loggedSpan(book, session, unit) {
+  const { pageFrom, pageTo, enteredAs } = session;
+
+  if (enteredAs === 'percent' && book.pageCount) {
+    const pct = (page) => Math.round((page / book.pageCount) * 100);
+    return `${pct(pageFrom)}% to ${pct(pageTo)}%`;
+  }
+  if (enteredAs === 'time' && book.pageCount && book.audioSeconds) {
+    const stamp = (page) => formatHms(Math.round((page / book.pageCount) * book.audioSeconds));
+    return `${stamp(pageFrom)} to ${stamp(pageTo)}`;
+  }
+  return `${unit === 'minutes' ? 'minute' : 'page'} ${pageFrom} to ${pageTo}`;
+}
+
 function sessionRow(book, session, unit, onChange, isEditing, setEditing) {
   if (isEditing) {
     return el('li.session-row.session-row--editing', {}, [
@@ -615,7 +656,7 @@ function sessionRow(book, session, unit, onChange, isEditing, setEditing) {
     // The endpoint alone ("to page 448") answers "how far are you now", not
     // "what did this sitting cover" \u2014 the second is what a correction needs
     // to see before changing anything, and what "from x to y" was asked for.
-    ? `${unit === 'minutes' ? 'minute' : 'page'} ${session.pageFrom} to ${session.pageTo}`
+    ? loggedSpan(book, session, unit)
     : session.pageTo != null
       ? `to ${unit === 'minutes' ? '' : 'page '}${session.pageTo}`.trim()
       : null;

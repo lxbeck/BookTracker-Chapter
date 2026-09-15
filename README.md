@@ -359,10 +359,21 @@ A session needs **either** where you got to **or** how long you read — not
 both. Often you know you went from 40% to 60% and have no idea how long it
 took, so minutes are genuinely optional and the form says so.
 
-Positions can be given in pages or percent, with one unit switch for the whole
-entry rather than one per field: "started on page 79, ended at 40%" is a
-sentence nobody means, and offering it invites exactly that mistake. Switching
-converts whatever is already typed.
+Positions can be given in pages, percent, or — on an audiobook — a timestamp,
+with one unit switch for the whole entry rather than one per field: "started on
+page 79, ended at 40%" is a sentence nobody means, and offering it invites
+exactly that mistake. Switching converts whatever is already typed.
+
+A sitting is stored as a page number either way, because pacing needs one true
+unit to add sessions together — but it's shown back the way you actually typed
+it. Log "40% to 60%" and the entry reads "40% to 60%" from then on, not the
+page numbers that happened to land on; edit it later and the unit switch
+reopens on percent too, not page. A sitting logged before this existed has
+nothing to go by and falls back to the book's own unit, same as before.
+
+Sessions can be corrected in place — date, positions, minutes, format — rather
+than only deleted and retyped. Deleting or correcting one down to a smaller
+page pulls progress back to match, the same as adding one pulls it forward.
 
 </details>
 
@@ -379,7 +390,11 @@ reading at.
 
 The rule that progress equals the furthest logged page is enforced in
 `normalizeBook`, not on the store's write path, so a record loaded from disk or
-imported from a backup can never disagree with its own sessions.
+imported from a backup can never disagree with its own sessions. That rule only
+ratchets forward, though — right for adding a sitting, wrong for deleting or
+correcting one, which is why deleting or editing a sitting down to a smaller
+page also pulls progress back to match, as long as progress was following the
+log and not pushed further ahead by hand.
 
 **None of this shows once a book stops being actively read.** The whole strip
 is measured against the real, ever-advancing today, which is exactly right for

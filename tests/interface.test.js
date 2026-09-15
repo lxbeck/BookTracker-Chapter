@@ -538,11 +538,39 @@ test('a logged sitting shows what it covered, not just where it ended', () => {
   // "to page 448" answers "how far are you now"; a correction needs to see
   // what the sitting itself covered before changing anything about it.
   const log = read('js/views/sessionLog.js');
-  assert.match(log, /\$\{session\.pageFrom\} to \$\{session\.pageTo\}/);
+  assert.match(log, /\$\{pageFrom\} to \$\{pageTo\}/);
+});
+
+test('a sitting is shown back in the unit it was actually logged in', () => {
+  // Both ends are stored as a page number regardless of unit — pacing needs
+  // one true measure to add sessions together — so always displaying pages
+  // would answer a 40%-to-60% entry with a page range nobody typed.
+  const log = read('js/views/sessionLog.js');
+  assert.match(log, /function loggedSpan/);
+  assert.match(log, /enteredAs === 'percent'/);
+  assert.match(log, /enteredAs === 'time'/);
+  assert.match(log, /enteredAs: unitSelect\.value/);
+
+  const schema = read('js/data/schema.js');
+  assert.match(schema, /enteredAs:/);
 });
 
 test('a sitting can be edited in place, not just deleted and retyped', () => {
   const log = read('js/views/sessionLog.js');
   assert.match(log, /session\s*\?\s*updateSession\(book\.id, session\.id, payload\)\s*:\s*addSession\(book\.id, payload\)/);
   assert.match(log, /session\.id === editingId/);
+});
+
+test('the progress and finished strips redraw when the log changes them', () => {
+  // Both are a summary of the sessions below them, built once from the draft
+  // when the form opened. Deleting or correcting a sitting changed the number
+  // underneath without ever redrawing the summary above it, which kept
+  // showing a page or a speed nothing left in the log supported until the
+  // record was closed and reopened.
+  const form = read('js/views/bookForm.js');
+  assert.match(form, /const summaryMount = el\('div'\)/);
+  assert.match(form, /const refreshSummary = \(\) => \{/);
+
+  const sync = form.slice(form.indexOf('function syncFromStore'), form.indexOf('function save()'));
+  assert.match(sync, /refreshSummary\(\)/);
 });

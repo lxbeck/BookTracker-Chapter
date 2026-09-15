@@ -661,7 +661,8 @@ export function updateSession(bookId, sessionId, patch) {
 
   return applySessions(
     book,
-    book.sessions.map((entry) => (entry.id === sessionId ? session : entry))
+    book.sessions.map((entry) => (entry.id === sessionId ? session : entry)),
+    { reconcileDown: true }
   );
 }
 
@@ -670,12 +671,25 @@ export function removeSession(bookId, sessionId) {
   if (!book) return { ok: false };
   return applySessions(
     book,
-    book.sessions.filter((entry) => entry.id !== sessionId)
+    book.sessions.filter((entry) => entry.id !== sessionId),
+    { reconcileDown: true }
   );
 }
 
-/** Write a new session list and re-derive everything that follows from it. */
-function applySessions(book, sessions) {
+/**
+ * Write a new session list and re-derive everything that follows from it.
+ *
+ * @param {boolean} [reconcileDown] - Let progress follow the log back down,
+ *   not just up. `applyStatusRules` only ratchets progress forward to match
+ *   the furthest logged page — right while adding sessions, wrong while
+ *   editing or deleting one: a sitting removed or corrected down to a
+ *   smaller page used to leave the record still claiming the page it used to
+ *   log, with nothing left in the log to justify it. Only applied when
+ *   progress was actually following the log to begin with, so progress
+ *   pushed further ahead by hand — on purpose, independent of any sitting —
+ *   is left alone.
+ */
+function applySessions(book, sessions, { reconcileDown = false } = {}) {
   const dates = sessions.map((session) => session.date).sort();
   const patch = { sessions };
 
@@ -685,8 +699,17 @@ function applySessions(book, sessions) {
     if (book.status === 'planned' || book.status === 'on-hold') patch.status = 'reading';
   }
 
-  // Progress itself is derived in normalizeBook, so it stays correct whether a
-  // session arrives through here or through an import.
+  if (reconcileDown) {
+    const furthest = (list) => list.reduce((max, s) => Math.max(max, s.pageTo ?? 0), 0);
+    const before = furthest(book.sessions);
+    const after = furthest(sessions);
+    if (after < before && book.progress.page <= before) {
+      patch.progress = { page: after, percent: 0 };
+    }
+  }
+
+  // Otherwise, progress is derived forward in normalizeBook, so it stays
+  // correct whether a session arrives through here or through an import.
   return updateBook(book.id, patch);
 }
 

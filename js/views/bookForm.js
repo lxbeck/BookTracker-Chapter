@@ -590,12 +590,26 @@ export function openBookForm({ book = null, defaultStart = null, onSaved } = {})
     },
   }, 'Get details');
 
+  // Both strips are summaries of the sessions below them — sittings, the
+  // furthest page, a reading speed — and both were built once from the draft
+  // at the moment the form opened. Deleting or correcting a sitting in the
+  // log changed the number underneath without ever redrawing the summary
+  // sitting right above it, so the record kept showing a page or a speed
+  // nothing in the log any longer supported until it was closed and reopened.
+  const summaryMount = el('div');
+  const refreshSummary = () => {
+    fill(summaryMount, [
+      isEdit ? finishedStrip(draft) : null,
+      // Redundant once a book is finished: finishedStrip already says
+      // everything this could, and does it from the dates rather than from a
+      // today-relative average that has no "today" left to be relative to.
+      isEdit && draft.status !== 'finished' ? progressStrip(draft) : null,
+    ].filter(Boolean));
+  };
+  refreshSummary();
+
   const body = [
-    isEdit ? finishedStrip(draft) : null,
-    // Redundant once a book is finished: finishedStrip already says everything
-    // this could, and does it from the dates rather than from a today-relative
-    // average that has no "today" left to be relative to.
-    isEdit && draft.status !== 'finished' ? progressStrip(draft) : null,
+    summaryMount,
     isEdit ? replanNote(draft, { onChange: () => syncFromStore() }) : null,
     isEdit ? historyPanel(draft) : null,
     el('div.field', {}, [
@@ -874,6 +888,7 @@ export function openBookForm({ book = null, defaultStart = null, onSaved } = {})
       finishedInput.value = stored.actual.finishedAt;
     }
 
+    refreshSummary();
     refreshProgressNote();
   }
 

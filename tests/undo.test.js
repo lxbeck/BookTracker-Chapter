@@ -78,6 +78,58 @@ test('restoring a list twice does not duplicate it', () => {
 
 /* --- Sittings -------------------------------------------------------------- */
 
+test('deleting the sitting that reached the furthest page pulls progress back', () => {
+  // The log is supposed to be the source of truth for how far you are, and a
+  // deleted sitting no longer supports the page it once logged — but the
+  // ratchet that follows the log only ever pushed progress forward, never
+  // back, so the record kept claiming a page nothing in the log reached.
+  const book = seedBook();
+  store.addSession(book.id, { date: '2026-08-16', minutes: 40, pageFrom: 0, pageTo: 60 });
+  store.addSession(book.id, { date: '2026-08-18', minutes: 30, pageFrom: 60, pageTo: 90 });
+  assert.equal(store.getBook(book.id).progress.page, 90, 'progress follows the log up');
+
+  const [, second] = store.getBook(book.id).sessions;
+  store.removeSession(book.id, second.id);
+
+  assert.equal(store.getBook(book.id).progress.page, 60, 'and follows it back down when a sitting is removed');
+});
+
+test('deleting every sitting clears progress along with the log', () => {
+  const book = seedBook();
+  store.addSession(book.id, { date: '2026-08-16', minutes: 40, pageFrom: 0, pageTo: 60 });
+  const [session] = store.getBook(book.id).sessions;
+
+  store.removeSession(book.id, session.id);
+
+  const cleared = store.getBook(book.id);
+  assert.equal(cleared.sessions.length, 0);
+  assert.equal(cleared.progress.page, 0, 'nothing is left in the log to justify any progress');
+});
+
+test('progress pushed further ahead by hand survives deleting an older sitting', () => {
+  // Progress that was never following the log to begin with — set by hand,
+  // past anything logged — is not something a deletion should second-guess.
+  const book = seedBook();
+  store.addSession(book.id, { date: '2026-08-16', minutes: 40, pageFrom: 0, pageTo: 60 });
+  store.updateBook(book.id, { progress: { page: 150, percent: 0 } });
+
+  const [session] = store.getBook(book.id).sessions;
+  store.removeSession(book.id, session.id);
+
+  assert.equal(store.getBook(book.id).progress.page, 150, 'the manual figure is left alone');
+});
+
+test('correcting a sitting to a smaller page pulls progress back the same way', () => {
+  const book = seedBook();
+  store.addSession(book.id, { date: '2026-08-16', minutes: 40, pageFrom: 0, pageTo: 150 });
+  assert.equal(store.getBook(book.id).progress.page, 150);
+
+  const [session] = store.getBook(book.id).sessions;
+  store.updateSession(book.id, session.id, { pageTo: 120 });
+
+  assert.equal(store.getBook(book.id).progress.page, 120, 'a corrected sitting is not still credited for the typo');
+});
+
 test('a deleted sitting can be written back from what the caller held', () => {
   const book = seedBook();
   store.addSession(book.id, { date: '2026-08-16', minutes: 40, pageFrom: 0, pageTo: 60 });
